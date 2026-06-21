@@ -1,0 +1,1639 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Gerador de Orçamentos Interativos · TZ Viagens João Monlevade</title>
+<style>
+  :root{
+    --navy:#0f2440;
+    --navy-2:#16345c;
+    --gold:#c8a14a;
+    --gold-soft:#e7d3a1;
+    --champagne:#f6efe2;
+    --ink:#1f2733;
+    --muted:#6b7280;
+    --line:#e6e8ec;
+    --bg:#f3f5f8;
+    --white:#ffffff;
+    --radius:16px;
+    --shadow:0 10px 30px rgba(15,36,64,.08);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .topbar{
+    background:linear-gradient(120deg,var(--navy),var(--navy-2));
+    color:#fff;
+    padding:18px 26px;
+    display:flex;align-items:center;justify-content:space-between;gap:16px;
+    position:sticky;top:0;z-index:50;
+    box-shadow:0 4px 18px rgba(0,0,0,.18);
+  }
+  .brand{display:flex;align-items:center;gap:14px;}
+  .brand .mark{
+    width:44px;height:44px;border-radius:50%;
+    border:1.5px solid var(--gold);
+    display:flex;align-items:center;justify-content:center;
+    font-family:Georgia,'Times New Roman',serif;font-weight:700;color:var(--gold);font-size:18px;
+    letter-spacing:.5px;
+  }
+  .brand h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.3px;}
+  .brand p{margin:0;font-size:12px;color:var(--gold-soft);letter-spacing:1.5px;text-transform:uppercase;}
+  .topbar .actions{display:flex;gap:10px;align-items:center;}
+  .layout{
+    display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    gap:0;min-height:calc(100vh - 80px);
+  }
+  .col-form{padding:26px 30px 80px;overflow:auto;}
+  .col-preview{
+    background:#0c1c33;
+    padding:22px;
+    position:sticky;top:80px;height:calc(100vh - 80px);
+    display:flex;flex-direction:column;gap:14px;
+  }
+  .panel-title{
+    font-family:Georgia,serif;font-size:22px;color:var(--navy);margin:0 0 4px;
+  }
+  .panel-sub{color:var(--muted);font-size:13px;margin:0 0 22px;}
+  fieldset{
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    background:var(--white);
+    padding:18px 18px 20px;
+    margin:36px 0 18px;
+    box-shadow:var(--shadow);
+    position:relative;
+  }
+  legend{
+    position:absolute;
+    top:-28px;
+    left:4px;
+    padding:0;
+    font-family:Georgia,serif;
+    font-size:15px;color:var(--navy);font-weight:700;
+    display:flex;align-items:center;gap:8px;
+  }
+  legend .num{
+    background:var(--navy);color:var(--gold);width:22px;height:22px;border-radius:50%;
+    display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-family:inherit;
+  }
+  label{display:block;font-size:12.5px;font-weight:600;color:#374151;margin:0 0 5px;}
+  .hint{font-weight:400;color:var(--muted);font-size:11.5px;}
+  input[type=text],input[type=number],input[type=tel],input[type=url],input[type=date],input[type=time],textarea,select{
+    width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:10px;
+    font-size:14px;font-family:inherit;color:var(--ink);background:#fbfcfd;outline:none;transition:.15s;
+  }
+  input:focus,textarea:focus,select:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(200,161,74,.15);}
+  textarea{resize:vertical;min-height:74px;}
+  .grid{display:grid;gap:12px;}
+  .g2{grid-template-columns:1fr 1fr;}
+  .g3{grid-template-columns:1fr 1fr 1fr;}
+  .field{margin-bottom:12px;}
+  .field:last-child{margin-bottom:0;}
+  .row{
+    border:1px dashed var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:#fafbfc;position:relative;
+  }
+  .row .row-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+  .row .row-head strong{font-size:12.5px;color:var(--navy);text-transform:uppercase;letter-spacing:.6px;}
+  .hotel-block{border:1px dashed var(--gold-soft);border-radius:12px;padding:14px;margin:14px 0;background:#fbf8f1;position:relative;}
+  .hotel-block .row-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+  .hotel-block .row-head strong{font-size:12.5px;color:var(--navy);text-transform:uppercase;letter-spacing:.6px;}
+  .btn{
+    border:none;border-radius:10px;cursor:pointer;font-family:inherit;font-weight:600;font-size:13.5px;
+    padding:9px 14px;transition:.15s;display:inline-flex;align-items:center;gap:7px;justify-content:center;
+  }
+  .btn-add{background:var(--champagne);color:var(--navy);border:1px solid var(--gold-soft);}
+  .btn-add:hover{background:#efe4c8;}
+  .btn-ghost{background:transparent;color:var(--gold-soft);border:1px solid rgba(231,211,161,.5);}
+  .btn-ghost:hover{background:rgba(255,255,255,.08);}
+  .btn-rem{background:#fff;border:1px solid #f0d3d3;color:#b94343;padding:5px 10px;font-size:12px;border-radius:8px;}
+  .btn-rem:hover{background:#fdeaea;}
+  .btn-gold{
+    background:linear-gradient(120deg,var(--gold),#d9b85f);color:#231a05;font-weight:700;
+    box-shadow:0 8px 20px rgba(200,161,74,.35);font-size:15px;padding:14px 18px;width:100%;
+    letter-spacing:.3px;
+  }
+  .btn-gold:hover{filter:brightness(1.05);transform:translateY(-1px);}
+  .btn-navy{background:var(--navy);color:#fff;}
+  .btn-navy:hover{background:var(--navy-2);}
+  .check{display:flex;align-items:center;gap:8px;font-weight:500;font-size:13.5px;color:#374151;margin:0;cursor:pointer;}
+  .check input{width:17px;height:17px;accent-color:var(--gold);}
+  .checks{display:flex;flex-wrap:wrap;gap:14px;margin-top:6px;}
+  .logo-drop{
+    border:2px dashed var(--gold-soft);border-radius:14px;padding:18px;text-align:center;background:#fcf9f1;
+    cursor:pointer;transition:.15s;
+  }
+  .logo-drop:hover{background:#f7f0df;border-color:var(--gold);}
+  .logo-drop img{max-height:70px;max-width:100%;margin:0 auto 8px;display:block;}
+  .logo-drop .ph{color:var(--muted);font-size:13px;}
+  .imgpick{display:flex;gap:12px;align-items:flex-start;border:1px dashed var(--line);border-radius:12px;padding:10px;background:#fafbfc;margin-bottom:10px;}
+  .imgpick .thumb{width:64px;height:64px;flex-shrink:0;border-radius:10px;border:1px solid var(--line);background:#eef1f5 center/cover no-repeat;display:flex;align-items:center;justify-content:center;color:#9aa6b4;font-size:22px;}
+  .imgpick .pick-body{flex:1;min-width:0;}
+  .imgpick .pick-actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;}
+  .btn-up{background:#eef4fb;border:1px solid #cfe0f2;color:#1c4f86;padding:7px 12px;border-radius:8px;font-size:12.5px;cursor:pointer;font-weight:600;font-family:inherit;}
+  .btn-up:hover{background:#e0ecfa;}
+  .quick-docs{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 12px;}
+  .doc-chip{background:#fff;border:1px solid var(--gold-soft);color:var(--navy);border-radius:20px;padding:7px 13px;font-size:12.5px;font-family:inherit;font-weight:600;cursor:pointer;transition:.15s;}
+  .doc-chip:hover{background:var(--champagne);border-color:var(--gold);}
+  .doc-chip::before{content:"+ ";color:var(--gold);font-weight:700;}
+  .inc-chip{background:#fff;border:1px solid var(--gold-soft);color:var(--navy);border-radius:20px;padding:7px 13px;font-size:12.5px;font-family:inherit;font-weight:600;cursor:pointer;transition:.15s;}
+  .inc-chip:hover{background:var(--champagne);border-color:var(--gold);}
+  .inc-chip::before{content:"+ ";color:var(--gold);font-weight:700;}
+  .preview-head{display:flex;justify-content:space-between;align-items:center;color:#fff;}
+  .preview-head h2{font-family:Georgia,serif;font-size:16px;margin:0;color:#fff;}
+  .preview-head .dot{font-size:11px;color:#8fb0d8;letter-spacing:1px;text-transform:uppercase;}
+  .frame-wrap{
+    flex:1;border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 18px 40px rgba(0,0,0,.4);
+    border:1px solid rgba(255,255,255,.1);position:relative;
+  }
+  #preview{width:100%;height:100%;border:0;display:block;}
+  .export-bar{display:flex;flex-direction:column;gap:10px;}
+  .mini-actions{display:flex;gap:10px;}
+  .mini-actions .btn{flex:1;}
+  .stars-input{display:flex;gap:4px;}
+  .toast{
+    position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:var(--navy);color:#fff;padding:13px 22px;border-radius:12px;font-size:14px;font-weight:600;
+    box-shadow:0 12px 30px rgba(0,0,0,.3);opacity:0;pointer-events:none;transition:.25s;z-index:100;
+    border:1px solid var(--gold);
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .seg-tabs{display:none;}
+  @media (max-width:980px){
+    .layout{grid-template-columns:1fr;}
+    .col-preview{position:relative;top:0;height:520px;}
+    .seg-tabs{display:flex;gap:8px;padding:14px 20px 0;background:var(--bg);position:sticky;top:80px;z-index:40;}
+    .seg-tabs .btn{flex:1;}
+    .col-form.hide,.col-preview.hide{display:none;}
+    .g2,.g3{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <h1>Gerador de orçamentos VOA</h1>
+  </div>
+  <div class="actions">
+    <button class="btn btn-ghost" onclick="loadModel()">Carregar modelo</button>
+    <button class="btn btn-ghost" onclick="exportJSON()">Salvar modelo</button>
+    <button class="btn btn-ghost" onclick="clearAll()">Limpar tudo</button>
+    <input type="file" id="modelFile" accept=".json,application/json" style="display:none" onchange="onModelFile(event)" />
+  </div>
+</div>
+
+<div class="seg-tabs">
+  <button class="btn btn-navy" id="tabForm" onclick="showMobile('form')">Formulário</button>
+  <button class="btn btn-ghost" id="tabPrev" onclick="showMobile('prev')" style="color:var(--navy);border-color:var(--navy)">Pré-visualizar</button>
+</div>
+
+<div class="layout">
+  <!-- ===================== COLUNA FORMULÁRIO ===================== -->
+  <div class="col-form" id="colForm">
+    <h2 class="panel-title">Painel do Agente</h2>
+    <p class="panel-sub">Preencha os campos abaixo e clique em <strong>Exportar Orçamento Interativo</strong>. Um arquivo <code>.html</code> elegante e autônomo será baixado para você enviar por WhatsApp ou e-mail.</p>
+
+    <!-- IDENTIDADE -->
+    <fieldset>
+      <legend><span class="num">★</span> Identidade & Contato</legend>
+      <div class="field">
+        <label>Logotipo da agência <span class="hint">(fica embutido e salvo no arquivo do cliente)</span></label>
+        <div class="logo-drop" id="logoDrop" onclick="document.getElementById('logoFile').click()">
+          <div id="logoPreview"></div>
+          <div class="ph" id="logoPh">📷 Clique para enviar sua logo (PNG/JPG/SVG)</div>
+        </div>
+        <input type="file" id="logoFile" accept="image/*" style="display:none" onchange="handleLogo(event)" />
+      </div>
+      <div class="grid g2">
+        <div class="field">
+          <label>Nome do agente</label>
+          <input type="text" id="agentName" placeholder="Dionathan Carvalho" />
+        </div>
+        <div class="field">
+          <label>WhatsApp do agente <span class="hint">(DDI+DDD, só números)</span></label>
+          <input type="tel" id="agentPhone" placeholder="5531999999999" />
+        </div>
+      </div>
+    </fieldset>
+
+    <!-- CLIENTE -->
+    <fieldset>
+      <legend><span class="num">1</span> Dados do Cliente</legend>
+      <div class="field">
+        <label>Nome do cliente / família</label>
+        <input type="text" id="clientName" placeholder="Ex.: nome do cliente" />
+      </div>
+      <div class="grid g2">
+        <div class="field">
+          <label>Adultos</label>
+          <input type="number" id="adults" min="0" value="2" />
+        </div>
+        <div class="field">
+          <label>Crianças</label>
+          <input type="number" id="children" min="0" value="0" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Idades das crianças</label>
+        <div id="childAges"></div>
+        <button class="btn btn-add" type="button" onclick="addChild()">+ Adicionar idade</button>
+      </div>
+    </fieldset>
+
+    <!-- DESTINO -->
+    <fieldset>
+      <legend><span class="num">2</span> Apresentação do Destino</legend>
+      <div class="grid g2">
+        <div class="field">
+          <label>Nome do destino</label>
+          <input type="text" id="destName" oninput="fillDestText()" placeholder="Ex.: cidade/região do destino" />
+        </div>
+        <div class="field">
+          <label>Período da viagem</label>
+          <input type="text" id="destPeriod" placeholder="12 a 17 de Setembro de 2026" />
+        </div>
+      </div>
+      <div class="field" id="heroPick">
+        <label>Imagem de capa (Hero) <span class="hint">— envie do computador</span></label>
+        <div class="imgpick">
+          <div class="thumb">🖼</div>
+          <div class="pick-body">
+            <input type="hidden" class="img-url" />
+            <div class="pick-actions">
+              <button type="button" class="btn-up" onclick="pickImg(this)">📷 Enviar do PC</button>
+            </div>
+            <input type="file" accept="image/*" style="display:none" onchange="onImgFile(event)" />
+            <input type="hidden" class="img-data" />
+          </div>
+        </div>
+      </div>
+      <div class="field">
+        <label>Texto encantador sobre o destino</label>
+        <textarea id="destText" oninput="destTextEdited()" placeholder="Descreva os encantos do destino para gerar desejo..."></textarea>
+      </div>
+      <div class="field">
+        <label>Galeria de fotos <span class="hint">— envie do computador (otimizadas automaticamente)</span></label>
+        <div id="gallery"></div>
+        <button class="btn btn-add" type="button" onclick="addGallery()">+ Adicionar foto</button>
+      </div>
+    </fieldset>
+
+    <!-- VOOS -->
+    <fieldset>
+      <legend><span class="num">3</span> Voos & Logística</legend>
+      <div id="flights"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-add" type="button" onclick="addFlight()">+ Adicionar trecho de voo</button>
+        <button class="btn btn-navy" type="button" onclick="mirrorReturn()">⇄ Espelhar ida → volta</button>
+      </div>
+      <div class="field" style="margin-top:16px">
+        <label>Franquia de bagagem inclusa</label>
+        <div class="checks">
+          <label class="check"><input type="checkbox" id="bagHand" checked /> Mala de mão</label>
+          <label class="check"><input type="checkbox" id="bagPersonal" checked /> Item pessoal</label>
+          <label class="check"><input type="checkbox" id="bagChecked" /> Bagagem despachada</label>
+        </div>
+      </div>
+      <div class="field">
+        <label>Peso da bagagem despachada <span class="hint">(se houver)</span></label>
+        <input type="text" id="bagWeight" placeholder="Ex.: 1 peça de 23kg por pessoa" />
+      </div>
+    </fieldset>
+
+    <!-- HOSPEDAGEM -->
+    <fieldset>
+      <legend><span class="num">4</span> Hospedagem Premium</legend>
+      <div class="grid g2">
+        <div class="field">
+          <label>Nome do hotel</label>
+          <input type="text" id="hotelName" placeholder="Ex.: nome do hotel" />
+        </div>
+        <div class="field">
+          <label>Classificação (estrelas)</label>
+          <select id="hotelStars">
+            <option value="3">3 estrelas</option>
+            <option value="4" selected>4 estrelas</option>
+            <option value="5">5 estrelas</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid g2">
+        <div class="field">
+          <label>Categoria do quarto</label>
+          <input type="text" id="hotelRoom" placeholder="Apartamento Superior Vista Mar" />
+        </div>
+        <div class="field">
+          <label>Regime de alimentação</label>
+          <input type="text" id="hotelMeal" placeholder="Café da manhã incluído" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Descrição do hotel</label>
+        <textarea id="hotelDesc" placeholder="Conforto, localização, estrutura..."></textarea>
+      </div>
+      <div class="field">
+        <label>Fotos do hotel <span class="hint">— envie do computador (quarto, estrutura...)</span></label>
+        <div id="hotelImgs"></div>
+        <button class="btn btn-add" type="button" onclick="addHotelImg()">+ Adicionar foto do hotel</button>
+      </div>
+      <div id="hotelsExtra"></div>
+      <button class="btn btn-add" type="button" onclick="addHotel()">+ Adicionar hospedagem</button>
+    </fieldset>
+
+    <!-- EXPERIÊNCIAS -->
+    <fieldset>
+      <legend><span class="num">5</span> Passeios, Ingressos & Traslados</legend>
+      <label style="margin-bottom:8px">Passeios & Ingressos</label>
+      <div id="passeios"></div>
+      <button class="btn btn-add" type="button" onclick="addPasseio()">+ Adicionar passeio/ingresso</button>
+      <label style="margin:18px 0 8px">Traslados</label>
+      <div id="traslados"></div>
+      <button class="btn btn-add" type="button" onclick="addTraslado()">+ Adicionar traslado</button>
+    </fieldset>
+
+    <!-- DOCUMENTOS -->
+    <fieldset>
+      <legend><span class="num">6</span> Documentação Necessária</legend>
+      <p class="hint" style="margin:-4px 0 10px">Checklist editável que aparecerá para o cliente.</p>
+      <div class="quick-docs">
+        <button type="button" class="doc-chip" onclick="quickDoc(this, 'Novo modelo de identidade ou CNH válida')">Novo modelo de identidade ou CNH válida</button>
+        <button type="button" class="doc-chip" onclick="quickDoc(this, 'Autorização de viagem para menor de idade')">Autorização de viagem para menor de idade</button>
+        <button type="button" class="doc-chip" onclick="quickDoc(this, 'Passaporte com validade mínima de 6 meses da data de retorno')">Passaporte com validade mínima de 6 meses da data de retorno</button>
+        <button type="button" class="doc-chip" onclick="quickDoc(this, 'Visto válido')">Visto válido</button>
+        <button type="button" class="doc-chip" onclick="quickDoc(this, 'Autorização ETA')">Autorização ETA</button>
+        <button type="button" class="doc-chip" onclick="quickDoc(this, 'Certificado Internacional de Febre Amarela')">Certificado Internacional de Febre Amarela</button>
+        <button type="button" class="doc-chip" onclick="quickDoc(this, 'Seguro viagem')">Seguro viagem</button>
+        <button type="button" class="doc-chip" onclick="quickDoc(this, 'Carteira de motorista internacional (PID)')">Carteira de motorista internacional (PID)</button>
+        <button type="button" class="doc-chip" onclick="quickDoc(this, 'Autorização ETIAS')">Autorização ETIAS</button>
+      </div>
+      <div id="docs"></div>
+      <button class="btn btn-add" type="button" onclick="addDoc()">+ Adicionar documento</button>
+    </fieldset>
+
+    <!-- VALORES -->
+    <fieldset>
+      <legend><span class="num">7</span> Investimento & Condições</legend>
+      <div class="grid g2">
+        <div class="field">
+          <label>Valor total (R$)</label>
+          <input type="text" id="priceTotal" placeholder="14.890,00" />
+        </div>
+        <div class="field">
+          <label>Valor por pessoa (R$) <span class="hint">(opcional)</span></label>
+          <input type="text" id="pricePerson" placeholder="4.963,33" />
+        </div>
+      </div>
+      <div class="grid g2">
+        <div class="field">
+          <label>Entrada (R$)</label>
+          <input type="text" id="priceEntry" placeholder="2.890,00" />
+        </div>
+        <div class="field">
+          <label>Parcelamento</label>
+          <input type="text" id="priceInstall" placeholder="12x de R$ 1.000,00 sem juros" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Inclui / observações da proposta</label>
+        <div class="quick-docs">
+        <button type="button" class="inc-chip" onclick="quickInclude(this, 'Hospedagem')">Hospedagem</button>
+        <button type="button" class="inc-chip" onclick="quickInclude(this, 'Passagem ida e volta')">Passagem ida e volta</button>
+        <button type="button" class="inc-chip" onclick="quickInclude(this, 'Traslado ida e volta')">Traslado ida e volta</button>
+        <button type="button" class="inc-chip" onclick="quickInclude(this, 'Café da manhã')">Café da manhã</button>
+        <button type="button" class="inc-chip" onclick="quickInclude(this, 'Meia Pensão')">Meia Pensão</button>
+        <button type="button" class="inc-chip" onclick="quickInclude(this, 'Pensão Completa')">Pensão Completa</button>
+        <button type="button" class="inc-chip" onclick="quickInclude(this, 'All inclusive')">All inclusive</button>
+        <button type="button" class="inc-chip" onclick="quickInclude(this, 'Passeios mencionados')">Passeios mencionados</button>
+        <button type="button" class="inc-chip" onclick="quickInclude(this, 'Traslados mencionados')">Traslados mencionados</button>
+        <button type="button" class="inc-chip" onclick="quickInclude(this, 'Kit viagem')">Kit viagem</button>
+        <button type="button" class="inc-chip" onclick="quickInclude(this, 'Roteiro personalizado')">Roteiro personalizado</button>
+        <button type="button" class="inc-chip" onclick="quickInclude(this, 'Assessoria 24h')">Assessoria 24h</button>
+        <button type="button" class="inc-chip" onclick="quickInclude(this, 'Reunião Pré-embarque')">Reunião Pré-embarque</button>
+        <button type="button" class="inc-chip" onclick="quickInclude(this, 'Ingressos mencionados')">Ingressos mencionados</button>
+        <button type="button" class="inc-chip" onclick="quickInclude(this, 'Carro alugado')">Carro alugado</button>
+        <button type="button" class="inc-chip" onclick="quickInclude(this, 'Seguro viagem')">Seguro viagem</button>
+        <button type="button" class="inc-chip" onclick="quickInclude(this, 'Guia local nos passeios')">Guia local nos passeios</button>
+        </div>
+        <div id="includes"></div>
+        <button class="btn btn-add" type="button" onclick="addInclude()">+ Adicionar item</button>
+      </div>
+      <div class="field">
+        <label>Nota de rodapé <span class="hint">(validade, câmbio...)</span></label>
+        <textarea id="priceNote" placeholder="Cotação válida por 3 dias úteis...">Essa proposta está sujeita a mudança de valores sem aviso prévio de acordo com a disponibilidade do fornecedor. Confira as regras da reserva antes do seu fechamento.</textarea>
+      </div>
+    </fieldset>
+  </div>
+
+  <!-- ===================== COLUNA PREVIEW ===================== -->
+  <div class="col-preview" id="colPreview">
+    <div class="preview-head">
+      <h2>Pré-visualização do Cliente</h2>
+      <span class="dot">ao vivo</span>
+    </div>
+    <div class="frame-wrap">
+      <iframe id="preview" title="preview"></iframe>
+    </div>
+    <div class="export-bar">
+      <div class="mini-actions">
+        <button class="btn btn-navy" onclick="updatePreview()">↻ Atualizar prévia</button>
+        <button class="btn btn-ghost" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="openInNewTab()">⤢ Abrir em nova aba</button>
+      </div>
+      <button class="btn btn-gold" onclick="exportHTML()">⬇ Exportar Orçamento Interativo (HTML)</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ========================================================================
+   TZ VIAGENS — GERADOR DE ORÇAMENTOS INTERATIVOS
+   ===================================================================== */
+
+let logoDataUrl = "";
+let destTextAuto = false;
+
+/* ---------- biblioteca de destinos (preenche "sobre o destino" automaticamente) ---------- */
+const DESTINOS = {
+  "atacama": "O deserto mais árido do mundo, o Atacama é um espetáculo de paisagens surreais — salares reluzentes, gêiseres, lagoas altiplânicas e um dos céus mais estrelados do planeta. Entre o Vale da Lua e fontes termais em pleno deserto, é uma experiência inesquecível para os amantes da natureza.",
+  "deserto do atacama": "O deserto mais árido do mundo, o Atacama é um espetáculo de paisagens surreais — salares reluzentes, gêiseres, lagoas altiplânicas e um dos céus mais estrelados do planeta. Entre o Vale da Lua e fontes termais em pleno deserto, é uma experiência inesquecível para os amantes da natureza.",
+  "san pedro de atacama": "O deserto mais árido do mundo, o Atacama é um espetáculo de paisagens surreais — salares reluzentes, gêiseres, lagoas altiplânicas e um dos céus mais estrelados do planeta. Entre o Vale da Lua e fontes termais em pleno deserto, é uma experiência inesquecível para os amantes da natureza.",
+  "franca": "Sinônimo de elegância e arte, a França encanta de norte a sul — da efervescência de Paris aos vinhedos de Bordeaux, dos castelos do Loire à glamourosa Riviera Francesa. Uma viagem inesquecível por gastronomia premiada, história e paisagens deslumbrantes.",
+  "espanha": "Vibrante e apaixonante, a Espanha combina o charme de Madri, a arte de Barcelona, o flamenco da Andaluzia e praias ensolaradas. Entre tapas, arquitetura única e uma energia contagiante, é um destino que conquista em cada região.",
+  "estados unidos": "Vastos e diversos, os Estados Unidos oferecem de tudo: a energia de Nova York, a magia de Orlando, o glamour de Los Angeles e as luzes de Las Vegas. Uma viagem cheia de possibilidades para todos os estilos e idades.",
+  "eua": "Vastos e diversos, os Estados Unidos oferecem de tudo: a energia de Nova York, a magia de Orlando, o glamour de Los Angeles e as luzes de Las Vegas. Uma viagem cheia de possibilidades para todos os estilos e idades.",
+  "usa": "Vastos e diversos, os Estados Unidos oferecem de tudo: a energia de Nova York, a magia de Orlando, o glamour de Los Angeles e as luzes de Las Vegas. Uma viagem cheia de possibilidades para todos os estilos e idades.",
+  "italia": "Berço da arte e da boa mesa, a Itália encanta de Roma a Veneza, da Toscana à Costa Amalfitana. Entre história milenar, paisagens deslumbrantes e a autêntica gastronomia italiana, é uma viagem que desperta todos os sentidos.",
+  "turquia": "No encontro entre Europa e Ásia, a Turquia fascina com a grandiosidade de Istambul, os balões da Capadócia e as águas termais de Pamukkale. Uma jornada exótica por história, cultura e cenários de tirar o fôlego.",
+  "mexico": "Colorido e acolhedor, o México une praias caribenhas, ruínas maias e astecas, e uma gastronomia mundialmente celebrada. De Cancún à Cidade do México, é um destino vibrante que mistura história, sabor e diversão.",
+  "reino unido": "Tradição e modernidade convivem em harmonia no Reino Unido. Da cosmopolita Londres aos castelos da Escócia e às paisagens verdejantes do interior, é uma viagem rica em história, cultura e charme britânico.",
+  "inglaterra": "Tradição e modernidade convivem em harmonia no Reino Unido. Da cosmopolita Londres aos castelos da Escócia e às paisagens verdejantes do interior, é uma viagem rica em história, cultura e charme britânico.",
+  "alemanha": "Eficiente e encantadora, a Alemanha combina cidades modernas, castelos de contos de fada e a tradição da Floresta Negra. Entre Berlim, Munique e a Rota Romântica, é um destino que une história, natureza e hospitalidade.",
+  "grecia": "Berço da civilização ocidental, a Grécia seduz com a história de Atenas e o paraíso das ilhas de Santorini e Mykonos. Entre mares azul-turquesa, ruínas milenares e a calorosa cultura mediterrânea, é uma viagem dos sonhos.",
+  "austria": "Elegante e musical, a Áustria encanta com a imperial Viena, os Alpes deslumbrantes e cidades de conto de fadas como Salzburgo. Entre palácios, montanhas e cafés históricos, é um destino de pura sofisticação.",
+  "tailandia": "Exótica e acolhedora, a Tailândia combina templos dourados, praias paradisíacas e uma gastronomia inesquecível. De Bangkok às ilhas de Phuket e Krabi, é uma jornada vibrante entre cultura, natureza e hospitalidade.",
+  "emirados arabes unidos": "Luxo e modernidade em estado puro, os Emirados Árabes Unidos impressionam com a deslumbrante Dubai e a sofisticada Abu Dhabi. Entre arranha-céus futuristas, desertos dourados e experiências exclusivas, é um destino que redefine o extraordinário.",
+  "emirados": "Luxo e modernidade em estado puro, os Emirados Árabes Unidos impressionam com a deslumbrante Dubai e a sofisticada Abu Dhabi. Entre arranha-céus futuristas, desertos dourados e experiências exclusivas, é um destino que redefine o extraordinário.",
+  "arabia saudita": "Destino emergente e surpreendente, a Arábia Saudita revela paisagens desérticas grandiosas, sítios históricos milenares como Al-Ula e cidades modernas em ascensão. Uma viagem autêntica para quem busca cultura e cenários únicos.",
+  "arabia": "Destino emergente e surpreendente, a Arábia Saudita revela paisagens desérticas grandiosas, sítios históricos milenares como Al-Ula e cidades modernas em ascensão. Uma viagem autêntica para quem busca cultura e cenários únicos.",
+  "japao": "Onde tradição e futuro se encontram, o Japão encanta com a vibrante Tóquio, os templos de Quioto e as cerejeiras em flor. Entre tecnologia, cultura milenar e uma gastronomia refinada, é uma experiência verdadeiramente única.",
+  "paises baixos": "Charmosos e descontraídos, os Países Baixos encantam com os canais de Amsterdã, campos de tulipas e moinhos históricos. Entre arte, bicicletas e vilarejos pitorescos, é um destino acolhedor que respira liberdade e beleza.",
+  "holanda": "Charmosos e descontraídos, os Países Baixos encantam com os canais de Amsterdã, campos de tulipas e moinhos históricos. Entre arte, bicicletas e vilarejos pitorescos, é um destino acolhedor que respira liberdade e beleza.",
+  "malasia": "Diversa e fascinante, a Malásia une a moderna Kuala Lumpur, ilhas paradisíacas e florestas tropicais exuberantes. Entre culturas, sabores e paisagens contrastantes, é um destino vibrante no coração da Ásia.",
+  "polonia": "Rica em história e cheia de charme, a Polônia encanta com a reconstruída Varsóvia, a medieval Cracóvia e castelos imponentes. Entre arquitetura encantadora e uma cultura resiliente, é um destino europeu surpreendente e acolhedor.",
+  "canada": "Grandioso e deslumbrante, o Canadá reúne metrópoles vibrantes como Toronto e Vancouver e paisagens naturais espetaculares, das Cataratas do Niágara às Montanhas Rochosas. Uma viagem perfeita para amantes da natureza e da modernidade.",
+  "china": "Milenar e monumental, a China impressiona com a Grande Muralha, a moderna Xangai e a histórica Pequim. Entre tradições milenares, megacidades futuristas e paisagens grandiosas, é uma jornada inesquecível pelo Oriente.",
+  "portugal": "Acolhedor e encantador, Portugal seduz com a luminosa Lisboa, o charme do Porto e as praias douradas do Algarve. Entre o fado, a gastronomia e a hospitalidade lusitana, é um destino que conquista o coração.",
+  "fortaleza": "Capital ensolarada do Ceará, Fortaleza combina praias urbanas movimentadas, uma gastronomia litorânea irresistível e o ponto de partida para paraísos como Cumbuco e Canoa Quebrada. Entre a brisa constante, o artesanato local e a vida noturna animada, é o destino ideal para quem busca sol e energia o ano inteiro.",
+  "maragogi": "Conhecida como o Caribe brasileiro, Maragogi encanta com piscinas naturais de águas mornas e transparentes em meio aos corais das Galés. Entre passeios de catamarã, areias claras e o ritmo tranquilo do litoral alagoano, é o refúgio perfeito para quem deseja paz e mar cristalino.",
+  "porto seguro": "Berço do Brasil, Porto Seguro une história, praias deslumbrantes e uma atmosfera vibrante. Entre as barracas badaladas, o charme da Passarela do Descobrimento e o mar quente da Bahia, é o destino ideal para unir diversão, cultura e descanso à beira-mar.",
+  "arraial d'ajuda": "Aconchegante e charmosa, Arraial d'Ajuda encanta com suas ruas de pedra, praias paradisíacas e um clima boêmio sofisticado. Entre falésias, o mar morno baiano e pousadas encantadoras, é o refúgio perfeito para quem busca beleza natural e tranquilidade com requinte.",
+  "morro de sao paulo": "Sem carros e cheio de charme, Morro de São Paulo é um paraíso de praias numeradas, águas mornas e pôr do sol inesquecível. Entre trilhas, mergulhos e uma noite animada à beira-mar, oferece o equilíbrio perfeito entre natureza intocada e diversão.",
+  "joao pessoa": "Uma das cidades mais verdes e tranquilas do Brasil, João Pessoa encanta com praias serenas, o ponto mais oriental das Américas e um centro histórico charmoso. Entre coqueirais, piscinas naturais e a hospitalidade paraibana, é o destino ideal para dias de paz e beleza.",
+  "lencois maranhenses": "Cenário único no mundo, os Lençóis Maranhenses surpreendem com dunas brancas infinitas pontuadas por lagoas de águas cristalinas. Entre paisagens de tirar o fôlego e mergulhos em piscinas naturais em pleno deserto, é uma experiência verdadeiramente inesquecível.",
+  "lencois": "Cenário único no mundo, os Lençóis Maranhenses surpreendem com dunas brancas infinitas pontuadas por lagoas de águas cristalinas. Entre paisagens de tirar o fôlego e mergulhos em piscinas naturais em pleno deserto, é uma experiência verdadeiramente inesquecível.",
+  "manaus": "Portal da maior floresta tropical do planeta, Manaus une a exuberância amazônica ao charme histórico do Teatro Amazonas. Entre o encontro das águas, passeios de barco e a biodiversidade incomparável da selva, é uma imersão única na natureza e na cultura do Norte.",
+  "floresta amazonica": "Portal da maior floresta tropical do planeta, Manaus une a exuberância amazônica ao charme histórico do Teatro Amazonas. Entre o encontro das águas, passeios de barco e a biodiversidade incomparável da selva, é uma imersão única na natureza e na cultura do Norte.",
+  "amazonia": "Portal da maior floresta tropical do planeta, Manaus une a exuberância amazônica ao charme histórico do Teatro Amazonas. Entre o encontro das águas, passeios de barco e a biodiversidade incomparável da selva, é uma imersão única na natureza e na cultura do Norte.",
+  "buzios": "Refúgio sofisticado a poucas horas do Rio, Búzios encanta com suas mais de vinte praias, a charmosa Rua das Pedras e um clima cosmopolita. Entre restaurantes premiados, passeios de barco e pôres do sol deslumbrantes, é o destino perfeito para requinte e descanso.",
+  "arraial do cabo": "Apelidado de Caribe brasileiro, Arraial do Cabo deslumbra com águas azul-turquesa, areias branquíssimas e mergulhos espetaculares. Entre passeios de barco às grutas e praias de beleza rara, é um dos litorais mais impressionantes do país.",
+  "campos do jordao": "Na Serra da Mantiqueira, Campos do Jordão encanta com seu clima de montanha, arquitetura europeia e cenários bucólicos. Entre fondues, chocolates artesanais, cervejarias e bosques charmosos, é o destino perfeito para dias aconchegantes a dois ou em família.",
+  "caldas novas": "Lar das maiores fontes hidrotermais do mundo, Caldas Novas é sinônimo de relaxamento em águas naturalmente aquecidas. Entre resorts com parques aquáticos, spas e clima acolhedor, é o destino ideal para descanso e diversão em qualquer época do ano.",
+  "florianopolis": "A Ilha da Magia reúne mais de quarenta praias para todos os gostos, lagoas, trilhas e uma gastronomia à beira-mar de dar água na boca. Entre o charme dos vilarejos açorianos e a vida vibrante do centro, Florianópolis encanta do nascer ao pôr do sol.",
+  "floripa": "A Ilha da Magia reúne mais de quarenta praias para todos os gostos, lagoas, trilhas e uma gastronomia à beira-mar de dar água na boca. Entre o charme dos vilarejos açorianos e a vida vibrante do centro, Florianópolis encanta do nascer ao pôr do sol.",
+  "londres": "Cosmopolita e atemporal, Londres mistura tradição e modernidade em cada esquina. Do Big Ben aos museus mundialmente famosos, dos parques elegantes aos musicais do West End, é uma capital fascinante que oferece cultura, história e sofisticação sem fim.",
+  "toronto": "Vibrante e multicultural, Toronto encanta com seu skyline marcante, bairros diversos e a proximidade das Cataratas do Niágara. Entre a icônica CN Tower, a gastronomia internacional e a hospitalidade canadense, é um destino moderno e acolhedor para toda a família.",
+  "miami": "Glamourosa e ensolarada, Miami seduz com praias de areia branca, a efervescência de South Beach e o charme art déco de Ocean Drive. Entre compras de luxo, vida noturna vibrante e o calor latino, é o destino perfeito para unir sol, estilo e diversão.",
+  "las vegas": "Capital mundial do entretenimento, Las Vegas impressiona com seus cassinos grandiosos, shows espetaculares e hotéis temáticos deslumbrantes. Entre a energia da Strip e a proximidade de maravilhas naturais como o Grand Canyon, é uma experiência única e inesquecível.",
+  "los angeles": "Terra do cinema e do sol, Los Angeles encanta com suas praias famosas, o glamour de Hollywood e bairros vibrantes como Beverly Hills. Entre estúdios, parques temáticos e o estilo de vida descontraído da Califórnia, é um destino que combina sonho e diversão.",
+  "bariloche": "Cercada por lagos cristalinos e montanhas nevadas, Bariloche é um refúgio encantador nos Andes argentinos. Entre chocolates artesanais, estações de esqui no inverno e paisagens deslumbrantes o ano inteiro, é o destino ideal para casais e famílias apaixonados por natureza.",
+  "punta del este": "Sofisticada e badalada, Punta del Este é o balneário mais elegante do Uruguai. Entre praias chiques, marinas, gastronomia refinada e uma vida noturna vibrante, é o destino perfeito para quem busca glamour e descanso à beira-mar.",
+  "cartagena": "Joia colonial do Caribe colombiano, Cartagena encanta com suas muralhas históricas, ruas coloridas e varandas floridas. Entre o charme da cidade amuralhada, praias paradisíacas e uma atmosfera romântica, é um destino que mistura história, beleza e magia.",
+  "san andres": "No coração do Caribe, San Andrés deslumbra com o famoso mar de sete cores, recifes de corais e praias de areia branca. Entre mergulhos, passeios de lancha e o ritmo tranquilo das ilhas, é o refúgio perfeito para dias de puro paraíso.",
+  "cusco": "Antiga capital do Império Inca, Cusco é o portal para a majestosa Machu Picchu. Entre ruínas milenares, vilarejos andinos e paisagens montanhosas de tirar o fôlego, é uma viagem inesquecível pela história e pela espiritualidade dos Andes.",
+  "machu picchu": "Antiga capital do Império Inca, Cusco é o portal para a majestosa Machu Picchu. Entre ruínas milenares, vilarejos andinos e paisagens montanhosas de tirar o fôlego, é uma viagem inesquecível pela história e pela espiritualidade dos Andes.",
+  "madri": "Capital vibrante da Espanha, Madri encanta com seus museus de arte renomados, praças elegantes e uma vida noturna contagiante. Entre tapas, o Palácio Real e o charme dos bairros históricos, é um destino que une cultura, gastronomia e energia.",
+  "madrid": "Capital vibrante da Espanha, Madri encanta com seus museus de arte renomados, praças elegantes e uma vida noturna contagiante. Entre tapas, o Palácio Real e o charme dos bairros históricos, é um destino que une cultura, gastronomia e energia.",
+  "barcelona": "À beira do Mediterrâneo, Barcelona seduz com a genialidade de Gaudí, praias urbanas e uma atmosfera artística única. Entre a Sagrada Família, as Ramblas e a gastronomia catalã, é um destino que combina arte, mar e modernidade com elegância.",
+  "amsterda": "Charmosa e descontraída, Amsterdã encanta com seus canais históricos, casas inclinadas e museus de classe mundial. Entre passeios de barco, bicicletas e o charme boêmio dos bairros, é um destino acolhedor que respira arte, cultura e liberdade.",
+  "amsterdam": "Charmosa e descontraída, Amsterdã encanta com seus canais históricos, casas inclinadas e museus de classe mundial. Entre passeios de barco, bicicletas e o charme boêmio dos bairros, é um destino acolhedor que respira arte, cultura e liberdade.",
+  "veneza": "Romântica e singular, Veneza é uma cidade construída sobre a água, onde gôndolas deslizam por canais encantadores. Entre a majestosa Praça de São Marcos, pontes históricas e becos cheios de charme, é um dos destinos mais apaixonantes do mundo.",
+  "atenas": "Berço da civilização ocidental, Atenas une milênios de história à energia mediterrânea. Entre a imponência da Acrópole, ruínas fascinantes e a calorosa gastronomia grega, é um destino que encanta amantes da história, da cultura e da beleza.",
+  "gramado": "Aninhada na Serra Gaúcha, Gramado encanta com seu charme europeu, ruas floridas e clima ameno que convida ao aconchego. Entre cafés coloniais, chocolaterias artesanais, vinícolas premiadas e paisagens de tirar o fôlego, é o destino perfeito para quem busca romance, gastronomia e sofisticação.",
+  "porto de galinhas": "Com piscinas naturais de águas cristalinas e areias douradas, Porto de Galinhas é um dos litorais mais deslumbrantes do Brasil. Passeios de jangada até os corais, coqueirais infinitos e o calor acolhedor de Pernambuco compõem o cenário ideal para dias de puro relaxamento.",
+  "fernando de noronha": "Santuário ecológico de águas azul-turquesa, Fernando de Noronha é um paraíso preservado de praias paradisíacas, mergulhos inesquecíveis e encontros com golfinhos e tartarugas. Um refúgio exclusivo onde a natureza se revela em sua forma mais pura.",
+  "noronha": "Santuário ecológico de águas azul-turquesa, Fernando de Noronha é um paraíso preservado de praias paradisíacas, mergulhos inesquecíveis e encontros com golfinhos e tartarugas. Um refúgio exclusivo onde a natureza se revela em sua forma mais pura.",
+  "maceio": "Conhecida como o Caribe brasileiro, Maceió seduz com mares esverdeados, piscinas naturais e uma orla vibrante. Entre jangadas, coqueiros e a deliciosa culinária alagoana, é o destino ideal para quem deseja sol, mar e tranquilidade em estado puro.",
+  "foz do iguacu": "Lar de uma das Sete Maravilhas da Natureza, Foz do Iguaçu impressiona com a grandiosidade de suas cataratas. Entre passarelas sobre as quedas d'água, a Mata Atlântica exuberante e a imponência de Itaipu, é uma experiência monumental que une aventura e contemplação.",
+  "rio de janeiro": "A Cidade Maravilhosa reúne montanhas, praias icônicas e uma energia inconfundível. Do Cristo Redentor ao Pão de Açúcar, das areias de Copacabana ao pôr do sol em Ipanema, o Rio é um espetáculo a céu aberto que encanta a cada olhar.",
+  "balneario camboriu": "Conhecida como a Dubai brasileira, Balneário Camboriú encanta pelo contraste entre o azul do mar e os arranha-céus iluminados ao entardecer. Entre praias paradisíacas, bondinhos panorâmicos e uma vida noturna sofisticada, oferece o melhor do litoral catarinense.",
+  "jericoacoara": "Vila de pescadores transformada em refúgio chique, Jericoacoara encanta com dunas douradas, lagoas de águas mornas e pôres do sol inesquecíveis. Um paraíso rústico e sofisticado no Ceará, ideal para quem busca natureza intocada e momentos memoráveis.",
+  "jeri": "Vila de pescadores transformada em refúgio chique, Jericoacoara encanta com dunas douradas, lagoas de águas mornas e pôres do sol inesquecíveis. Um paraíso rústico e sofisticado no Ceará, ideal para quem busca natureza intocada e momentos memoráveis.",
+  "orlando": "Capital mundial do entretenimento, Orlando é o sonho de toda a família. Entre os parques mágicos da Disney, as aventuras da Universal e os melhores outlets dos Estados Unidos, cada dia reserva emoções inesquecíveis para todas as idades.",
+  "cancun": "Joia do Caribe mexicano, Cancún reúne praias de areia branca, mar azul-turquesa e resorts deslumbrantes. Entre ruínas maias, cenotes mágicos e uma gastronomia vibrante, é o destino perfeito para unir descanso, cultura e diversão.",
+  "buenos aires": "Elegante e apaixonante, Buenos Aires respira cultura em cada esquina. Do tango nas ruas de San Telmo aos cafés históricos, das compras refinadas à gastronomia premiada, a capital argentina é um convite ao charme portenho.",
+  "santiago": "Aos pés da Cordilheira dos Andes, Santiago combina modernidade e tradição com cenários deslumbrantes. Entre vinícolas renomadas, bairros boêmios e montanhas nevadas a poucos minutos da cidade, o Chile oferece experiências para todos os gostos.",
+  "lisboa": "Banhada pela luz dourada do Tejo, Lisboa encanta com seus bairros históricos, bondes charmosos e o som nostálgico do fado. Entre miradouros deslumbrantes, gastronomia premiada e hospitalidade calorosa, a capital portuguesa é pura poesia.",
+  "paris": "A Cidade Luz é sinônimo de romance e elegância. Da Torre Eiffel ao Louvre, dos cafés à beira do Sena às vitrines da alta-costura, Paris desperta encantamento a cada passo, um destino eterno para quem busca beleza e arte.",
+  "roma": "Cidade eterna onde cada esquina guarda milênios de história, Roma é um museu a céu aberto. Do Coliseu ao Vaticano, das fontes monumentais à autêntica gastronomia italiana, é uma viagem inesquecível pelo berço da civilização ocidental.",
+  "salvador": "Coração pulsante da Bahia, Salvador encanta com o colorido do Pelourinho, o ritmo contagiante dos tambores e praias deslumbrantes. Entre história, fé e a deliciosa culinária baiana, é um destino que envolve todos os sentidos.",
+  "natal": "Cidade do sol, Natal brilha com dunas douradas, praias de águas mornas e os famosos passeios de buggy por Genipabu. Entre falésias, lagoas e a brisa constante do litoral potiguar, é o cenário ideal para dias leves e ensolarados.",
+  "bonito": "No coração do Mato Grosso do Sul, Bonito é um santuário de águas cristalinas e natureza exuberante. Entre flutuações em rios transparentes, grutas azuladas e cachoeiras escondidas, oferece um dos ecoturismos mais espetaculares do mundo.",
+  "punta cana": "No extremo leste da República Dominicana, Punta Cana é sinônimo de praias paradisíacas, resorts all inclusive e mar caribenho de tons inesquecíveis. O refúgio perfeito para relaxar sob coqueiros em meio ao luxo tropical.",
+  "dubai": "Cidade dos superlativos, Dubai impressiona com arranha-céus futuristas, shoppings deslumbrantes e o contraste entre o moderno e o deserto dourado. Entre experiências exclusivas e luxo em cada detalhe, é um destino que redefine o extraordinário.",
+  "nova york": "A cidade que nunca dorme pulsa com energia única. Da Times Square ao Central Park, dos musicais da Broadway às vitrines da Quinta Avenida, Nova York é um espetáculo cosmopolita que fascina a cada visita.",
+  "new york": "A cidade que nunca dorme pulsa com energia única. Da Times Square ao Central Park, dos musicais da Broadway às vitrines da Quinta Avenida, Nova York é um espetáculo cosmopolita que fascina a cada visita."
+};
+function normDest(s){ return String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().trim().replace(/\s+/g," "); }
+function fillDestText(){
+  const key = normDest(el("destName").value);
+  if(!key) return;
+  let txt = DESTINOS[key];
+  if(!txt){ for(const k in DESTINOS){ if(k.length>=4 && key.indexOf(k)>=0){ txt = DESTINOS[k]; break; } } }
+  if(!txt) return;
+  const cur = el("destText");
+  if(cur.value.trim()==="" || destTextAuto){ cur.value = txt; destTextAuto = true; debouncedPreview(); }
+}
+function destTextEdited(){ destTextAuto = false; }
+
+
+/* ---------- base de aeroportos (código IATA -> [cidade, aeroporto, país]) ---------- */
+const AIRPORTS = {
+  // América do Sul
+  "GRU":["São Paulo","Guarulhos","Brasil"],"CGH":["São Paulo","Congonhas","Brasil"],
+  "BSB":["Brasília","Pres. Juscelino Kubitschek","Brasil"],"GIG":["Rio de Janeiro","Galeão","Brasil"],
+  "SDU":["Rio de Janeiro","Santos Dumont","Brasil"],"VCP":["Campinas","Viracopos","Brasil"],
+  "CNF":["Belo Horizonte","Confins","Brasil"],"REC":["Recife","Guararapes","Brasil"],
+  "FOR":["Fortaleza","Pinto Martins","Brasil"],"SSA":["Salvador","Dep. Luís Eduardo Magalhães","Brasil"],
+  "POA":["Porto Alegre","Salgado Filho","Brasil"],"CWB":["Curitiba","Afonso Pena","Brasil"],
+  "EZE":["Buenos Aires","Ministro Pistarini (Ezeiza)","Argentina"],"AEP":["Buenos Aires","Aeroparque Jorge Newbery","Argentina"],
+  "COR":["Córdoba","Ingeniero A. L.V. Taravella","Argentina"],"SCL":["Santiago","Arturo Merino Benítez","Chile"],
+  "BOG":["Bogotá","El Dorado","Colômbia"],"MDE":["Medellín","José María Córdova","Colômbia"],
+  "LIM":["Lima","Jorge Chávez","Peru"],"CUZ":["Cusco","Alejandro Velasco Astete","Peru"],
+  "MVD":["Montevidéu","Carrasco","Uruguai"],"UIO":["Quito","Mariscal Sucre","Equador"],
+  "GYE":["Guayaquil","José Joaquín de Olmedo","Equador"],"CCS":["Caracas","Simón Bolívar","Venezuela"],
+  "ASU":["Assunção","Silvio Pettirossi","Paraguai"],"LPB":["La Paz","El Alto","Bolívia"],
+  "VVI":["Santa Cruz de la Sierra","Viru Viru","Bolívia"],
+  // América do Norte e Central
+  "JFK":["Nova York","John F. Kennedy","EUA"],"EWR":["Newark / Nova York","Newark Liberty","EUA"],
+  "LGA":["Nova York","LaGuardia","EUA"],"LAX":["Los Angeles","Los Angeles Int.","EUA"],
+  "ORD":["Chicago","O'Hare","EUA"],"ATL":["Atlanta","Hartsfield-Jackson","EUA"],
+  "MIA":["Miami","Miami Int.","EUA"],"MCO":["Orlando","Orlando Int.","EUA"],
+  "SFO":["São Francisco","San Francisco Int.","EUA"],"DFW":["Dallas","Dallas/Fort Worth","EUA"],
+  "LAS":["Las Vegas","Harry Reid","EUA"],"SEA":["Seattle","Seattle-Tacoma","EUA"],
+  "YYZ":["Toronto","Pearson","Canadá"],"YVR":["Vancouver","Vancouver Int.","Canadá"],
+  "YUL":["Montreal","Pierre Elliott Trudeau","Canadá"],"YYC":["Calgary","Calgary Int.","Canadá"],
+  "MEX":["Cidade do México","Benito Juárez","México"],"CUN":["Cancún","Cancún Int.","México"],
+  "GDL":["Guadalajara","Miguel Hidalgo y Costilla","México"],"PTY":["Cidade do Panamá","Tocumen","Panamá"],
+  "SJO":["San José","Juan Santamaría","Costa Rica"],"SAL":["San Salvador","Mons. Óscar A. Romero","El Salvador"],
+  "GUA":["Cidade da Guatemala","La Aurora","Guatemala"],"HAV":["Havana","José Martí","Cuba"],
+  "PUJ":["Punta Cana","Punta Cana Int.","Rep. Dominicana"],"SDQ":["Santo Domingo","Las Américas","Rep. Dominicana"],
+  "SJU":["San Juan","Luis Muñoz Marín","Porto Rico"],
+  // Europa
+  "LHR":["Londres","Heathrow","Reino Unido"],"LGW":["Londres","Gatwick","Reino Unido"],
+  "CDG":["Paris","Charles de Gaulle","França"],"ORY":["Paris","Orly","França"],
+  "FRA":["Frankfurt","Frankfurt Int.","Alemanha"],"MUC":["Munique","Munich Int.","Alemanha"],
+  "BER":["Berlim","Berlin Brandenburg","Alemanha"],"AMS":["Amsterdã","Schiphol","Países Baixos"],
+  "MAD":["Madri","Adolfo Suárez Madrid-Barajas","Espanha"],"BCN":["Barcelona","El Prat","Espanha"],
+  "FCO":["Roma","Leonardo da Vinci (Fiumicino)","Itália"],"MXP":["Milão","Malpensa","Itália"],
+  "VCE":["Veneza","Marco Polo","Itália"],"IST":["Istambul","Istanbul Airport","Turquia"],
+  "SAW":["Istambul","Sabiha Gökçen","Turquia"],"ZRH":["Zurique","Zurich Airport","Suíça"],
+  "GVA":["Genebra","Geneva Airport","Suíça"],"VIE":["Viena","Vienna Int.","Áustria"],
+  "LIS":["Lisboa","Humberto Delgado","Portugal"],"OPO":["Porto","Francisco Sá Carneiro","Portugal"],
+  "DUB":["Dublin","Dublin Airport","Irlanda"],"CPH":["Copenhague","Copenhagen Airport","Dinamarca"],
+  "OSL":["Oslo","Gardermoen","Noruega"],"ARN":["Estocolmo","Arlanda","Suécia"],
+  "HEL":["Helsinque","Vantaa","Finlândia"],"BRU":["Bruxelas","Brussels Airport","Bélgica"],
+  "ATH":["Atenas","Eleftherios Venizelos","Grécia"],"WAW":["Varsóvia","Chopin","Polônia"],
+  "PRG":["Praga","Václav Havel","Tchéquia"],"BUD":["Budapeste","Ferenc Liszt","Hungria"],
+  "SVO":["Moscou","Sheremetyevo","Rússia"],
+  // Ásia e Oriente Médio
+  "HND":["Tóquio","Haneda","Japão"],"NRT":["Tóquio","Narita","Japão"],
+  "KIX":["Osaka","Kansai Int.","Japão"],"PEK":["Pequim","Capital Int.","China"],
+  "PKX":["Pequim","Daxing Int.","China"],"PVG":["Xangai","Pudong","China"],
+  "CAN":["Guangzhou","Baiyun","China"],"HKG":["Hong Kong","Hong Kong Int.","Hong Kong"],
+  "ICN":["Seul","Incheon","Coreia do Sul"],"GMP":["Seul","Gimpo","Coreia do Sul"],
+  "SIN":["Singapura","Changi","Singapura"],"DXB":["Dubai","Dubai Int.","EAU"],
+  "AUH":["Abu Dhabi","Zayed Int.","EAU"],"DOH":["Doha","Hamad Int.","Catar"],
+  "RUH":["Riad","Rei Khalid","Arábia Saudita"],"JED":["Jidá","Rei Abdulaziz","Arábia Saudita"],
+  "BKK":["Bangkok","Suvarnabhumi","Tailândia"],"DMK":["Bangkok","Don Mueang","Tailândia"],
+  "KUL":["Kuala Lumpur","Kuala Lumpur Int.","Malásia"],"DEL":["Nova Délhi","Indira Gandhi","Índia"],
+  "BOM":["Mumbai","Chhatrapati Shivaji","Índia"],"BLR":["Bangalore","Kempegowda","Índia"],
+  "CGK":["Jacarta","Soekarno-Hatta","Indonésia"],"DPS":["Bali","Ngurah Rai","Indonésia"],
+  "MNL":["Manila","Ninoy Aquino","Filipinas"],"TPE":["Taipé","Taoyuan","Taiwan"],
+  "SGN":["Ho Chi Minh","Tan Son Nhat","Vietnã"],"HAN":["Hanói","Noi Bai","Vietnã"],
+  "TLV":["Tel Aviv","Ben Gurion","Israel"],"AMM":["Amã","Rainha Alia","Jordânia"],
+  // África
+  "JNB":["Joanesburgo","O. R. Tambo","África do Sul"],"CPT":["Cidade do Cabo","Cape Town Int.","África do Sul"],
+  "CAI":["Cairo","Cairo Int.","Egito"],"CMN":["Casablanca","Mohammed V","Marrocos"],
+  "RAK":["Marraquexe","Menara","Marrocos"],"ADD":["Adis Abeba","Bole Int.","Etiópia"],
+  "NBO":["Nairóbi","Jomo Kenyatta","Quênia"],"LOS":["Lagos","Murtala Muhammed","Nigéria"],
+  "ABV":["Abuja","Nnamdi Azikiwe","Nigéria"],"DKR":["Dakar","Blaise Diagne","Senegal"],
+  "ALG":["Argel","Houari Boumediene","Argélia"],"TUN":["Túnis","Carthage","Tunísia"],
+  "ACC":["Acra","Kotoka","Gana"],"MRU":["Port Louis","Sir Seewoosagur","Maurício"],
+  "SEZ":["Victoria","Seychelles Int.","Seychelles"],"EBB":["Entebbe / Kampala","Entebbe Int.","Uganda"],
+  "KGL":["Kigali","Kigali Int.","Ruanda"],"DAR":["Dar es Salaam","Julius Nyerere","Tanzânia"],
+  "LAD":["Luanda","Quatro de Fevereiro","Angola"],"MPM":["Maputo","Maputo Int.","Moçambique"],
+  // Oceania
+  "SYD":["Sydney","Kingsford Smith","Austrália"],"MEL":["Melbourne","Melbourne Airport","Austrália"],
+  "BNE":["Brisbane","Brisbane Airport","Austrália"],"PER":["Perth","Perth Airport","Austrália"],
+  "ADL":["Adelaide","Adelaide Airport","Austrália"],"AKL":["Auckland","Auckland Airport","Nova Zelândia"],
+  "WLG":["Wellington","Wellington Int.","Nova Zelândia"],"CHC":["Christchurch","Christchurch Int.","Nova Zelândia"],
+  "NAN":["Nadi","Nadi Int.","Fiji"],"POM":["Port Moresby","Jacksons Int.","Papua-Nova Guiné"],
+  "PPT":["Papeete","Faa'a Int.","Polinésia Francesa"],"GUM":["Tamuning","Antonio B. Won Pat","Guam"],
+  "NOU":["Nouméa","La Tontouta","Nova Caledônia"],"VLI":["Port Vila","Bauerfield Int.","Vanuatu"],
+  "INU":["Nauru","Nauru Int.","Nauru"]
+};
+function buildIataDatalist(){
+  if(document.getElementById("iataList")) return;
+  const dl = document.createElement("datalist");
+  dl.id = "iataList";
+  let html = "";
+  for(const code in AIRPORTS){
+    const a = AIRPORTS[code];
+    html += '<option value="'+code+'">'+esc(a[0]+" · "+a[1]+" — "+a[2])+'</option>';
+  }
+  dl.innerHTML = html;
+  document.body.appendChild(dl);
+}
+function fillCity(input, which){
+  const code = input.value.trim().toUpperCase();
+  input.value = code;
+  const a = AIRPORTS[code];
+  const row = input.closest(".row");
+  if(!row) return;
+  const cityField = which === "o" ? row.querySelector(".f-ocity") : row.querySelector(".f-dcity");
+  if(a && cityField){ cityField.value = a[0] + " · " + a[1]; }
+  debouncedPreview();
+}
+function mirrorReturn(){
+  const rows = Array.prototype.slice.call(document.querySelectorAll("#flights .row"));
+  const idaRows = rows.filter(function(r){ return r.querySelector(".f-group").value !== "Volta"; });
+  if(!idaRows.length){ toast("Cadastre os voos de ida primeiro."); return; }
+  // remove voltas existentes para não duplicar
+  rows.forEach(function(r){ if(r.querySelector(".f-group").value === "Volta") r.parentNode.removeChild(r); });
+  // espelha: inverte a ordem e troca origem/destino
+  const legs = idaRows.map(function(r){
+    return {
+      airline: r.querySelector(".f-airline").value,
+      oiata: r.querySelector(".f-diata").value, ocity: r.querySelector(".f-dcity").value,
+      diata: r.querySelector(".f-oiata").value, dcity: r.querySelector(".f-ocity").value
+    };
+  }).reverse();
+  legs.forEach(function(l){
+    addFlight({ group:"Volta", airline:l.airline, oiata:l.oiata, ocity:l.ocity, diata:l.diata, dcity:l.dcity });
+  });
+  toast("✓ Volta espelhada — ajuste apenas datas e horários.");
+  debouncedPreview();
+}
+
+/* ---------- máscaras de data e hora (preenchimento automático) ---------- */
+function maskDate(input){
+  let v = input.value.replace(/\D/g,"").slice(0,8);
+  let out = v;
+  if(v.length > 4) out = v.slice(0,2) + "/" + v.slice(2,4) + "/" + v.slice(4);
+  else if(v.length > 2) out = v.slice(0,2) + "/" + v.slice(2);
+  input.value = out;
+}
+function maskTime(input){
+  let v = input.value.replace(/\D/g,"").slice(0,4);
+  let out = v;
+  if(v.length > 2) out = v.slice(0,2) + ":" + v.slice(2);
+  input.value = out;
+}
+
+/* ---------- utilidades ---------- */
+function el(id){ return document.getElementById(id); }
+function esc(s){
+  return String(s == null ? "" : s)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
+function nl2br(s){ return esc(s).replace(/\n/g,"<br>"); }
+function toast(msg){
+  const t = el("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._t); t._t = setTimeout(()=>t.classList.remove("show"), 2600);
+}
+function showMobile(which){
+  el("colForm").classList.toggle("hide", which !== "form");
+  el("colPreview").classList.toggle("hide", which !== "prev");
+  el("tabForm").className = which==="form" ? "btn btn-navy" : "btn btn-ghost";
+  el("tabPrev").className = which==="prev" ? "btn btn-navy" : "btn btn-ghost";
+  el("tabForm").style.color = which==="form" ? "#fff" : "var(--navy)";
+  el("tabPrev").style.color = which==="prev" ? "#fff" : "var(--navy)";
+  el("tabForm").style.borderColor = "var(--navy)";
+  el("tabPrev").style.borderColor = "var(--navy)";
+  if(which==="prev") updatePreview();
+}
+
+/* ---------- logo ---------- */
+function handleLogo(e){
+  const f = e.target.files[0];
+  if(!f) return;
+  const r = new FileReader();
+  r.onload = function(ev){
+    logoDataUrl = ev.target.result;
+    el("logoPreview").innerHTML = '<img src="'+logoDataUrl+'" alt="logo" />';
+    el("logoPh").textContent = "Logo carregada — clique para trocar";
+    debouncedPreview();
+  };
+  r.readAsDataURL(f);
+}
+
+/* ---------- seletor de imagem (link OU upload do PC) ---------- */
+function imgPickMarkup(presetUrl, withRemove){
+  const u = esc(presetUrl||"");
+  const bg = presetUrl ? "background-image:url('"+String(presetUrl).replace(/'/g,"%27")+"')" : "";
+  return ''+
+    '<div class="imgpick">'+
+      '<div class="thumb" style="'+bg+'">'+(presetUrl?'':'🖼')+'</div>'+
+      '<div class="pick-body">'+
+        '<input type="hidden" class="img-url" value="'+u+'" />'+
+        '<div class="pick-actions">'+
+          '<button type="button" class="btn-up" onclick="pickImg(this)">📷 Enviar do PC</button>'+
+          (withRemove ? '<button type="button" class="btn-rem" onclick="rm(this)">remover</button>' : '')+
+        '</div>'+
+        '<input type="file" accept="image/*" style="display:none" onchange="onImgFile(event)" />'+
+        '<input type="hidden" class="img-data" />'+
+      '</div>'+
+    '</div>';
+}
+function pickImg(btn){ btn.closest(".imgpick").querySelector('input[type=file]').click(); }
+function onImgFile(e){
+  const file = e.target.files[0]; if(!file) return;
+  const pick = e.target.closest(".imgpick");
+  compressImage(file, 1280, function(dataUrl){
+    pick.querySelector(".img-data").value = dataUrl;
+    const url = pick.querySelector(".img-url");
+    url.value = ""; url.placeholder = "✓ Foto enviada do computador";
+    const thumb = pick.querySelector(".thumb");
+    thumb.style.backgroundImage = "url('"+dataUrl+"')"; thumb.textContent = "";
+    debouncedPreview();
+  });
+  e.target.value = "";
+}
+function setThumbFromUrl(input){
+  const pick = input.closest(".imgpick");
+  const v = input.value.trim();
+  pick.querySelector(".img-data").value = "";
+  const thumb = pick.querySelector(".thumb");
+  if(v){ thumb.style.backgroundImage = "url('"+v.replace(/'/g,"%27")+"')"; thumb.textContent = ""; }
+  else { thumb.style.backgroundImage = ""; thumb.textContent = "🖼"; }
+}
+function getImg(scope){
+  if(!scope) return "";
+  const dat = scope.querySelector(".img-data");
+  const url = scope.querySelector(".img-url");
+  const d = dat && dat.value.trim();
+  if(d) return d;
+  return url ? url.value.trim() : "";
+}
+function compressImage(file, maxDim, cb){
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    const img = new Image();
+    img.onload = function(){
+      let w = img.width, h = img.height;
+      if(w > maxDim || h > maxDim){
+        if(w >= h){ h = Math.round(h * maxDim / w); w = maxDim; }
+        else { w = Math.round(w * maxDim / h); h = maxDim; }
+      }
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      let out;
+      try { out = c.toDataURL("image/jpeg", 0.82); }
+      catch(err){ out = ev.target.result; }
+      cb(out);
+    };
+    img.onerror = function(){ cb(ev.target.result); };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+/* ---------- linhas dinâmicas ---------- */
+function addChild(age){
+  const wrap = document.createElement("div");
+  wrap.className = "row"; wrap.style.padding = "10px";
+  wrap.innerHTML =
+    '<div style="display:flex;gap:10px;align-items:center">'+
+      '<input type="number" min="0" max="17" class="child-age" placeholder="Idade" value="'+(age!=null?age:"")+'" style="max-width:120px" />'+
+      '<button class="btn btn-rem" type="button" onclick="rm(this)">remover</button>'+
+    '</div>';
+  el("childAges").appendChild(wrap);
+  bindLive(wrap);
+}
+function addGallery(url){
+  const wrap = document.createElement("div");
+  wrap.innerHTML = imgPickMarkup(url, true);
+  const node = wrap.firstChild;
+  el("gallery").appendChild(node);
+  bindLive(node);
+}
+function addHotelImg(url){
+  const wrap = document.createElement("div");
+  wrap.innerHTML = imgPickMarkup(url, true);
+  const node = wrap.firstChild;
+  el("hotelImgs").appendChild(node);
+  bindLive(node);
+}
+function addHotel(d){
+  d = d || {};
+  const wrap = document.createElement("div");
+  wrap.className = "hotel-block";
+  wrap.innerHTML =
+    '<div class="row-head"><strong>Hospedagem adicional</strong><button class="btn btn-rem" type="button" onclick="rmHotel(this)">remover</button></div>'+
+    '<div class="grid g2">'+
+      '<div class="field"><label>Nome do hotel</label><input type="text" class="he-name" value="'+esc(d.name||"")+'" /></div>'+
+      '<div class="field"><label>Classificação (estrelas)</label><select class="he-stars"><option value="3"'+(d.stars==="3"?" selected":"")+'>3 estrelas</option><option value="4"'+((!d.stars||d.stars==="4")?" selected":"")+'>4 estrelas</option><option value="5"'+(d.stars==="5"?" selected":"")+'>5 estrelas</option></select></div>'+
+    '</div>'+
+    '<div class="grid g2">'+
+      '<div class="field"><label>Categoria do quarto</label><input type="text" class="he-room" value="'+esc(d.room||"")+'" /></div>'+
+      '<div class="field"><label>Regime de alimentação</label><input type="text" class="he-meal" value="'+esc(d.meal||"")+'" /></div>'+
+    '</div>'+
+    '<div class="field"><label>Descrição do hotel</label><textarea class="he-desc">'+esc(d.desc||"")+'</textarea></div>'+
+    '<div class="field"><label>Fotos do hotel <span class="hint">— envie do computador</span></label><div class="he-imgs"></div>'+
+    '<button class="btn btn-add" type="button" onclick="addHotelPic(this)">+ Adicionar foto do hotel</button></div>';
+  el("hotelsExtra").appendChild(wrap);
+  bindLive(wrap);
+  (d.imgs || []).forEach(function(u){
+    const c = wrap.querySelector(".he-imgs");
+    const w = document.createElement("div"); w.innerHTML = imgPickMarkup(u, true);
+    const node = w.firstChild; c.appendChild(node); bindLive(node);
+  });
+}
+function addHotelPic(btn){
+  const c = btn.closest(".hotel-block").querySelector(".he-imgs");
+  const w = document.createElement("div"); w.innerHTML = imgPickMarkup("", true);
+  const node = w.firstChild; c.appendChild(node); bindLive(node);
+}
+function rmHotel(btn){ const r = btn.closest(".hotel-block"); r.parentNode.removeChild(r); debouncedPreview(); }
+function addFlight(d){
+  d = d || {};
+  const wrap = document.createElement("div");
+  wrap.className = "row";
+  wrap.innerHTML =
+    '<div class="row-head"><strong>Trecho de voo</strong><button class="btn btn-rem" type="button" onclick="rm(this)">remover</button></div>'+
+    '<div class="grid g2">'+
+      '<div class="field"><label>Tipo</label><select class="f-group"><option'+(d.group==="Volta"?"":" selected")+'>Ida</option><option'+(d.group==="Volta"?" selected":"")+'>Volta</option></select></div>'+
+      '<div class="field"><label>Companhia aérea</label><input type="text" class="f-airline" placeholder="LATAM" value="'+esc(d.airline||"")+'" /></div>'+
+    '</div>'+
+    '<div class="grid g2">'+
+      '<div class="field"><label>Data</label><input type="text" class="f-date" inputmode="numeric" oninput="maskDate(this)" placeholder="12/09/2026" value="'+esc(d.date||"")+'" /></div>'+
+      '<div class="field"><label>Duração <span class="hint">(opcional)</span></label><input type="text" class="f-dur" placeholder="1h10" value="'+esc(d.dur||"")+'" /></div>'+
+    '</div>'+
+    '<div class="grid g2">'+
+      '<div class="field"><label>Origem — IATA <span class="hint">(digite o código)</span></label><input type="text" class="f-oiata" list="iataList" maxlength="3" oninput="fillCity(this,\'o\')" placeholder="CNF" value="'+esc(d.oiata||"")+'" /></div>'+
+      '<div class="field"><label>Origem — cidade/aeroporto <span class="hint">(automático)</span></label><input type="text" class="f-ocity" placeholder="preenche pelo IATA" value="'+esc(d.ocity||"")+'" /></div>'+
+    '</div>'+
+    '<div class="grid g2">'+
+      '<div class="field"><label>Destino — IATA <span class="hint">(digite o código)</span></label><input type="text" class="f-diata" list="iataList" maxlength="3" oninput="fillCity(this,\'d\')" placeholder="NVT" value="'+esc(d.diata||"")+'" /></div>'+
+      '<div class="field"><label>Destino — cidade/aeroporto <span class="hint">(automático)</span></label><input type="text" class="f-dcity" placeholder="preenche pelo IATA" value="'+esc(d.dcity||"")+'" /></div>'+
+    '</div>'+
+    '<div class="grid g2">'+
+      '<div class="field"><label>Partida (hora)</label><input type="text" class="f-dep" inputmode="numeric" oninput="maskTime(this)" placeholder="06:00" value="'+esc(d.dep||"")+'" /></div>'+
+      '<div class="field"><label>Chegada (hora)</label><input type="text" class="f-arr" inputmode="numeric" oninput="maskTime(this)" placeholder="07:10" value="'+esc(d.arr||"")+'" /></div>'+
+    '</div>'+
+    '<p class="hint" style="margin:8px 0 0">💡 A conexão é calculada sozinha: basta preencher a chegada deste voo e a partida do próximo trecho.</p>';
+  el("flights").appendChild(wrap);
+  bindLive(wrap);
+}
+function addPasseio(d){
+  d = d || {};
+  const wrap = document.createElement("div");
+  wrap.className = "row";
+  wrap.innerHTML =
+    '<div class="row-head"><strong>Passeio / Ingresso</strong><button class="btn btn-rem" type="button" onclick="rm(this)">remover</button></div>'+
+    '<div class="grid g2">'+
+      '<div class="field"><label>Título</label><input type="text" class="p-title" placeholder="Ex.: nome do passeio ou ingresso" value="'+esc(d.title||"")+'" /></div>'+
+      '<div class="field"><label>Dia do passeio <span class="hint">(opcional)</span></label><input type="date" class="p-date" value="'+esc(d.date||"")+'" /></div>'+
+    '</div>'+
+    '<div class="field" style="margin-bottom:0"><label>Descrição</label><input type="text" class="p-desc" placeholder="Acesso completo + estações panorâmicas" value="'+esc(d.desc||"")+'" /></div>';
+  el("passeios").appendChild(wrap);
+  bindLive(wrap);
+}
+function addTraslado(d){
+  d = d || {};
+  const wrap = document.createElement("div");
+  wrap.className = "row";
+  wrap.innerHTML =
+    '<div class="row-head"><strong>Traslado</strong><button class="btn btn-rem" type="button" onclick="rm(this)">remover</button></div>'+
+    '<div class="grid g2">'+
+      '<div class="field"><label>Título</label><input type="text" class="t-title" placeholder="Aeroporto → Hotel" value="'+esc(d.title||"")+'" /></div>'+
+      '<div class="field"><label>Tipo</label><select class="t-type"><option'+(d.type==="Compartilhado"?"":" selected")+'>Privativo</option><option'+(d.type==="Compartilhado"?" selected":"")+'>Compartilhado</option></select></div>'+
+    '</div>'+
+    '<div class="field" style="margin-bottom:0"><label>Descrição</label><input type="text" class="t-desc" placeholder="Recepção com placa e motorista bilíngue" value="'+esc(d.desc||"")+'" /></div>';
+  el("traslados").appendChild(wrap);
+  bindLive(wrap);
+}
+function addDoc(text){
+  const wrap = document.createElement("div");
+  wrap.className = "row"; wrap.style.padding = "10px";
+  wrap.innerHTML =
+    '<div style="display:flex;gap:10px;align-items:center">'+
+      '<input type="text" class="doc-text" placeholder="Ex.: RG ou CNH originais (validade em dia)" value="'+esc(text||"")+'" />'+
+      '<button class="btn btn-rem" type="button" onclick="rm(this)">remover</button>'+
+    '</div>';
+  el("docs").appendChild(wrap);
+  bindLive(wrap);
+}
+function quickDoc(btn, t){ addDoc(t); if(btn) btn.style.display="none"; debouncedPreview(); }
+function addInclude(text){
+  const wrap = document.createElement("div");
+  wrap.className = "row"; wrap.style.padding = "10px";
+  wrap.innerHTML =
+    '<div style="display:flex;gap:10px;align-items:center">'+
+      '<input type="text" class="inc-text" placeholder="Ex.: item incluso na proposta" value="'+esc(text||"")+'" />'+
+      '<button class="btn btn-rem" type="button" onclick="rm(this)">remover</button>'+
+    '</div>';
+  el("includes").appendChild(wrap);
+  bindLive(wrap);
+}
+function quickInclude(btn, t){ addInclude(t); if(btn) btn.style.display="none"; debouncedPreview(); }
+function syncIncChips(){
+  const cur = [];
+  document.querySelectorAll("#includes .inc-text").forEach(function(i){ const v=i.value.trim().toLowerCase(); if(v) cur.push(v); });
+  document.querySelectorAll(".inc-chip").forEach(function(c){ c.style.display = cur.indexOf(c.textContent.trim().toLowerCase())>=0 ? "none" : ""; });
+}
+function syncDocChips(){
+  const cur = [];
+  document.querySelectorAll("#docs .doc-text").forEach(function(i){ const v=i.value.trim().toLowerCase(); if(v) cur.push(v); });
+  document.querySelectorAll(".doc-chip").forEach(function(c){ c.style.display = cur.indexOf(c.textContent.trim().toLowerCase())>=0 ? "none" : ""; });
+}
+function rm(btn){ const r = btn.closest(".row") || btn.closest(".imgpick"); r.parentNode.removeChild(r); debouncedPreview(); }
+
+/* ---------- preview ao vivo ---------- */
+let _t = null;
+function debouncedPreview(){ clearTimeout(_t); _t = setTimeout(updatePreview, 500); }
+function bindLive(scope){
+  (scope||document).querySelectorAll("input,textarea,select").forEach(function(i){
+    if(i._b) return; i._b = true;
+    i.addEventListener("input", debouncedPreview);
+    i.addEventListener("change", debouncedPreview);
+  });
+}
+
+/* ---------- coleta dos dados ---------- */
+function collectData(){
+  const fmt = function(v){ return v.value.trim(); };
+  const flights = [];
+  document.querySelectorAll("#flights .row").forEach(function(r){
+    flights.push({
+      group:r.querySelector(".f-group").value,
+      airline:r.querySelector(".f-airline").value.trim(),
+      date:r.querySelector(".f-date").value.trim(),
+      dur:r.querySelector(".f-dur").value.trim(),
+      ocity:r.querySelector(".f-ocity").value.trim(),
+      oiata:r.querySelector(".f-oiata").value.trim().toUpperCase(),
+      dcity:r.querySelector(".f-dcity").value.trim(),
+      diata:r.querySelector(".f-diata").value.trim().toUpperCase(),
+      dep:r.querySelector(".f-dep").value.trim(),
+      arr:r.querySelector(".f-arr").value.trim()
+    });
+  });
+  const passeios = [];
+  document.querySelectorAll("#passeios .row").forEach(function(r){
+    passeios.push({ title:r.querySelector(".p-title").value.trim(), date:r.querySelector(".p-date").value, desc:r.querySelector(".p-desc").value.trim() });
+  });
+  const traslados = [];
+  document.querySelectorAll("#traslados .row").forEach(function(r){
+    traslados.push({ title:r.querySelector(".t-title").value.trim(), type:r.querySelector(".t-type").value, desc:r.querySelector(".t-desc").value.trim() });
+  });
+  const gallery = [];
+  document.querySelectorAll("#gallery .imgpick").forEach(function(p){ const v = getImg(p); if(v) gallery.push(v); });
+  const hotelImgs = [];
+  document.querySelectorAll("#hotelImgs .imgpick").forEach(function(p){ const v = getImg(p); if(v) hotelImgs.push(v); });
+  const hotelsExtra = [];
+  document.querySelectorAll("#hotelsExtra .hotel-block").forEach(function(r){
+    const imgs = [];
+    r.querySelectorAll(".he-imgs .imgpick").forEach(function(pk){ const v = getImg(pk); if(v) imgs.push(v); });
+    hotelsExtra.push({ name:r.querySelector(".he-name").value.trim(), stars:r.querySelector(".he-stars").value, room:r.querySelector(".he-room").value.trim(), meal:r.querySelector(".he-meal").value.trim(), desc:r.querySelector(".he-desc").value.trim(), imgs:imgs });
+  });
+  const childAges = [];
+  document.querySelectorAll(".child-age").forEach(function(i){ if(i.value.trim()) childAges.push(i.value.trim()); });
+  const docs = [];
+  document.querySelectorAll(".doc-text").forEach(function(i){ if(i.value.trim()) docs.push(i.value.trim()); });
+
+  return {
+    logo: logoDataUrl,
+    agentName: el("agentName").value.trim(),
+    agentPhone: el("agentPhone").value.replace(/\D/g,""),
+    clientName: el("clientName").value.trim(),
+    adults: el("adults").value.trim(),
+    children: el("children").value.trim(),
+    childAges: childAges,
+    destName: el("destName").value.trim(),
+    destPeriod: el("destPeriod").value.trim(),
+    heroImg: getImg(el("heroPick")),
+    destText: el("destText").value.trim(),
+    gallery: gallery,
+    flights: flights,
+    bagHand: el("bagHand").checked,
+    bagPersonal: el("bagPersonal").checked,
+    bagChecked: el("bagChecked").checked,
+    bagWeight: el("bagWeight").value.trim(),
+    hotelName: el("hotelName").value.trim(),
+    hotelStars: el("hotelStars").value,
+    hotelRoom: el("hotelRoom").value.trim(),
+    hotelMeal: el("hotelMeal").value.trim(),
+    hotelDesc: el("hotelDesc").value.trim(),
+    hotelImgs: hotelImgs,
+    hotelsExtra: hotelsExtra,
+    passeios: passeios,
+    traslados: traslados,
+    docs: docs,
+    priceTotal: el("priceTotal").value.trim(),
+    pricePerson: el("pricePerson").value.trim(),
+    priceEntry: el("priceEntry").value.trim(),
+    priceInstall: el("priceInstall").value.trim(),
+    priceIncludes: (function(){ var a=[]; document.querySelectorAll("#includes .inc-text").forEach(function(i){ if(i.value.trim()) a.push(i.value.trim()); }); return a.join("\n"); })(),
+    priceNote: el("priceNote").value.trim()
+  };
+}
+
+/* ---------- export / preview ---------- */
+function updatePreview(){
+  syncDocChips();
+  syncIncChips();
+  const html = buildClientHTML(collectData());
+  el("preview").srcdoc = html;
+}
+function openInNewTab(){
+  const html = buildClientHTML(collectData());
+  const w = window.open();
+  w.document.open(); w.document.write(html); w.document.close();
+}
+function exportHTML(){
+  const data = collectData();
+  if(!data.clientName){ toast("Preencha ao menos o nome do cliente."); return; }
+  const html = buildClientHTML(data);
+  const blob = new Blob([html], {type:"text/html;charset=utf-8"});
+  const a = document.createElement("a");
+  const slug = (data.clientName || "cliente").normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-zA-Z0-9]+/g,"-").replace(/^-|-$/g,"");
+  a.href = URL.createObjectURL(blob);
+  a.download = "Orcamento-TZ-" + slug + ".html";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1500);
+  toast("✓ Orçamento exportado! Verifique seus downloads.");
+}
+function clearAll(){
+  if(!confirm("Limpar todos os campos?")) return;
+  document.querySelectorAll("input,textarea").forEach(function(i){ if(i.type!=="file") i.value=""; });
+  document.querySelectorAll("#childAges,#gallery,#flights,#passeios,#traslados,#docs,#hotelImgs,#includes,#hotelsExtra").forEach(function(c){ c.innerHTML=""; });
+  resetThumbs();
+  logoDataUrl=""; el("logoPreview").innerHTML=""; el("logoPh").textContent="📷 Clique para enviar sua logo (PNG/JPG/SVG)";
+  updatePreview();
+}
+
+/* =======================================================================
+   MODELOS — exportar / importar JSON (preenche tudo, deixa imagens em branco)
+   ===================================================================== */
+function exportJSON(){
+  const data = collectData();
+  // o modelo não leva imagens
+  data.logo = "";
+  data.heroImg = "";
+  data.gallery = (data.gallery || []).map(function(){ return ""; });
+  data.hotelImgs = (data.hotelImgs || []).map(function(){ return ""; });
+  data.hotelsExtra = (data.hotelsExtra || []).map(function(h){ return Object.assign({}, h, { imgs:(h.imgs||[]).map(function(){ return ""; }) }); });
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json;charset=utf-8"});
+  const a = document.createElement("a");
+  const base = (data.destName || data.clientName || "modelo").normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-zA-Z0-9]+/g,"-").replace(/^-|-$/g,"");
+  a.href = URL.createObjectURL(blob);
+  a.download = "Modelo-" + (base || "orcamento") + ".json";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1500);
+  toast("✓ Modelo exportado em JSON (sem imagens).");
+}
+function loadModel(){ el("modelFile").click(); }
+function onModelFile(e){
+  const f = e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = function(ev){
+    let data = null;
+    try { data = JSON.parse(ev.target.result); }
+    catch(err){ toast("Arquivo inválido — selecione um modelo .json exportado aqui."); return; }
+    applyData(data);
+    toast("✓ Modelo carregado. Agora é só subir as imagens.");
+  };
+  r.readAsText(f);
+  e.target.value = "";
+}
+function applyData(data){
+  data = data || {};
+  clearSilent();
+  logoDataUrl = ""; el("logoPreview").innerHTML = ""; el("logoPh").textContent = "📷 Clique para enviar sua logo (PNG/JPG/SVG)";
+  el("agentName").value = data.agentName || "";
+  el("agentPhone").value = data.agentPhone || "";
+  el("clientName").value = data.clientName || "";
+  el("adults").value = data.adults || "";
+  el("children").value = data.children || "";
+  (data.childAges || []).forEach(function(a){ addChild(a); });
+  el("destName").value = data.destName || "";
+  el("destPeriod").value = data.destPeriod || "";
+  el("destText").value = data.destText || ""; destTextAuto = false;
+  // imagens ficam em branco — recria apenas os espaços vazios da galeria
+  (data.gallery || []).forEach(function(){ addGallery(""); });
+  (data.flights || []).forEach(function(f){ addFlight(f); });
+  el("bagHand").checked = !!data.bagHand;
+  el("bagPersonal").checked = !!data.bagPersonal;
+  el("bagChecked").checked = !!data.bagChecked;
+  el("bagWeight").value = data.bagWeight || "";
+  el("hotelName").value = data.hotelName || "";
+  el("hotelStars").value = data.hotelStars || "4";
+  el("hotelRoom").value = data.hotelRoom || "";
+  el("hotelMeal").value = data.hotelMeal || "";
+  el("hotelDesc").value = data.hotelDesc || "";
+  (data.hotelImgs || []).forEach(function(){ addHotelImg(""); });
+  (data.hotelsExtra || []).forEach(function(h){ addHotel(h); });
+  (data.passeios || []).forEach(function(p){ addPasseio(p); });
+  (data.traslados || []).forEach(function(t){ addTraslado(t); });
+  (data.docs || []).forEach(function(t){ addDoc(t); });
+  el("priceTotal").value = data.priceTotal || "";
+  el("pricePerson").value = data.pricePerson || "";
+  el("priceEntry").value = data.priceEntry || "";
+  el("priceInstall").value = data.priceInstall || "";
+  (data.priceIncludes ? String(data.priceIncludes).split("\n") : []).forEach(function(x){ if(x.trim()) addInclude(x.trim()); });
+  el("priceNote").value = data.priceNote || "";
+  updatePreview();
+}
+
+/* =======================================================================
+   GERADOR DO HTML DO CLIENTE (arquivo autônomo e elegante)
+   ===================================================================== */
+function buildClientHTML(d){
+  const stars = function(n){ n=parseInt(n||0,10); let s=""; for(let i=0;i<5;i++) s += (i<n?"★":"☆"); return s; };
+  const fmtConn = function(min){ min=parseInt(min,10); if(!min) return ""; const h=Math.floor(min/60), m=min%60; return (h?h+"h ":"")+(m?m+"min":(h?"":"0min")); };
+  const fmtDate = function(s){ if(!s) return ""; const m=String(s).match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? (m[3]+"/"+m[2]+"/"+m[1]) : String(s); };
+
+  /* ----- bagagem ----- */
+  const bagItems = [];
+  if(d.bagPersonal) bagItems.push(["👜","Item pessoal","Mochila ou bolsa sob o assento"]);
+  if(d.bagHand) bagItems.push(["🎒","Mala de mão","Bagagem de cabine no compartimento superior"]);
+  if(d.bagChecked) bagItems.push(["🧳","Bagagem despachada", d.bagWeight || "Mala despachada inclusa"]);
+
+  /* ----- voos agrupados ----- */
+  const parseHM = function(t){
+    if(!t) return null;
+    const m = String(t).match(/(\d{1,2})\s*[:hH]\s*(\d{2})/);
+    if(m) return parseInt(m[1],10)*60 + parseInt(m[2],10);
+    const dg = String(t).replace(/\D/g,"");
+    if(dg.length===4) return parseInt(dg.slice(0,2),10)*60 + parseInt(dg.slice(2),10);
+    if(dg.length>0 && dg.length<=2) return parseInt(dg,10)*60;
+    return null;
+  };
+  function flightLeg(f, idx, arr){
+    let connBlock = "";
+    if(idx < arr.length-1){
+      const next = arr[idx+1];
+      const a = parseHM(f.arr), dpt = parseHM(next.dep);
+      let mins = null;
+      if(a!=null && dpt!=null){ mins = dpt - a; if(mins < 0) mins += 1440; }
+      const local = esc(f.dcity || f.diata || "");
+      if(mins!=null && mins > 0){
+        const longConn = mins >= 180;
+        connBlock =
+          '<div class="conn '+(longConn?"conn-long":"")+'">'+
+            '<span class="conn-ico">'+(longConn?"⏳":"🔄")+'</span>'+
+            '<div><strong>Conexão em '+local+'</strong>'+
+            '<div class="conn-time">Tempo de espera: '+esc(fmtConn(mins))+ (longConn?' · aproveite para relaxar no aeroporto':'')+'</div></div>'+
+          '</div>';
+      } else if(local){
+        connBlock =
+          '<div class="conn"><span class="conn-ico">🔄</span><div><strong>Conexão em '+local+'</strong></div></div>';
+      }
+    }
+    return ''+
+      '<div class="leg reveal">'+
+        '<div class="leg-line">'+
+          '<div class="leg-dot"></div>'+
+          (idx < arr.length-1 ? '<div class="leg-bar"></div>' : '')+
+        '</div>'+
+        '<div class="leg-body">'+
+          '<div class="leg-top"><span class="leg-airline">✈ '+esc(f.airline||"Voo")+(f.num?' · '+esc(f.num):'')+'</span>'+(f.date?'<span class="leg-date">'+esc(f.date)+'</span>':'')+'</div>'+
+          '<div class="leg-route">'+
+            '<div class="leg-end"><div class="leg-time">'+esc(f.dep||"--:--")+'</div><div class="leg-iata">'+esc(f.oiata||"")+'</div><div class="leg-city">'+esc(f.ocity||"")+'</div></div>'+
+            '<div class="leg-mid"><div class="leg-dur">'+esc(f.dur||"")+'</div><div class="leg-arrow">———✈———</div></div>'+
+            '<div class="leg-end leg-end-r"><div class="leg-time">'+esc(f.arr||"--:--")+'</div><div class="leg-iata">'+esc(f.diata||"")+'</div><div class="leg-city">'+esc(f.dcity||"")+'</div></div>'+
+          '</div>'+
+        '</div>'+
+      '</div>'+ connBlock;
+  }
+  function flightGroup(title, items){
+    if(!items.length) return "";
+    let body = "";
+    items.forEach(function(f,i){ body += flightLeg(f,i,items); });
+    return '<div class="flight-group reveal"><h3 class="fg-title">'+esc(title)+'</h3><div class="legs">'+body+'</div></div>';
+  }
+  const idaFlights = d.flights.filter(function(f){ return f.group !== "Volta"; });
+  const voltaFlights = d.flights.filter(function(f){ return f.group === "Volta"; });
+  let flightsSection = "";
+  if(d.flights.length){
+    flightsSection =
+      '<section class="section sec-flights" id="voos">'+
+        '<div class="container">'+
+          '<div class="eyebrow reveal">Cronograma de Voos</div>'+
+          '<h2 class="sec-title reveal">Sua Jornada pelos Ares</h2>'+
+          flightGroup("Ida", idaFlights)+
+          flightGroup("Volta", voltaFlights)+
+          (bagItems.length ?
+            '<div class="bag-box reveal"><h3 class="bag-title">Franquia de bagagem inclusa</h3><div class="bag-grid">'+
+              bagItems.map(function(b){ return '<div class="bag-item"><span class="bag-ico">'+b[0]+'</span><div><strong>'+esc(b[1])+'</strong><span>'+esc(b[2])+'</span></div></div>'; }).join("")+
+            '</div></div>' : '')+
+        '</div>'+
+      '</section>';
+  }
+
+  /* ----- galeria ----- */
+  let gallerySection = "";
+  if(d.gallery.length || d.destText){
+    let imgs = d.gallery.map(function(u){
+      return '<button class="g-thumb reveal" onclick="lightbox(\''+u.replace(/'/g,"%27")+'\')" style="background-image:url('+JSON.stringify(u).slice(1,-1)+')"></button>';
+    }).join("");
+    gallerySection =
+      '<section class="section sec-gallery" id="destino">'+
+        '<div class="container">'+
+          '<div class="eyebrow reveal">O Destino</div>'+
+          '<h2 class="sec-title reveal">'+esc(d.destName||"Um lugar inesquecível")+'</h2>'+
+          (d.destText ? '<p class="lead reveal">'+nl2br(d.destText)+'</p>' : '')+
+          (imgs ? '<div class="gallery-grid">'+imgs+'</div>' : '')+
+        '</div>'+
+      '</section>';
+  }
+
+  /* ----- hotel ----- */
+  let hotelSection = "";
+  if(d.hotelName){
+    let himgs = d.hotelImgs.map(function(u){
+      return '<button class="g-thumb reveal" onclick="lightbox(\''+u.replace(/'/g,"%27")+'\')" style="background-image:url('+JSON.stringify(u).slice(1,-1)+')"></button>';
+    }).join("");
+    const incl = [];
+    if(d.hotelMeal) incl.push(d.hotelMeal);
+    if(d.hotelRoom) incl.push(d.hotelRoom);
+    hotelSection =
+      '<section class="section sec-hotel" id="hotel">'+
+        '<div class="container">'+
+          '<div class="eyebrow reveal">Conheça a sua hospedagem</div>'+
+          '<h2 class="sec-title reveal">'+esc(d.hotelName)+'</h2>'+
+          '<div class="hotel-stars reveal">'+stars(d.hotelStars)+'</div>'+
+          '<div class="hotel-tags reveal">'+
+            (d.hotelRoom ? '<span class="tag">🛏 '+esc(d.hotelRoom)+'</span>' : '')+
+            (d.hotelMeal ? '<span class="tag tag-gold">☕ '+esc(d.hotelMeal)+'</span>' : '')+
+          '</div>'+
+          (d.hotelDesc ? '<p class="lead reveal">'+nl2br(d.hotelDesc)+'</p>' : '')+
+          (himgs ? '<div class="gallery-grid">'+himgs+'</div>' : '')+
+        '</div>'+
+      '</section>';
+  }
+
+  /* ----- hospedagens adicionais ----- */
+  let extraHotelsSection = "";
+  if(d.hotelsExtra && d.hotelsExtra.length){
+    extraHotelsSection = d.hotelsExtra.filter(function(h){ return h && h.name; }).map(function(h){
+      let himgs = (h.imgs||[]).map(function(u){
+        return '<button class="g-thumb reveal" onclick="lightbox(\''+u.replace(/'/g,"%27")+'\')" style="background-image:url('+JSON.stringify(u).slice(1,-1)+')"></button>';
+      }).join("");
+      return '<section class="section sec-hotel"><div class="container">'+
+        '<div class="eyebrow reveal">Hospedagem</div>'+
+        '<h2 class="sec-title reveal">'+esc(h.name)+'</h2>'+
+        '<div class="hotel-stars reveal">'+stars(h.stars)+'</div>'+
+        '<div class="hotel-tags reveal">'+
+          (h.room ? '<span class="tag">🛏 '+esc(h.room)+'</span>' : '')+
+          (h.meal ? '<span class="tag tag-gold">☕ '+esc(h.meal)+'</span>' : '')+
+        '</div>'+
+        (h.desc ? '<p class="lead reveal">'+nl2br(h.desc)+'</p>' : '')+
+        (himgs ? '<div class="gallery-grid">'+himgs+'</div>' : '')+
+      '</div></section>';
+    }).join("");
+  }
+
+  /* ----- experiências ----- */
+  let expSection = "";
+  if(d.passeios.length || d.traslados.length){
+    let pcards = d.passeios.map(function(p){
+      const dt = fmtDate(p.date);
+      return '<div class="exp-card reveal"><span class="exp-ico">🎟</span><div><strong>'+esc(p.title)+'</strong>'+(dt?'<span class="exp-date">🗓 '+esc(dt)+'</span>':'')+(p.desc?'<p>'+esc(p.desc)+'</p>':'')+'</div></div>';
+    }).join("");
+    let tcards = d.traslados.map(function(t){
+      return '<div class="exp-card reveal"><span class="exp-ico">🚐</span><div><strong>'+esc(t.title)+' <em class="exp-type">'+esc(t.type)+'</em></strong>'+(t.desc?'<p>'+esc(t.desc)+'</p>':'')+'</div></div>';
+    }).join("");
+    expSection =
+      '<section class="section sec-exp" id="experiencias">'+
+        '<div class="container">'+
+          '<div class="eyebrow reveal">Experiências & Logística</div>'+
+          '<h2 class="sec-title reveal">Tudo Incluído na Sua Viagem</h2>'+
+          (pcards ? '<h3 class="sub reveal">Passeios & Ingressos</h3><div class="exp-grid">'+pcards+'</div>' : '')+
+          (tcards ? '<h3 class="sub reveal">Traslados</h3><div class="exp-grid">'+tcards+'</div>' : '')+
+        '</div>'+
+      '</section>';
+  }
+
+  /* ----- documentos ----- */
+  let docsSection = "";
+  if(d.docs.length){
+    let items = d.docs.map(function(t){
+      return '<li class="reveal"><span class="doc-check">✓</span>'+esc(t)+'</li>';
+    }).join("");
+    docsSection =
+      '<section class="section sec-docs" id="documentos">'+
+        '<div class="container">'+
+          '<div class="eyebrow reveal">Antes de Embarcar</div>'+
+          '<h2 class="sec-title reveal">Documentos Essenciais</h2>'+
+          '<ul class="doc-list">'+items+'</ul>'+
+        '</div>'+
+      '</section>';
+  }
+
+  /* ----- preço ----- */
+  let includesList = "";
+  if(d.priceIncludes){
+    includesList = '<ul class="incl-list">'+ d.priceIncludes.split("\n").filter(function(x){return x.trim();}).map(function(x){
+      return '<li class="reveal"><span class="doc-check">✓</span>'+esc(x.trim())+'</li>';
+    }).join("") + '</ul>';
+  }
+  let priceSection = "";
+  if(d.priceTotal || d.priceInstall || d.priceEntry){
+    priceSection =
+      '<section class="section sec-price" id="investimento">'+
+        '<div class="container">'+
+          '<div class="eyebrow eyebrow-light reveal">O Seu Investimento</div>'+
+          '<h2 class="sec-title sec-title-light reveal">Condições Especiais</h2>'+
+          '<div class="price-card reveal">'+
+            (d.priceTotal ? '<div class="price-total"><span class="pt-label">Valor total do pacote</span><span class="pt-value">R$ '+esc(d.priceTotal)+'</span></div>' : '')+
+            (d.pricePerson ? '<div class="price-person">ou R$ '+esc(d.pricePerson)+' por pessoa</div>' : '')+
+            ((d.priceEntry||d.priceInstall) ?
+              '<div class="price-pay">'+
+                (d.priceEntry ? '<div class="pay-row"><span>Entrada</span><strong>R$ '+esc(d.priceEntry)+'</strong></div>' : '')+
+                (d.priceInstall ? '<div class="pay-row"><span>Parcelamento</span><strong>'+esc(d.priceInstall)+'</strong></div>' : '')+
+              '</div>' : '')+
+            (includesList ? '<div class="price-incl"><h4>A proposta inclui</h4>'+includesList+'</div>' : '')+
+          '</div>'+
+          (d.priceNote ? '<p class="price-note reveal">'+nl2br(d.priceNote)+'</p>' : '')+
+        '</div>'+
+      '</section>';
+  }
+
+  /* ----- WhatsApp CTA ----- */
+  const waMsg = encodeURIComponent("Olá "+(d.agentName||"")+"! Acabei de ver a proposta de viagem para "+(d.destName||"o destino")+" e gostaria de aprovar o roteiro e confirmar a reserva.");
+  const waLink = d.agentPhone ? ("https://wa.me/"+d.agentPhone+"?text="+waMsg) : "#investimento";
+
+  /* ----- pax label ----- */
+  let pax = [];
+  if(d.adults) pax.push(d.adults + " adulto" + (parseInt(d.adults,10)===1?"":"s"));
+  if(d.children && parseInt(d.children,10)>0){
+    let c = d.children + " criança" + (parseInt(d.children,10)===1?"":"s");
+    if(d.childAges.length) c += " ("+d.childAges.join(", ")+" anos)";
+    pax.push(c);
+  }
+  const paxLabel = pax.join(" · ");
+
+  /* ----- logo / wordmark ----- */
+  const logoHTML = d.logo ?
+    '<img src="'+d.logo+'" alt="TZ Viagens" class="hero-logo-img" />' :
+    '<div class="hero-wordmark"><span class="wm-mark">TZ</span><span class="wm-text">TZ VIAGENS<small>João Monlevade</small></span></div>';
+
+  /* ====== documento final ====== */
+  const heroBg = d.heroImg || "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1600&q=80";
+
+  const CLIENT_CSS = [
+    ":root{--navy:#0f2440;--navy2:#16345c;--gold:#c8a14a;--gold2:#e7d3a1;--champ:#f6efe2;--ink:#222b38;--muted:#5d6b7d;--line:#e9e2d2;}",
+    "*{box-sizing:border-box;margin:0;padding:0;}",
+    "html{scroll-behavior:smooth;}",
+    "body{font-family:'Inter','Montserrat',-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:#fff;line-height:1.7;font-size:17px;}",
+    "h1,h2,h3,.serif{font-family:'Playfair Display',Georgia,'Times New Roman',serif;}",
+    ".container{max-width:1040px;margin:0 auto;padding:0 26px;}",
+    ".section{padding:84px 0;}",
+    ".eyebrow{text-transform:uppercase;letter-spacing:4px;font-size:13px;font-weight:700;color:var(--gold);margin-bottom:14px;}",
+    ".eyebrow-light{color:var(--gold2);}",
+    ".sec-title{font-size:40px;color:var(--navy);line-height:1.15;margin-bottom:26px;font-weight:700;}",
+    ".sec-title-light{color:#fff;}",
+    ".sub{font-family:'Playfair Display',Georgia,serif;font-size:24px;color:var(--navy);margin:34px 0 18px;}",
+    ".lead{font-size:18.5px;color:var(--muted);max-width:760px;margin-bottom:30px;}",
+    /* hero */
+    ".hero{position:relative;min-height:100vh;min-height:100svh;display:flex;flex-direction:column;justify-content:space-between;color:#fff;text-align:center;background-image:linear-gradient(rgba(10,22,40,.55),rgba(10,22,40,.78)),url('"+heroBg+"');background-size:cover;background-position:center;padding:40px 26px 70px;}",
+    ".hero-top{display:flex;justify-content:center;padding-top:14px;}",
+    ".hero-logo-img{max-height:84px;filter:drop-shadow(0 4px 12px rgba(0,0,0,.4));}",
+    ".hero-wordmark{display:flex;align-items:center;gap:14px;}",
+    ".wm-mark{width:56px;height:56px;border:2px solid var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',Georgia,serif;font-size:22px;color:var(--gold);font-weight:700;}",
+    ".wm-text{font-family:'Playfair Display',Georgia,serif;font-size:22px;letter-spacing:3px;text-align:left;line-height:1.1;}",
+    ".wm-text small{display:block;font-size:11px;letter-spacing:3px;color:var(--gold2);font-family:'Inter',sans-serif;}",
+    ".hero-center{margin:auto 0;}",
+    ".hero-pre{letter-spacing:5px;text-transform:uppercase;font-size:14px;color:var(--gold2);margin-bottom:22px;}",
+    ".hero-title{font-size:52px;line-height:1.12;text-transform:uppercase;letter-spacing:1px;margin-bottom:22px;text-shadow:0 2px 20px rgba(0,0,0,.4);}",
+    ".hero-title .accent{color:var(--gold2);display:block;}",
+    ".hero-sub{font-size:20px;color:#eef2f7;font-weight:300;}",
+    ".hero-meta{margin-top:10px;font-size:15px;color:var(--gold2);letter-spacing:1px;}",
+    ".hero-scroll{font-size:13px;letter-spacing:3px;text-transform:uppercase;color:#cdd6e2;animation:bob 2s infinite;}",
+    "@keyframes bob{0%,100%{transform:translateY(0);opacity:.7;}50%{transform:translateY(7px);opacity:1;}}",
+    /* diferenciais */
+    ".sec-diff{background:var(--champ);}",
+    ".diff-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;margin-top:10px;}",
+    ".diff-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:30px 22px;text-align:center;box-shadow:0 10px 30px rgba(15,36,64,.05);}",
+    ".diff-ico{font-size:32px;display:block;margin-bottom:14px;}",
+    ".diff-card h3{font-size:19px;color:var(--navy);margin-bottom:8px;}",
+    ".diff-card p{font-size:14.5px;color:var(--muted);}",
+    /* gallery */
+    ".gallery-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px;}",
+    ".g-thumb{height:210px;border:none;border-radius:14px;background-size:cover;background-position:center;cursor:pointer;transition:.3s;box-shadow:0 8px 22px rgba(15,36,64,.12);}",
+    ".g-thumb:hover{transform:translateY(-4px) scale(1.01);box-shadow:0 16px 34px rgba(15,36,64,.22);}",
+    /* flights */
+    ".sec-flights{background:#fbfcfe;}",
+    ".flight-group{margin-bottom:34px;}",
+    ".fg-title{font-family:'Playfair Display',Georgia,serif;font-size:22px;color:var(--gold);margin-bottom:16px;border-bottom:1px solid var(--line);padding-bottom:8px;}",
+    ".leg{display:flex;gap:18px;}",
+    ".leg-line{display:flex;flex-direction:column;align-items:center;padding-top:6px;}",
+    ".leg-dot{width:14px;height:14px;border-radius:50%;background:var(--gold);border:3px solid var(--champ);box-shadow:0 0 0 2px var(--gold);}",
+    ".leg-bar{flex:1;width:2px;background:linear-gradient(var(--gold),var(--gold2));min-height:30px;margin:4px 0;}",
+    ".leg-body{flex:1;background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px 22px;margin-bottom:6px;box-shadow:0 6px 18px rgba(15,36,64,.06);}",
+    ".leg-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}",
+    ".leg-airline{font-weight:700;color:var(--navy);font-size:14.5px;letter-spacing:.5px;}",
+    ".leg-date{font-size:13px;color:var(--muted);background:var(--champ);padding:3px 10px;border-radius:20px;}",
+    ".leg-route{display:flex;align-items:center;justify-content:space-between;gap:10px;}",
+    ".leg-end{text-align:center;}",
+    ".leg-end-r{text-align:center;}",
+    ".leg-time{font-family:'Playfair Display',Georgia,serif;font-size:30px;color:var(--navy);font-weight:700;}",
+    ".leg-iata{font-weight:700;color:var(--gold);letter-spacing:1px;font-size:15px;}",
+    ".leg-city{font-size:13px;color:var(--muted);}",
+    ".leg-mid{flex:1;text-align:center;color:var(--muted);}",
+    ".leg-dur{font-size:13px;margin-bottom:2px;}",
+    ".leg-arrow{color:var(--gold2);letter-spacing:1px;font-size:13px;}",
+    ".conn{display:flex;gap:12px;align-items:center;background:#eef4fb;border-left:4px solid #6ea8e0;border-radius:10px;padding:12px 16px;margin:2px 0 18px 40px;font-size:14px;color:var(--navy);}",
+    ".conn-long{background:#fff7e8;border-left-color:var(--gold);}",
+    ".conn-ico{font-size:20px;}",
+    ".conn-time{font-size:13px;color:var(--muted);}",
+    ".bag-box{background:var(--navy);color:#fff;border-radius:18px;padding:28px 30px;margin-top:18px;}",
+    ".bag-title{font-family:'Playfair Display',Georgia,serif;color:var(--gold2);font-size:20px;margin-bottom:18px;}",
+    ".bag-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:18px;}",
+    ".bag-item{display:flex;gap:12px;align-items:center;}",
+    ".bag-ico{font-size:28px;}",
+    ".bag-item strong{display:block;font-size:15px;}",
+    ".bag-item span{font-size:13px;color:#c4d0df;}",
+    /* hotel */
+    ".hotel-stars{color:var(--gold);font-size:24px;letter-spacing:3px;margin-bottom:14px;}",
+    ".hotel-tags{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:22px;}",
+    ".tag{background:#fff;border:1px solid var(--line);border-radius:30px;padding:8px 16px;font-size:14px;color:var(--navy);font-weight:600;}",
+    ".tag-gold{background:var(--champ);border-color:var(--gold2);}",
+    /* exp */
+    ".sec-exp{background:var(--champ);}",
+    ".exp-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;}",
+    ".exp-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px;display:flex;gap:16px;align-items:flex-start;box-shadow:0 8px 22px rgba(15,36,64,.05);}",
+    ".exp-ico{font-size:26px;}",
+    ".exp-card strong{color:var(--navy);font-size:16.5px;display:block;margin-bottom:4px;}",
+    ".exp-card p{font-size:14.5px;color:var(--muted);}",
+    ".exp-type{font-style:normal;font-size:11px;background:var(--gold);color:#231a05;padding:2px 8px;border-radius:20px;margin-left:6px;vertical-align:middle;font-weight:700;}",
+    ".exp-date{display:block;font-size:12px;color:var(--muted);margin:3px 0 5px;letter-spacing:.3px;}",
+    /* docs */
+    ".doc-list,.incl-list{list-style:none;max-width:680px;}",
+    ".doc-list li,.incl-list li{display:flex;gap:14px;align-items:flex-start;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 20px;margin-bottom:12px;font-size:16px;color:var(--ink);box-shadow:0 4px 14px rgba(15,36,64,.04);}",
+    ".doc-check{flex-shrink:0;width:26px;height:26px;background:var(--gold);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;}",
+    /* price */
+    ".sec-price{background:linear-gradient(150deg,var(--navy),var(--navy2));color:#fff;}",
+    ".price-card{background:#fff;color:var(--ink);border-radius:22px;padding:40px;max-width:620px;box-shadow:0 24px 60px rgba(0,0,0,.35);border-top:5px solid var(--gold);}",
+    ".price-total{text-align:center;border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:8px;}",
+    ".pt-label{display:block;text-transform:uppercase;letter-spacing:2px;font-size:13px;color:var(--muted);margin-bottom:6px;}",
+    ".pt-value{font-family:'Playfair Display',Georgia,serif;font-size:46px;color:var(--navy);font-weight:700;}",
+    ".price-person{text-align:center;color:var(--muted);font-size:15px;margin-bottom:22px;}",
+    ".price-pay{margin:14px 0;}",
+    ".pay-row{display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px dashed var(--line);}",
+    ".pay-row span{color:var(--muted);}",
+    ".pay-row strong{color:var(--navy);font-size:17px;}",
+    ".price-incl h4{font-family:'Playfair Display',Georgia,serif;color:var(--navy);margin:20px 0 12px;font-size:18px;}",
+    ".price-incl .incl-list li{box-shadow:none;border-color:#eef0f3;padding:11px 14px;margin-bottom:8px;font-size:14.5px;}",
+    ".price-note{margin-top:24px;font-size:13.5px;color:#b9c4d4;max-width:620px;font-style:italic;}",
+    /* cta */
+    ".final-cta{background:var(--champ);text-align:center;padding:90px 26px;}",
+    ".final-cta h2{font-size:38px;color:var(--navy);margin-bottom:14px;}",
+    ".final-cta p{color:var(--muted);font-size:18px;margin-bottom:30px;}",
+    ".btn-approve{display:inline-flex;align-items:center;gap:12px;background:linear-gradient(120deg,var(--gold),#d9b85f);color:#231a05;font-weight:800;font-size:19px;padding:20px 44px;border-radius:50px;text-decoration:none;box-shadow:0 14px 36px rgba(200,161,74,.5);transition:.2s;letter-spacing:.3px;}",
+    ".btn-approve:hover{transform:translateY(-2px);filter:brightness(1.05);}",
+    ".float-cta{position:fixed;bottom:22px;right:22px;z-index:90;background:#25d366;color:#fff;display:flex;align-items:center;gap:10px;padding:15px 22px;border-radius:50px;text-decoration:none;font-weight:700;font-size:15px;box-shadow:0 10px 30px rgba(37,211,102,.5);transition:.2s;}",
+    ".float-cta:hover{transform:scale(1.04);}",
+    ".footer{background:var(--navy);color:#9fb0c6;text-align:center;padding:40px 26px;font-size:13.5px;}",
+    ".footer .fwm{font-family:'Playfair Display',Georgia,serif;color:var(--gold2);font-size:20px;letter-spacing:3px;margin-bottom:8px;}",
+    /* lightbox */
+    "#lb{position:fixed;inset:0;background:rgba(8,16,30,.92);display:none;align-items:center;justify-content:center;z-index:200;padding:30px;cursor:zoom-out;}",
+    "#lb.show{display:flex;}",
+    "#lb img{max-width:92%;max-height:90%;border-radius:12px;box-shadow:0 30px 80px rgba(0,0,0,.6);}",
+    /* reveal */
+    ".reveal{opacity:1;transform:none;}",
+    "html.js .reveal{opacity:0;transform:translateY(26px);transition:opacity .7s ease,transform .7s ease;}",
+    "html.js .reveal.visible{opacity:1;transform:none;}",
+    /* responsive */
+    "@media(max-width:820px){.hero-title{font-size:34px;}.sec-title{font-size:30px;}.diff-grid{grid-template-columns:1fr 1fr;}.gallery-grid{grid-template-columns:1fr 1fr;}.exp-grid{grid-template-columns:1fr;}.price-card{padding:28px 22px;}.leg-time{font-size:24px;}.section{padding:60px 0;}.pt-value{font-size:38px;}}",
+    "@media(max-width:520px){.diff-grid{grid-template-columns:1fr;}.gallery-grid{grid-template-columns:1fr;}.leg-mid{display:none;}.float-cta span{display:none;}.float-cta{padding:16px;}}"
+  ].join("\n");
+
+  /* client-side interactivity (no backticks, no template literals) */
+  const CLIENT_JS =
+    "function lightbox(src){var lb=document.getElementById('lb');if(!lb)return;lb.querySelector('img').src=src;lb.classList.add('show');}" +
+    "try{document.getElementById('lb').addEventListener('click',function(){this.classList.remove('show');});}catch(e){}" +
+    "(function(){var els=document.querySelectorAll('.reveal');function show(n){n.classList.add('visible');}" +
+    "if('IntersectionObserver' in window){var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){show(e.target);io.unobserve(e.target);}});},{threshold:0.10,rootMargin:'0px 0px -4% 0px'});Array.prototype.forEach.call(els,function(n){io.observe(n);});}" +
+    "else{Array.prototype.forEach.call(els,show);}" +
+    "setTimeout(function(){Array.prototype.forEach.call(els,show);},2400);}());";
+
+  let out = "";
+  out += "<!DOCTYPE html><html lang='pt-BR'><head><meta charset='UTF-8' />";
+  out += "<meta name='viewport' content='width=device-width, initial-scale=1.0, viewport-fit=cover' />";
+  out += "<title>Proposta de Viagem · "+esc(d.clientName||"Cliente")+" · TZ Viagens</title>";
+  out += "<script>document.documentElement.className+=' js';<\/script>";
+  out += "<link rel='preconnect' href='https://fonts.googleapis.com'><link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>";
+  out += "<link href='https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Inter:wght@300;400;500;600;700&family=Montserrat:wght@400;600&display=swap' rel='stylesheet'>";
+  out += "<style>"+CLIENT_CSS+"</style></head><body>";
+
+  /* 1. HERO */
+  out += "<header class='hero'>";
+  out += "<div class='hero-top'>"+logoHTML+"</div>";
+  out += "<div class='hero-center'>";
+  out += "<div class='hero-pre'>Proposta Exclusiva de Viagem</div>";
+  out += "<h1 class='hero-title'>Uma Jornada Preparada<span class='accent'>Para "+esc((d.clientName||"Você").toUpperCase())+"</span></h1>";
+  out += "<div class='hero-sub'>"+esc(d.destName||"")+(d.destPeriod?" &nbsp;·&nbsp; "+esc(d.destPeriod):"")+"</div>";
+  if(paxLabel) out += "<div class='hero-meta'>"+esc(paxLabel)+"</div>";
+  out += "</div>";
+  out += "<div class='hero-scroll'>↓ deslize para conhecer ↓</div>";
+  out += "</header>";
+
+  /* 2. DIFERENCIAIS */
+  out += "<section class='section sec-diff'><div class='container'>";
+  out += "<div class='eyebrow reveal' style='text-align:center'>Por que a TZ Viagens?</div>";
+  out += "<h2 class='sec-title reveal' style='text-align:center'>A Diferença Está nos Detalhes</h2>";
+  out += "<div class='diff-grid'>";
+  out += "<div class='diff-card reveal'><span class='diff-ico'>✦</span><h3>Roteiro Artesanal</h3><p>Desenhado sob medida para a sua experiência.</p></div>";
+  out += "<div class='diff-card reveal'><span class='diff-ico'>☎</span><h3>Assessoria 24 Horas</h3><p>Suporte bilíngue e plantão durante toda a jornada.</p></div>";
+  out += "<div class='diff-card reveal'><span class='diff-ico'>✈</span><h3>Reunião Pré-Embarque</h3><p>Alinhamento minucioso de cada detalhe antes da partida.</p></div>";
+  out += "<div class='diff-card reveal'><span class='diff-ico'>🎁</span><h3>Kit Viagem</h3><p>Mimos exclusivos da nossa agência para você.</p></div>";
+  out += "</div></div></section>";
+
+  /* 3. GALERIA / DESTINO */
+  out += gallerySection;
+  /* 4. VOOS */
+  out += flightsSection;
+  /* 5. HOTEL */
+  out += hotelSection;
+  out += extraHotelsSection;
+  /* 6. EXPERIÊNCIAS */
+  out += expSection;
+  /* 7. DOCUMENTOS */
+  out += docsSection;
+  /* 8. INVESTIMENTO */
+  out += priceSection;
+
+  /* 9. CTA FINAL */
+  out += "<section class='final-cta'><div class='container'>";
+  out += "<h2 class='reveal'>Pronto para Embarcar?</h2>";
+  out += "<p class='reveal'>Seu roteiro está reservado e aguardando a sua aprovação. Vamos juntos transformar este sonho em realidade.</p>";
+  out += "<a class='btn-approve reveal' href='"+waLink+"' target='_blank' rel='noopener'>✓ Aprovar Roteiro &amp; Confirmar Reserva</a>";
+  out += "</div></section>";
+
+  /* FOOTER */
+  out += "<footer class='footer'><div class='fwm'>TZ VIAGENS</div>";
+  out += "<div>"+esc(d.agentName||"Dionathan Carvalho")+" · João Monlevade · MG</div>";
+  out += "<div style='margin-top:6px;opacity:.7'>Esta proposta é pessoal e intransferível. Imagens meramente ilustrativas.</div></footer>";
+
+  /* FLOAT CTA + LIGHTBOX */
+  out += "<a class='float-cta' href='"+waLink+"' target='_blank' rel='noopener'>💬 <span>Falar com o consultor</span></a>";
+  out += "<div id='lb'><img src='' alt='' /></div>";
+
+  out += "<script>"+CLIENT_JS+"<\/script>";
+  out += "</body></html>";
+  return out;
+}
+
+/* =======================================================================
+   ESTADO INICIAL — formulário em branco (sem exemplo)
+   ===================================================================== */
+function loadBlank(){
+  addFlight({group:"Ida"});
+  addPasseio();
+  addTraslado();
+  addDoc();
+  updatePreview();
+}
+
+function clearSilent(){
+  document.querySelectorAll("input,textarea").forEach(function(i){ if(i.type!=="file" && i.type!=="checkbox") i.value=""; });
+  document.querySelectorAll("#childAges,#gallery,#flights,#passeios,#traslados,#docs,#hotelImgs,#includes,#hotelsExtra").forEach(function(c){ c.innerHTML=""; });
+  resetThumbs();
+}
+function resetThumbs(){
+  document.querySelectorAll(".imgpick").forEach(function(p){
+    const t = p.querySelector(".thumb"); if(t){ t.style.backgroundImage=""; t.textContent="🖼"; }
+    const d = p.querySelector(".img-data"); if(d) d.value="";
+    const u = p.querySelector(".img-url"); if(u){ u.value=""; u.placeholder="Cole o link da foto OU envie do PC →"; }
+  });
+}
+
+/* ---------- init ---------- */
+buildIataDatalist();
+bindLive(document);
+loadBlank();
+</script>
+</body>
+</html>
