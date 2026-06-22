@@ -873,10 +873,8 @@ function blankQuote(){ return { id:uid(), createdAt:localNowISO(), status:'abert
 let currentQuote=null;
 
 function renderOrcamentos(c){
-  c.innerHTML=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px"><button class="btn btn-primary" id="newQuoteBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Novo orçamento</button><button class="btn btn-outline-blue" id="importJsonBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Importar JSON</button><input type="file" id="jsonImportInput" accept="application/json" style="display:none"></div><div id="quoteFormWrap"></div><div id="quoteListWrap"></div>`;
+  c.innerHTML=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px"><button class="btn btn-primary" id="newQuoteBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Novo orçamento</button></div><div id="quoteFormWrap"></div><div id="quoteListWrap"></div>`;
   document.getElementById('newQuoteBtn').addEventListener('click',()=>VOA.open());
-  document.getElementById('importJsonBtn').addEventListener('click',()=>document.getElementById('jsonImportInput').click());
-  document.getElementById('jsonImportInput').addEventListener('change',handleImportJSON);
   renderQuoteList();
 }
 
