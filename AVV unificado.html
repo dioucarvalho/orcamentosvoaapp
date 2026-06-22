@@ -398,6 +398,10 @@ table.tbl th.num{text-align:right}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
         Relatórios
       </div>
+      <div class="nav-item" data-view="posvenda">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3z"/><path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
+        Pós-Venda TZ Viagens
+      </div>
     </nav>
     <div class="user-panel">
       <div class="who">
@@ -822,7 +826,7 @@ function requestNameChange(){
 }
 function confirmNameChange(){ const pass=document.getElementById('adminPass').value; const newName=document.getElementById('newName').value.trim(); if(pass!==ADMIN_PASS){ toast('Senha incorreta','danger'); return; } if(!newName){ toast('Informe um novo nome','warning'); return; } state.user.name=newName; save(STORE.USER,state.user); document.getElementById('userName').textContent=newName; document.getElementById('topUserName').textContent=newName.split(' ')[0]; document.getElementById('userInitial').textContent=newName[0].toUpperCase(); closeModal(); toast('Nome atualizado','success'); }
 
-const VIEW_META = { dashboard:{title:'Dashboard',sub:'Visão geral do desempenho'}, orcamentos:{title:'Orçamentos',sub:'Gere, gerencie e acompanhe propostas de viagem'}, controle:{title:'Controle Diário',sub:'Rotina, metas e métricas do mês'}, agenda:{title:'Agenda de Viajantes',sub:'Calendário de embarques e oportunidades de upsell'}, relatorios:{title:'Relatórios',sub:'Exportação consolidada de desempenho em PDF'} };
+const VIEW_META = { dashboard:{title:'Dashboard',sub:'Visão geral do desempenho'}, orcamentos:{title:'Orçamentos',sub:'Gere, gerencie e acompanhe propostas de viagem'}, controle:{title:'Controle Diário',sub:'Rotina, metas e métricas do mês'}, agenda:{title:'Agenda de Viajantes',sub:'Calendário de embarques e oportunidades de upsell'}, relatorios:{title:'Relatórios',sub:'Exportação consolidada de desempenho em PDF'}, posvenda:{title:'Pós-Venda TZ Viagens',sub:'Painel gerencial de controle de viajantes'} };
 function bindNav(){
   document.querySelectorAll('.nav-item').forEach(el=>{ el.addEventListener('click',()=>setView(el.dataset.view)); });
   document.getElementById('menuToggle').addEventListener('click',()=>{ document.getElementById('sidebar').classList.toggle('is-open'); });
@@ -841,6 +845,19 @@ function setView(view){
   if(view==='controle') renderControle(c);
   if(view==='agenda') renderAgenda(c);
   if(view==='relatorios') renderRelatorios(c);
+  if(view==='posvenda') renderPosVenda(c);
+}
+
+/* ========= PÓS-VENDA (webapp embutido em iframe isolado) ========= */
+let _posvendaSrcCache=null;
+function renderPosVenda(c){
+  if(_posvendaSrcCache===null){
+    const node=document.getElementById('posvendaSrc');
+    _posvendaSrcCache=node?node.textContent.replace(/<\\\/script>/g,'<\/script>'):'';
+  }
+  if(!_posvendaSrcCache){ c.innerHTML='<div class="card"><div class="empty">Conteúdo do Pós-Venda não encontrado.</div></div>'; return; }
+  c.innerHTML='<iframe id="posvendaFrame" title="Pós-Venda TZ Viagens" style="width:100%;height:calc(100vh - 130px);border:0;border-radius:14px;background:#fff;box-shadow:var(--shadow-sm)"></iframe>';
+  document.getElementById('posvendaFrame').srcdoc=_posvendaSrcCache;
 }
 
 function getDayMetrics(iso){ const extra=state.diaExtra[iso]||{}; let orcamento=0,vendas=0,comissao=0; state.orcamentos.forEach(o=>{ if(o.createdAt&&o.createdAt.slice(0,10)===iso&&!(o.versao>1)) orcamento++; if(o.status==='fechado'&&o.closedAt&&o.closedAt.slice(0,10)===iso){ vendas++; comissao+=Number(o.comissao||0); } }); return { data:iso, repiques:Number(extra.repiques||0), agendamento:Number(extra.agendamento||0), atendimento:Number(extra.atendimento||0), orcamento:orcamento+Number(extra.orcamentoAjuste||0), vendas:vendas+Number(extra.vendasAjuste||0), comissao:comissao+Number(extra.comissaoAjuste||0) }; }
@@ -1767,6 +1784,1024 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   initAuth();
   VOA.buildIataDatalist();
 });
+</script>
+
+<script type="text/html" id="posvendaSrc">
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pós-Venda Viagens — Painel Gerencial</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"><\/script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"><\/script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js"><\/script>
+<script src="https://cdn.tailwindcss.com"><\/script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        colors: {
+          brand: { 50:'#eff6ff',100:'#dbeafe',500:'#3b82f6',600:'#2563eb',700:'#1d4ed8' }
+        }
+      }
+    }
+  }
+<\/script>
+<style>
+  html, body, #root { height: 100%; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #64748b66; border-radius: 8px; }
+  .fade-in { animation: fade .25s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px);} to { opacity:1; transform:none;} }
+</style>
+</head>
+<body class="bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-100">
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useCallback } = React;
+
+/* ============================================================
+   CONSTANTES & UTILITÁRIOS
+   ============================================================ */
+const STORAGE_KEY = "posvenda_viagens_v1";
+const THEME_KEY = "posvenda_theme";
+
+// Os 10 checks de auditoria (item 3 da especificação)
+const CHECK_DEFS = [
+  { id: "status_ativo", label: "Status Ativo da viagem definido", type: "status" },
+  { id: "megazap", label: "Mensagens programadas no Megazap" },
+  { id: "roteiro_produzido", label: "Roteiro personalizado produzido" },
+  { id: "reuniao_preembarque", label: "Reunião de pré-embarque aconteceu" },
+  { id: "doc_conferida", label: "Documentação do cliente conferida (docs, seguro, regras do país)" },
+  { id: "vouchers_enviados", label: "Vouchers enviados ao cliente" },
+  { id: "roteiro_enviado", label: "Roteiro personalizado enviado ao cliente" },
+  { id: "checkin_ida", label: "Check-in de ida realizado (alerta 48h antes)" },
+  { id: "checkin_volta", label: "Check-in de volta realizado (alerta 48h antes)" },
+  { id: "posvenda", label: "Pós-venda feito e cliente transferido p/ Vendas" },
+];
+
+const TRIP_STATUS = ["Confirmada", "Cancelada", "Remarcada"];
+
+// Base de documentação obrigatória por destino (cruzamento automático — item 2)
+const DOC_DB = [
+  { match: ["estados unidos","eua","usa","miami","orlando","nova york","new york","los angeles"],
+    docs: ["Passaporte válido (mín. 6 meses)","Visto americano (B1/B2) ou ESTA","Seguro Viagem recomendado","Comprovante de hospedagem"] },
+  { match: ["europa","frança","franca","paris","itália","italia","roma","espanha","portugal","lisboa","alemanha","schengen"],
+    docs: ["Passaporte válido (mín. 6 meses)","Seguro Viagem OBRIGATÓRIO (mín. €30.000 - Tratado de Schengen)","Comprovante de hospedagem e passagem de volta","Comprovante financeiro"] },
+  { match: ["argentina","chile","uruguai","paraguai","mercosul","buenos aires","santiago","bariloche"],
+    docs: ["RG (físico, menos de 10 anos) OU Passaporte","Seguro Viagem recomendado","Para menores: autorização de viagem"] },
+  { match: ["áfrica do sul","africa do sul","quênia","quenia","tanzânia","tanzania","angola"],
+    docs: ["Passaporte válido (mín. 6 meses)","Vacina da Febre Amarela OBRIGATÓRIA (Certificado Internacional)","Visto (verificar país)","Seguro Viagem recomendado"] },
+  { match: ["tailândia","tailandia","japão","japao","china","dubai","emirados","índia","india","bali","indonésia","indonesia"],
+    docs: ["Passaporte válido (mín. 6 meses)","Visto (verificar exigência do país)","Vacinas conforme região","Seguro Viagem recomendado"] },
+  { match: ["brasil","nacional","nordeste","fernando de noronha","gramado","foz do iguaçu","foz do iguacu"],
+    docs: ["RG ou CNH com foto","Para Fernando de Noronha: comprovante da Taxa de Preservação Ambiental","Carteira de vacinação (algumas regiões)"] },
+];
+
+function getDocsForDestination(dest){
+  if(!dest) return null;
+  const d = dest.toLowerCase();
+  const hit = DOC_DB.find(r => r.match.some(m => d.includes(m)));
+  if(hit) return hit.docs;
+  // fallback genérico internacional
+  return ["Passaporte válido (verificar validade mín. 6 meses)","Verificar exigência de visto para o destino","Seguro Viagem recomendado","Comprovante de hospedagem"];
+}
+
+// Datas
+const now = () => new Date();
+function parseDateTime(dateStr, timeStr){
+  if(!dateStr) return null;
+  const t = timeStr && timeStr.length ? timeStr : "00:00";
+  const dt = new Date(`${dateStr}T${t}`);
+  return isNaN(dt) ? null : dt;
+}
+function ymd(d){ return d ? new Date(d).toISOString().slice(0,10) : ""; }
+function todayYMD(){ const d=new Date(); return d.toISOString().slice(0,10); }
+function addDays(dateStr, n){ const d=new Date(dateStr+"T00:00"); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+function hoursBetween(a,b){ return (b.getTime()-a.getTime())/36e5; }
+function fmtDate(dateStr){ if(!dateStr) return "—"; const [y,m,d]=dateStr.split("-"); return `${d}/${m}/${y}`; }
+function fmtDateTime(iso){ const d=new Date(iso); return d.toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}); }
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function monthOf(dateStr){ return dateStr ? dateStr.slice(0,7) : ""; } // "YYYY-MM"
+const MESES=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+const DIAS_SEMANA=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+
+// A viagem "toca" o mês informado (ida, volta ou intervalo entre eles)?
+function tripTouchesMonth(r, monthStr){
+  if(!monthStr) return true;
+  const mi=monthOf(r.dataIda), mv=monthOf(r.dataVolta);
+  if(mi===monthStr || mv===monthStr) return true;
+  if(mi && mv && mi < monthStr && mv > monthStr) return true; // viagem atravessa o mês
+  return false;
+}
+
+/* Constrói um mapa { "YYYY-MM-DD": [eventos] } a partir das reservas.
+   Tipos de evento: ida, volta, pre (pré-embarque), tarefa. */
+function buildEventsByDate(reservations){
+  const map={};
+  const push=(date,ev)=>{ if(!date) return; (map[date]=map[date]||[]).push(ev); };
+  reservations.forEach(r=>{
+    const c=computeReservation(r);
+    const nome=r.passageiros[0]?.nome||"(sem nome)";
+    const extra=r.passageiros.length>1?` +${r.passageiros.length-1}`:"";
+    if(r.dataIda) push(r.dataIda,{kind:"ida", resId:r.id, nome:nome+extra, hora:r.horaIda, pend:!(r.checks||{}).checkin_ida, cancel:r.tripStatus==="Cancelada"});
+    if(r.dataVolta) push(r.dataVolta,{kind:"volta", resId:r.id, nome:nome+extra, hora:r.horaVolta, pend:!(r.checks||{}).checkin_volta, cancel:r.tripStatus==="Cancelada"});
+    if(r.preEmbarqueData) push(r.preEmbarqueData,{kind:"pre", resId:r.id, nome:nome+extra, hora:r.preEmbarqueHora, status:c.preStatus});
+    (r.tarefas||[]).forEach(t=> push(t.data,{kind:"tarefa", resId:r.id, nome:nome+extra, hora:t.hora, titulo:t.titulo, concluida:!!t.concluida, taskId:t.id}));
+  });
+  return map;
+}
+
+/* ============================================================
+   REGRAS DE NEGÓCIO derivadas de uma reserva
+   ============================================================ */
+function computeReservation(r){
+  const checks = r.checks || {};
+  const allDone = CHECK_DEFS.every(c => c.id==="status_ativo" ? !!r.tripStatus : !!checks[c.id]);
+  const concluded = CHECK_DEFS.filter(c => c.id==="status_ativo" ? !!r.tripStatus : !!checks[c.id]).length;
+
+  const idaDT = parseDateTime(r.dataIda, r.horaIda);
+  const voltaDT = parseDateTime(r.dataVolta, r.horaVolta);
+  const n = now();
+
+  // Alertas de check-in 48h
+  const alerts = [];
+  if(idaDT && !checks.checkin_ida){
+    const h = hoursBetween(n, idaDT);
+    if(h <= 48 && h >= -2) alerts.push({type:"checkin_ida", level: h<0?"danger":"warning",
+      msg:`Check-in de IDA pendente — voo em ${h>0?Math.round(h)+'h':'JÁ PARTIU'}`});
+  }
+  if(voltaDT && !checks.checkin_volta){
+    const h = hoursBetween(n, voltaDT);
+    if(h <= 48 && h >= -2) alerts.push({type:"checkin_volta", level: h<0?"danger":"warning",
+      msg:`Check-in de VOLTA pendente — voo em ${h>0?Math.round(h)+'h':'JÁ PARTIU'}`});
+  }
+  // Pré-embarque atrasado
+  const preDT = parseDateTime(r.preEmbarqueData, r.preEmbarqueHora);
+  let preStatus = "Pendente";
+  if(r.preEmbarqueRealizadaData) preStatus = "Concluído";
+  else if(preDT && preDT < n) preStatus = "Atrasado";
+  if(preStatus==="Atrasado") alerts.push({type:"preembarque", level:"danger", msg:"Reunião de pré-embarque ATRASADA — sem confirmação"});
+
+  // Documentação do destino
+  const requiredDocs = getDocsForDestination(r.destino);
+
+  // Categorias do dashboard
+  const t = todayYMD();
+  const amanha = addDays(t,1);
+  const emViagem = r.dataIda && r.dataVolta && r.dataIda <= t && r.dataVolta >= t && r.tripStatus!=="Cancelada";
+  const viajaAmanha = r.dataIda === amanha && r.tripStatus!=="Cancelada";
+  const retornaHoje = r.dataVolta === t && r.tripStatus!=="Cancelada";
+  const checkinIdaPend = idaDT && !checks.checkin_ida && hoursBetween(n,idaDT) <= 48 && hoursBetween(n,idaDT) >= -2;
+  const checkinVoltaPend = voltaDT && !checks.checkin_volta && hoursBetween(n,voltaDT) <= 48 && hoursBetween(n,voltaDT) >= -2;
+
+  return { allDone, concluded, total: CHECK_DEFS.length, alerts, preStatus, requiredDocs,
+           emViagem, viajaAmanha, retornaHoje, checkinIdaPend, checkinVoltaPend, idaDT, voltaDT };
+}
+
+/* ============================================================
+   PERSISTÊNCIA
+   ============================================================ */
+function loadData(){
+  try { const raw = localStorage.getItem(STORAGE_KEY); if(raw) return JSON.parse(raw); } catch(e){}
+  return seed();
+}
+function saveData(d){ localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); }
+
+function seed(){
+  const t = new Date();
+  const inDays = (n)=>{ const d=new Date(t); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
+  return [
+    { id:"RES-1001", fornecedor:"CVC", destino:"Orlando, Estados Unidos",
+      dataIda:inDays(1), horaIda:"08:30", dataVolta:inDays(8), horaVolta:"22:10",
+      voos:"Cia: LATAM | Localizador: ABC123 | GRU 08:30 -> MCO 16:40",
+      preEmbarqueData:inDays(-2), preEmbarqueHora:"15:00", preEmbarqueRealizadaData:"",
+      servicos:["Hotel 5*","Traslado","Ingressos Disney","Seguro Viagem"],
+      passageiros:[{id:uid(),nome:"Maria Silva",nascimento:"1985-04-12",email:"maria@ex.com",telefone:"(11) 99999-0000",docs:[]},
+                   {id:uid(),nome:"João Silva",nascimento:"1983-09-01",email:"joao@ex.com",telefone:"(11) 98888-0000",docs:[]}],
+      tripStatus:"Confirmada",
+      checks:{ megazap:true, roteiro_produzido:true, doc_conferida:true, vouchers_enviados:true, roteiro_enviado:false, reuniao_preembarque:false, checkin_ida:false, checkin_volta:false, posvenda:false },
+      observacoes:[{id:uid(),autor:"Gerência",ts:new Date().toISOString(),texto:"Cliente solicitou assento na janela para ida."}],
+      tarefas:[{id:uid(),titulo:"Ligar para confirmar transfer do aeroporto",data:inDays(0),hora:"14:00",descricao:"Confirmar com fornecedor o horário do traslado.",concluida:false}] },
+    { id:"RES-1002", fornecedor:"Decolar", destino:"Buenos Aires, Argentina",
+      dataIda:inDays(-2), horaIda:"06:00", dataVolta:inDays(0), horaVolta:"19:30",
+      voos:"Cia: Aerolineas | Localizador: XYZ987 | GRU 06:00 -> EZE 09:10",
+      preEmbarqueData:inDays(-5), preEmbarqueHora:"10:00", preEmbarqueRealizadaData:inDays(-5),
+      servicos:["Hotel 4*","City Tour"],
+      passageiros:[{id:uid(),nome:"Carlos Souza",nascimento:"1990-01-20",email:"carlos@ex.com",telefone:"(21) 97777-0000",docs:[]}],
+      tripStatus:"Confirmada",
+      checks:{ megazap:true, roteiro_produzido:true, reuniao_preembarque:true, doc_conferida:true, vouchers_enviados:true, roteiro_enviado:true, checkin_ida:true, checkin_volta:false, posvenda:false },
+      observacoes:[], tarefas:[] },
+  ];
+}
+
+/* ============================================================
+   COMPONENTES UI BÁSICOS
+   ============================================================ */
+function Badge({children, tone="slate"}){
+  const tones={slate:"bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200",
+    green:"bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
+    red:"bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
+    amber:"bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
+    blue:"bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"};
+  return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${tones[tone]}`}>{children}</span>;
+}
+
+function Card({children, className=""}){
+  return <div className={`bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 ${className}`}>{children}</div>;
+}
+
+function StatCard({label, value, tone, onClick, active}){
+  const tones={blue:"from-blue-500 to-blue-600",amber:"from-amber-500 to-orange-600",red:"from-red-500 to-rose-600",green:"from-emerald-500 to-green-600",violet:"from-violet-500 to-purple-600"};
+  return (
+    <button onClick={onClick} className={`text-left rounded-xl p-4 bg-gradient-to-br ${tones[tone]} text-white shadow transition hover:scale-[1.02] ${active?'ring-4 ring-offset-2 ring-offset-transparent ring-white/60':''}`}>
+      <div className="text-3xl font-bold">{value}</div>
+      <div className="text-sm opacity-90 mt-1 leading-tight">{label}</div>
+    </button>
+  );
+}
+
+/* ============================================================
+   CALENDÁRIO INTERATIVO
+   ============================================================ */
+const pad2 = n => String(n).padStart(2,"0");
+
+function CalendarView({reservations, onOpen}){
+  const eventsByDate = useMemo(()=> buildEventsByDate(reservations), [reservations]);
+  const today = new Date();
+  const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [selected, setSelected] = useState(todayYMD());
+
+  const y=cursor.getFullYear(), m=cursor.getMonth();
+  const firstWd=new Date(y,m,1).getDay();
+  const daysInMonth=new Date(y,m+1,0).getDate();
+  const cells=[];
+  for(let i=0;i<firstWd;i++) cells.push(null);
+  for(let d=1;d<=daysInMonth;d++) cells.push(d);
+
+  const dot=(kind)=>({ida:"bg-blue-500",volta:"bg-emerald-500",pre:"bg-amber-500",tarefa:"bg-violet-500"}[kind]);
+  const selEvents=(eventsByDate[selected]||[]).slice().sort((a,b)=>(a.hora||"").localeCompare(b.hora||""));
+  const grp=(k)=>selEvents.filter(e=>e.kind===k);
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold">📆 Calendário de viagens</h3>
+        <div className="flex items-center gap-2">
+          <button onClick={()=>setCursor(new Date(y,m-1,1))} className="px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800">‹</button>
+          <span className="text-sm font-medium w-36 text-center">{MESES[m]} {y}</span>
+          <button onClick={()=>setCursor(new Date(y,m+1,1))} className="px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800">›</button>
+          <button onClick={()=>{const t=new Date(); setCursor(new Date(t.getFullYear(),t.getMonth(),1)); setSelected(todayYMD());}} className="ml-1 px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-700">Hoje</button>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        {/* Grade do calendário */}
+        <div>
+          <div className="grid grid-cols-7 gap-1 mb-1 text-center text-xs opacity-60">
+            {DIAS_SEMANA.map(d=>(<div key={d}>{d}</div>))}
+          </div>
+          <div className="grid grid-cols-7 gap-1">
+            {cells.map((d,i)=>{
+              if(d===null) return <div key={i}></div>;
+              const ds=`${y}-${pad2(m+1)}-${pad2(d)}`;
+              const evs=eventsByDate[ds]||[];
+              const isToday=ds===todayYMD();
+              const isSel=ds===selected;
+              const kinds=[...new Set(evs.map(e=>e.kind))];
+              const hasPend=evs.some(e=>(e.kind==="ida"||e.kind==="volta")&&e.pend&&!e.cancel) || evs.some(e=>e.kind==="tarefa"&&!e.concluida) || evs.some(e=>e.kind==="pre"&&e.status==="Atrasado");
+              return (
+                <button key={i} onClick={()=>setSelected(ds)}
+                  className={`aspect-square rounded-lg p-1 flex flex-col items-center justify-start text-xs border transition
+                    ${isSel?"border-brand-500 ring-2 ring-brand-500/40":"border-transparent"}
+                    ${isToday?"bg-brand-50 dark:bg-brand-900/30":"hover:bg-slate-100 dark:hover:bg-slate-800"}`}>
+                  <span className={`${isToday?"font-bold text-brand-600 dark:text-brand-400":""}`}>{d}</span>
+                  <div className="flex flex-wrap gap-0.5 justify-center mt-0.5">
+                    {kinds.slice(0,4).map(k=>(<span key={k} className={`w-1.5 h-1.5 rounded-full ${dot(k)}`}></span>))}
+                  </div>
+                  {hasPend && <span className="w-1.5 h-1.5 rounded-full bg-red-500 mt-0.5"></span>}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex flex-wrap gap-3 mt-3 text-xs opacity-70">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500"></span>Ida</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500"></span>Volta</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500"></span>Pré-embarque</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-violet-500"></span>Tarefa</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500"></span>Pendência</span>
+          </div>
+        </div>
+
+        {/* Painel do dia selecionado */}
+        <div className="border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 lg:pl-4 pt-3 lg:pt-0">
+          <h4 className="font-medium mb-2">{fmtDate(selected)}{selected===todayYMD() && <span className="ml-2 text-xs text-brand-600">(hoje)</span>}</h4>
+          {selEvents.length===0 && <p className="text-sm opacity-50">Nenhum evento neste dia.</p>}
+          <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+            {grp("ida").length>0 && <div>
+              <div className="text-xs font-semibold uppercase opacity-50 mb-1">✈️ Embarcam (ida)</div>
+              {grp("ida").map((e,i)=>(<div key={i} onClick={()=>onOpen(e.resId)} className="flex items-center justify-between p-2 rounded-lg bg-blue-50 dark:bg-blue-950/40 cursor-pointer mb-1">
+                <span className="text-sm">{e.nome} <span className="opacity-50 font-mono text-xs">{e.resId}</span> {e.hora&&<span className="opacity-60 text-xs">· {e.hora}</span>}</span>
+                {e.cancel?<Badge tone="red">Cancelada</Badge>:e.pend?<Badge tone="red">Check-in pendente</Badge>:<Badge tone="green">Check-in ok</Badge>}
+              </div>))}
+            </div>}
+            {grp("volta").length>0 && <div>
+              <div className="text-xs font-semibold uppercase opacity-50 mb-1">🛬 Retornam (volta)</div>
+              {grp("volta").map((e,i)=>(<div key={i} onClick={()=>onOpen(e.resId)} className="flex items-center justify-between p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 cursor-pointer mb-1">
+                <span className="text-sm">{e.nome} <span className="opacity-50 font-mono text-xs">{e.resId}</span> {e.hora&&<span className="opacity-60 text-xs">· {e.hora}</span>}</span>
+                {e.cancel?<Badge tone="red">Cancelada</Badge>:e.pend?<Badge tone="red">Check-in volta pend.</Badge>:<Badge tone="green">Check-in ok</Badge>}
+              </div>))}
+            </div>}
+            {grp("pre").length>0 && <div>
+              <div className="text-xs font-semibold uppercase opacity-50 mb-1">🤝 Pré-embarque</div>
+              {grp("pre").map((e,i)=>(<div key={i} onClick={()=>onOpen(e.resId)} className="flex items-center justify-between p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 cursor-pointer mb-1">
+                <span className="text-sm">{e.nome} <span className="opacity-50 font-mono text-xs">{e.resId}</span> {e.hora&&<span className="opacity-60 text-xs">· {e.hora}</span>}</span>
+                <Badge tone={e.status==="Concluído"?"green":e.status==="Atrasado"?"red":"amber"}>{e.status}</Badge>
+              </div>))}
+            </div>}
+            {grp("tarefa").length>0 && <div>
+              <div className="text-xs font-semibold uppercase opacity-50 mb-1">📌 Tarefas</div>
+              {grp("tarefa").map((e,i)=>(<div key={i} onClick={()=>onOpen(e.resId)} className="flex items-center justify-between p-2 rounded-lg bg-violet-50 dark:bg-violet-950/40 cursor-pointer mb-1">
+                <span className={`text-sm ${e.concluida?"line-through opacity-50":""}`}>{e.titulo} <span className="opacity-50 text-xs">({e.nome} · {e.resId})</span> {e.hora&&<span className="opacity-60 text-xs">· {e.hora}</span>}</span>
+                {e.concluida?<Badge tone="green">Concluída</Badge>:<Badge tone="amber">Pendente</Badge>}
+              </div>))}
+            </div>}
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/* ============================================================
+   DASHBOARD
+   ============================================================ */
+function Dashboard({reservations, onOpen}){
+  const computed = useMemo(()=> reservations.map(r=>({r, c:computeReservation(r)})), [reservations]);
+  const groups = {
+    emViagem: computed.filter(x=>x.c.emViagem),
+    viajaAmanha: computed.filter(x=>x.c.viajaAmanha),
+    checkinIda: computed.filter(x=>x.c.checkinIdaPend),
+    checkinVolta: computed.filter(x=>x.c.checkinVoltaPend),
+    retornaHoje: computed.filter(x=>x.c.retornaHoje),
+  };
+  const [filter, setFilter] = useState(null);
+  const labels={emViagem:"Clientes em viagem",viajaAmanha:"Viajam amanhã",checkinIda:"Check-ins de ida pendentes",checkinVolta:"Check-ins de volta pendentes",retornaHoje:"Retornam hoje (disparar pós-venda)"};
+
+  const allAlerts = computed.flatMap(x => x.c.alerts.map(a=>({...a, res:x.r})));
+
+  return (
+    <div className="space-y-6 fade-in">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <StatCard label="Clientes em viagem" value={groups.emViagem.length} tone="blue" active={filter==="emViagem"} onClick={()=>setFilter(filter==="emViagem"?null:"emViagem")} />
+        <StatCard label="Viajam amanhã" value={groups.viajaAmanha.length} tone="violet" active={filter==="viajaAmanha"} onClick={()=>setFilter(filter==="viajaAmanha"?null:"viajaAmanha")} />
+        <StatCard label="Check-ins de ida pendentes (<48h)" value={groups.checkinIda.length} tone="amber" active={filter==="checkinIda"} onClick={()=>setFilter(filter==="checkinIda"?null:"checkinIda")} />
+        <StatCard label="Check-ins de volta pendentes (<48h)" value={groups.checkinVolta.length} tone="red" active={filter==="checkinVolta"} onClick={()=>setFilter(filter==="checkinVolta"?null:"checkinVolta")} />
+        <StatCard label="Retornam hoje (pós-venda)" value={groups.retornaHoje.length} tone="green" active={filter==="retornaHoje"} onClick={()=>setFilter(filter==="retornaHoje"?null:"retornaHoje")} />
+      </div>
+
+      {/* Alertas em destaque */}
+      {allAlerts.length>0 && (
+        <Card className="p-4">
+          <h3 className="font-semibold mb-3 flex items-center gap-2">🔔 Alertas em destaque <Badge tone="red">{allAlerts.length}</Badge></h3>
+          <div className="space-y-2">
+            {allAlerts.map((a,i)=>(
+              <div key={i} onClick={()=>onOpen(a.res.id)} className={`cursor-pointer flex items-center justify-between p-2 rounded-lg ${a.level==="danger"?"bg-red-50 dark:bg-red-950/40 border-l-4 border-red-500":"bg-amber-50 dark:bg-amber-950/40 border-l-4 border-amber-500"}`}>
+                <span className="text-sm">{a.msg}</span>
+                <span className="text-xs opacity-70">{a.res.id} — {a.res.passageiros[0]?.nome||""}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Lista rápida do filtro */}
+      {filter && (
+        <Card className="p-4 fade-in">
+          <h3 className="font-semibold mb-3">{labels[filter]} <Badge tone="blue">{groups[filter].length}</Badge></h3>
+          {groups[filter].length===0 ? <p className="text-sm opacity-60">Nenhuma reserva nesta categoria.</p> :
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {groups[filter].map(({r,c})=>(
+              <div key={r.id} onClick={()=>onOpen(r.id)} className="py-2 flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 px-2 rounded">
+                <div>
+                  <div className="font-medium">{r.passageiros[0]?.nome||"(sem nome)"} <span className="opacity-50 text-sm">+{Math.max(0,r.passageiros.length-1)}</span></div>
+                  <div className="text-xs opacity-60">{r.id} · {r.destino} · Ida {fmtDate(r.dataIda)} → Volta {fmtDate(r.dataVolta)}</div>
+                </div>
+                <Badge tone={c.allDone?"green":"amber"}>{c.concluded}/{c.total}</Badge>
+              </div>
+            ))}
+          </div>}
+        </Card>
+      )}
+
+      {/* Calendário interativo de viagens */}
+      <CalendarView reservations={reservations} onOpen={onOpen} />
+
+      {/* Agenda simples de pré-embarques */}
+      <Card className="p-4">
+        <h3 className="font-semibold mb-3">📅 Agenda de reuniões de pré-embarque</h3>
+        <div className="space-y-2">
+          {computed.filter(x=>x.r.preEmbarqueData).sort((a,b)=>a.r.preEmbarqueData.localeCompare(b.r.preEmbarqueData)).map(({r,c})=>(
+            <div key={r.id} onClick={()=>onOpen(r.id)} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800 cursor-pointer">
+              <span className="text-sm">{fmtDate(r.preEmbarqueData)} {r.preEmbarqueHora} — {r.passageiros[0]?.nome} ({r.id})</span>
+              <Badge tone={c.preStatus==="Concluído"?"green":c.preStatus==="Atrasado"?"red":"amber"}>{c.preStatus}</Badge>
+            </div>
+          ))}
+          {computed.filter(x=>x.r.preEmbarqueData).length===0 && <p className="text-sm opacity-60">Nenhuma reunião agendada.</p>}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+/* ============================================================
+   LISTA DE RESERVAS (tabela scanável)
+   ============================================================ */
+function TaskModal({res, onClose, onUpdate}){
+  const [titulo,setTitulo]=useState("");
+  const [data,setData]=useState(todayYMD());
+  const [hora,setHora]=useState("09:00");
+  const [descricao,setDescricao]=useState("");
+  function save(){
+    if(!titulo.trim()){ alert("Informe o título da tarefa."); return; }
+    const nova={id:uid(),titulo:titulo.trim(),data,hora,descricao:descricao.trim(),concluida:false};
+    onUpdate({...res, tarefas:[...(res.tarefas||[]), nova]});
+    setTitulo(""); setDescricao("");
+  }
+  function toggle(id){ onUpdate({...res, tarefas:res.tarefas.map(t=>t.id===id?{...t,concluida:!t.concluida}:t)}); }
+  function del(id){ onUpdate({...res, tarefas:res.tarefas.filter(t=>t.id!==id)}); }
+  const inputCls="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm";
+  const tarefas=(res.tarefas||[]).slice().sort((a,b)=>(a.data+a.hora).localeCompare(b.data+b.hora));
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <Card className="p-5 w-full max-w-lg max-h-[90vh] overflow-y-auto" >
+        <div onClick={e=>e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold">📌 Tarefas — {res.passageiros[0]?.nome} <span className="opacity-50 text-sm">{res.id}</span></h3>
+          <button onClick={onClose} className="opacity-60 hover:opacity-100 text-lg">×</button>
+        </div>
+        <div className="space-y-3">
+          <div><label className="text-xs opacity-70">Título da tarefa</label><input className={inputCls} value={titulo} onChange={e=>setTitulo(e.target.value)} placeholder="Ex: Ligar para confirmar transfer"/></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-xs opacity-70">Data</label><input type="date" className={inputCls} value={data} onChange={e=>setData(e.target.value)}/></div>
+            <div><label className="text-xs opacity-70">Horário</label><input type="time" className={inputCls} value={hora} onChange={e=>setHora(e.target.value)}/></div>
+          </div>
+          <div><label className="text-xs opacity-70">Descrição / informações extras</label><textarea rows="2" className={inputCls} value={descricao} onChange={e=>setDescricao(e.target.value)}/></div>
+          <button onClick={save} className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium">+ Adicionar tarefa</button>
+        </div>
+        <div className="mt-4 border-t border-slate-200 dark:border-slate-800 pt-3">
+          <div className="text-xs font-semibold opacity-60 mb-2">Tarefas desta reserva ({tarefas.length})</div>
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {tarefas.map(t=>(
+              <div key={t.id} className="flex items-start gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800">
+                <input type="checkbox" checked={t.concluida} onChange={()=>toggle(t.id)} className="mt-1 w-4 h-4 accent-green-600"/>
+                <div className="flex-1">
+                  <div className={`text-sm font-medium ${t.concluida?"line-through opacity-50":""}`}>{t.titulo}</div>
+                  <div className="text-xs opacity-60">📅 {fmtDate(t.data)} {t.hora} {t.descricao?`· ${t.descricao}`:""}</div>
+                </div>
+                <button onClick={()=>del(t.id)} className="text-red-500 text-xs hover:underline">Excluir</button>
+              </div>
+            ))}
+            {tarefas.length===0 && <p className="text-sm opacity-50">Nenhuma tarefa cadastrada.</p>}
+          </div>
+        </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function ReservationsTable({reservations, onOpen, onNew, onDelete, onUpdate, onImport}){
+  const [q, setQ] = useState("");
+  const [month, setMonth] = useState(""); // "" = todos os meses
+  const [taskForId, setTaskForId] = useState(null);
+  const fileRef = React.useRef(null);
+
+  const filtered = reservations.filter(r=>{
+    const s=(r.id+" "+r.destino+" "+r.fornecedor+" "+r.passageiros.map(p=>p.nome).join(" ")).toLowerCase();
+    return s.includes(q.toLowerCase()) && tripTouchesMonth(r, month);
+  });
+  const taskRes = taskForId ? reservations.find(r=>r.id===taskForId) : null;
+
+  function download(filename, text){
+    const blob=new Blob([text],{type:"application/json"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a"); a.href=url; a.download=filename; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+  function exportData(){
+    const data = month ? filtered : reservations;
+    const nome = month ? `posvenda-${month}.json` : `posvenda-backup-${todayYMD()}.json`;
+    download(nome, JSON.stringify({exportadoEm:new Date().toISOString(), mes:month||"todos", reservas:data}, null, 2));
+  }
+  function handleImportFile(e){
+    const file=e.target.files[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=()=>{
+      try{
+        const parsed=JSON.parse(reader.result);
+        const arr = Array.isArray(parsed) ? parsed : parsed.reservas;
+        if(!Array.isArray(arr)) throw new Error("Formato inválido");
+        onImport(arr);
+        alert(`Importação concluída: ${arr.length} reserva(s) processada(s).`);
+      }catch(err){ alert("Erro ao importar: "+err.message); }
+      if(fileRef.current) fileRef.current.value="";
+    };
+    reader.readAsText(file);
+  }
+
+  return (
+    <div className="space-y-4 fade-in">
+      <div className="flex flex-wrap gap-3 items-center justify-between">
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar por nome, destino, ID, fornecedor..."
+          className="flex-1 min-w-[200px] px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900" />
+        <div className="flex items-center gap-2">
+          <label className="text-xs opacity-70 whitespace-nowrap">Mês:</label>
+          <input type="month" value={month} onChange={e=>setMonth(e.target.value)} className="px-2 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"/>
+          {month && <button onClick={()=>setMonth("")} className="text-xs text-brand-600 hover:underline">limpar</button>}
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={exportData} className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-sm" title="Salvar backup em arquivo JSON">⬇️ Exportar</button>
+          <button onClick={()=>fileRef.current?.click()} className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-sm" title="Recuperar dados de um arquivo JSON">⬆️ Importar</button>
+          <input ref={fileRef} type="file" accept=".json,application/json" onChange={handleImportFile} className="hidden"/>
+          <button onClick={onNew} className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium">+ Nova reserva</button>
+        </div>
+      </div>
+
+      <div className="text-xs opacity-60">
+        {month ? `Exibindo ${filtered.length} viajante(s) de ${MESES[parseInt(month.slice(5,7))-1]}/${month.slice(0,4)}.` : `Exibindo todas as ${filtered.length} reserva(s).`}
+        {" "}A exportação salva {month?"o mês selecionado":"todas as reservas"}.
+      </div>
+
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 dark:bg-slate-800 text-left">
+              <tr>
+                <th className="p-3">Reserva</th><th className="p-3">Passageiro</th><th className="p-3">Destino</th>
+                <th className="p-3">Ida</th><th className="p-3">Volta</th><th className="p-3">Status</th>
+                <th className="p-3">Checklist</th><th className="p-3">Tarefas</th><th className="p-3">Alertas</th><th className="p-3"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(r=>{
+                const c=computeReservation(r);
+                const pendTasks=(r.tarefas||[]).filter(t=>!t.concluida).length;
+                return (
+                  <tr key={r.id} className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60">
+                    <td className="p-3 font-mono text-xs">{r.id}<div className="opacity-50">{r.fornecedor}</div></td>
+                    <td className="p-3 font-medium cursor-pointer" onClick={()=>onOpen(r.id)}>{r.passageiros[0]?.nome||"—"}{r.passageiros.length>1&&<span className="opacity-50"> +{r.passageiros.length-1}</span>}</td>
+                    <td className="p-3">{r.destino}</td>
+                    <td className="p-3 whitespace-nowrap">{fmtDate(r.dataIda)} {r.horaIda}</td>
+                    <td className="p-3 whitespace-nowrap">{fmtDate(r.dataVolta)} {r.horaVolta}</td>
+                    <td className="p-3"><Badge tone={r.tripStatus==="Cancelada"?"red":r.tripStatus==="Remarcada"?"amber":"green"}>{r.tripStatus||"—"}</Badge></td>
+                    <td className="p-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-20 h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                          <div className={`h-full ${c.allDone?'bg-green-500':'bg-amber-500'}`} style={{width:`${c.concluded/c.total*100}%`}}></div>
+                        </div>
+                        <span className="text-xs">{c.concluded}/{c.total}</span>
+                        {c.allDone && <Badge tone="green">Finalizada</Badge>}
+                      </div>
+                    </td>
+                    <td className="p-3">{(r.tarefas||[]).length>0 ? <Badge tone={pendTasks>0?"amber":"green"}>{pendTasks>0?`${pendTasks} pend.`:"ok"}</Badge> : <span className="opacity-40">—</span>}</td>
+                    <td className="p-3">{c.alerts.length>0?<Badge tone="red">{c.alerts.length}</Badge>:<span className="opacity-40">—</span>}</td>
+                    <td className="p-3 text-right whitespace-nowrap">
+                      <button onClick={()=>onOpen(r.id)} className="text-brand-600 hover:underline mr-3">Abrir</button>
+                      <button onClick={()=>setTaskForId(r.id)} className="text-violet-600 dark:text-violet-400 hover:underline mr-3">Tarefa</button>
+                      <button onClick={()=>{if(confirm('Excluir reserva '+r.id+'?'))onDelete(r.id)}} className="text-red-500 hover:underline">Excluir</button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {filtered.length===0 && <tr><td colSpan="10" className="p-6 text-center opacity-60">Nenhuma reserva encontrada.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {taskRes && <TaskModal res={taskRes} onClose={()=>setTaskForId(null)} onUpdate={onUpdate} />}
+    </div>
+  );
+}
+
+/* ============================================================
+   FORMULÁRIO DE RESERVA (Cadastro/Edição)
+   ============================================================ */
+function ReservationForm({initial, onSave, onCancel, existingIds}){
+  const blankPax=()=>({id:uid(),nome:"",nascimento:"",email:"",telefone:"",docs:[]});
+  const [f, setF] = useState(initial || {
+    id:"", fornecedor:"", destino:"", dataIda:"", horaIda:"", dataVolta:"", horaVolta:"",
+    voos:"", preEmbarqueData:"", preEmbarqueHora:"", preEmbarqueRealizadaData:"",
+    servicos:[], passageiros:[blankPax()], tripStatus:"Confirmada", checks:{}, observacoes:[], tarefas:[]
+  });
+  const [servInput, setServInput] = useState("");
+  const isEdit = !!initial;
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const setPax=(i,k,v)=>setF(p=>{const a=[...p.passageiros];a[i]={...a[i],[k]:v};return{...p,passageiros:a}});
+
+  function handleFiles(i, fileList){
+    const files=Array.from(fileList).map(file=>({name:file.name, size:file.size}));
+    setF(p=>{const a=[...p.passageiros];a[i]={...a[i],docs:[...(a[i].docs||[]),...files]};return{...p,passageiros:a}});
+  }
+
+  function submit(){
+    let id=f.id.trim();
+    if(!id){ id="RES-"+Math.floor(1000+Math.random()*9000); }
+    if(!isEdit && existingIds.includes(id)){ alert("ID de reserva já existe. Use outro."); return; }
+    if(!f.destino.trim()){ alert("Informe o destino."); return; }
+    if(f.passageiros.length===0 || !f.passageiros[0].nome.trim()){ alert("Informe ao menos um passageiro."); return; }
+    onSave({...f, id});
+  }
+
+  const docsPreview = getDocsForDestination(f.destino);
+
+  const inputCls="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900";
+  const labelCls="text-xs font-medium opacity-70 mb-1 block";
+
+  return (
+    <div className="space-y-5 fade-in max-w-4xl">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold">{isEdit?"Editar reserva":"Nova reserva"}</h2>
+        <button onClick={onCancel} className="text-sm opacity-70 hover:opacity-100">← Voltar</button>
+      </div>
+
+      <Card className="p-4 space-y-4">
+        <h3 className="font-semibold">Dados da venda</h3>
+        <div className="grid md:grid-cols-2 gap-3">
+          <div><label className={labelCls}>ID da Reserva (vazio = gerar)</label><input className={inputCls} value={f.id} onChange={e=>set("id",e.target.value)} disabled={isEdit} placeholder="RES-1234"/></div>
+          <div><label className={labelCls}>Fornecedor</label><input className={inputCls} value={f.fornecedor} onChange={e=>set("fornecedor",e.target.value)} placeholder="CVC, Decolar..."/></div>
+        </div>
+      </Card>
+
+      <Card className="p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold">Viajantes</h3>
+          <button onClick={()=>set("passageiros",[...f.passageiros,blankPax()])} className="text-sm px-3 py-1 rounded-lg bg-brand-600 text-white">+ Adicionar viajante</button>
+        </div>
+        {f.passageiros.map((p,i)=>(
+          <div key={p.id} className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-semibold opacity-60">Viajante {i+1}</span>
+              {f.passageiros.length>1 && <button onClick={()=>set("passageiros",f.passageiros.filter((_,j)=>j!==i))} className="text-red-500 text-xs hover:underline">Remover</button>}
+            </div>
+            <div className="grid md:grid-cols-2 gap-3">
+              <div><label className={labelCls}>Nome completo</label><input className={inputCls} value={p.nome} onChange={e=>setPax(i,"nome",e.target.value)}/></div>
+              <div><label className={labelCls}>Data de nascimento</label><input type="date" className={inputCls} value={p.nascimento} onChange={e=>setPax(i,"nascimento",e.target.value)}/></div>
+              <div><label className={labelCls}>E-mail</label><input type="email" className={inputCls} value={p.email} onChange={e=>setPax(i,"email",e.target.value)}/></div>
+              <div><label className={labelCls}>Telefone</label><input className={inputCls} value={p.telefone} onChange={e=>setPax(i,"telefone",e.target.value)}/></div>
+            </div>
+            <div>
+              <label className={labelCls}>Documentos pessoais (PDF/Imagens)</label>
+              <input type="file" multiple accept=".pdf,image/*" onChange={e=>handleFiles(i,e.target.files)} className="text-sm"/>
+              {(p.docs||[]).length>0 && <div className="flex flex-wrap gap-2 mt-2">{p.docs.map((d,k)=>(<Badge key={k} tone="blue">📎 {d.name}</Badge>))}</div>}
+            </div>
+          </div>
+        ))}
+      </Card>
+
+      <Card className="p-4 space-y-4">
+        <h3 className="font-semibold">Voo & logística</h3>
+        <div className="grid md:grid-cols-4 gap-3">
+          <div><label className={labelCls}>Data de ida</label><input type="date" className={inputCls} value={f.dataIda} onChange={e=>set("dataIda",e.target.value)}/></div>
+          <div><label className={labelCls}>Hora de ida</label><input type="time" className={inputCls} value={f.horaIda} onChange={e=>set("horaIda",e.target.value)}/></div>
+          <div><label className={labelCls}>Data de volta</label><input type="date" className={inputCls} value={f.dataVolta} onChange={e=>set("dataVolta",e.target.value)}/></div>
+          <div><label className={labelCls}>Hora de volta</label><input type="time" className={inputCls} value={f.horaVolta} onChange={e=>set("horaVolta",e.target.value)}/></div>
+        </div>
+        <div><label className={labelCls}>Dados dos voos (Cia aérea, localizador, horários)</label><textarea className={inputCls} rows="3" value={f.voos} onChange={e=>set("voos",e.target.value)} placeholder="Cia: LATAM | Localizador: ABC123 | GRU 08:30 -> MCO 16:40"/></div>
+      </Card>
+
+      <Card className="p-4 space-y-4">
+        <h3 className="font-semibold">Pré-embarque & destino</h3>
+        <div className="grid md:grid-cols-3 gap-3">
+          <div><label className={labelCls}>Data reunião pré-embarque</label><input type="date" className={inputCls} value={f.preEmbarqueData} onChange={e=>set("preEmbarqueData",e.target.value)}/></div>
+          <div><label className={labelCls}>Hora reunião</label><input type="time" className={inputCls} value={f.preEmbarqueHora} onChange={e=>set("preEmbarqueHora",e.target.value)}/></div>
+          <div><label className={labelCls}>Destino final</label><input className={inputCls} value={f.destino} onChange={e=>set("destino",e.target.value)} placeholder="Orlando, Estados Unidos"/></div>
+        </div>
+        <div>
+          <label className={labelCls}>Serviços incluídos (tags)</label>
+          <div className="flex gap-2">
+            <input className={inputCls} value={servInput} onChange={e=>setServInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&servInput.trim()){set("servicos",[...f.servicos,servInput.trim()]);setServInput("")}}} placeholder="Digite e pressione Enter"/>
+          </div>
+          <div className="flex flex-wrap gap-2 mt-2">
+            {f.servicos.map((s,i)=>(<span key={i} className="px-2 py-1 rounded-full bg-slate-200 dark:bg-slate-700 text-xs flex items-center gap-1">{s}<button onClick={()=>set("servicos",f.servicos.filter((_,j)=>j!==i))} className="opacity-60 hover:opacity-100">×</button></span>))}
+          </div>
+        </div>
+        {docsPreview && f.destino && (
+          <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900">
+            <div className="text-xs font-semibold mb-1">📋 Documentação necessária detectada para "{f.destino}":</div>
+            <ul className="text-sm list-disc list-inside opacity-90">{docsPreview.map((d,i)=>(<li key={i}>{d}</li>))}</ul>
+          </div>
+        )}
+      </Card>
+
+      <div className="flex gap-3">
+        <button onClick={submit} className="px-5 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium">Salvar reserva</button>
+        <button onClick={onCancel} className="px-5 py-2 rounded-lg border border-slate-300 dark:border-slate-700">Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   DETALHE DA RESERVA (checklist, alertas, docs, timeline)
+   ============================================================ */
+function ReservationDetail({res, onUpdate, onBack, onEdit}){
+  const c = computeReservation(res);
+  const [note, setNote] = useState("");
+  const [author, setAuthor] = useState("Gerência");
+  // Tarefas
+  const [tTitulo, setTTitulo] = useState("");
+  const [tData, setTData] = useState(todayYMD());
+  const [tHora, setTHora] = useState("09:00");
+  const [tDesc, setTDesc] = useState("");
+  const [editId, setEditId] = useState(null);
+  const [edit, setEdit] = useState({});
+
+  function addTask(){
+    if(!tTitulo.trim()){ alert("Informe o título da tarefa."); return; }
+    const nova={id:uid(),titulo:tTitulo.trim(),data:tData,hora:tHora,descricao:tDesc.trim(),concluida:false};
+    onUpdate({...res, tarefas:[...(res.tarefas||[]), nova]});
+    setTTitulo(""); setTDesc("");
+  }
+  function toggleTask(id){ onUpdate({...res, tarefas:res.tarefas.map(t=>t.id===id?{...t,concluida:!t.concluida}:t)}); }
+  function delTask(id){ if(confirm("Excluir esta tarefa?")) onUpdate({...res, tarefas:res.tarefas.filter(t=>t.id!==id)}); }
+  function startEdit(t){ setEditId(t.id); setEdit({titulo:t.titulo,data:t.data,hora:t.hora,descricao:t.descricao||""}); }
+  function saveEdit(){
+    if(!edit.titulo.trim()){ alert("O título não pode ficar vazio."); return; }
+    onUpdate({...res, tarefas:res.tarefas.map(t=>t.id===editId?{...t,...edit,titulo:edit.titulo.trim(),descricao:(edit.descricao||"").trim()}:t)});
+    setEditId(null);
+  }
+  const tarefas=(res.tarefas||[]).slice().sort((a,b)=>(a.data+(a.hora||"")).localeCompare(b.data+(b.hora||"")));
+  const tarefasPend=tarefas.filter(t=>!t.concluida).length;
+
+  function toggleCheck(id){
+    if(id==="status_ativo") return;
+    onUpdate({...res, checks:{...res.checks,[id]:!res.checks[id]}});
+  }
+  function setTripStatus(v){ onUpdate({...res, tripStatus:v}); }
+  function markPreEmbarque(){
+    if(res.preEmbarqueRealizadaData) onUpdate({...res, preEmbarqueRealizadaData:"", checks:{...res.checks,reuniao_preembarque:false}});
+    else onUpdate({...res, preEmbarqueRealizadaData:todayYMD(), checks:{...res.checks,reuniao_preembarque:true}});
+  }
+  function addNote(){
+    if(!note.trim()) return;
+    const obs=[...(res.observacoes||[]),{id:uid(),autor:author||"Anônimo",ts:new Date().toISOString(),texto:note.trim()}];
+    onUpdate({...res, observacoes:obs}); setNote("");
+  }
+
+  return (
+    <div className="space-y-5 fade-in">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <button onClick={onBack} className="text-sm opacity-70 hover:opacity-100">← Reservas</button>
+          <h2 className="text-2xl font-bold mt-1">{res.passageiros[0]?.nome} <span className="text-base font-normal opacity-50">{res.id}</span></h2>
+          <p className="opacity-70 text-sm">{res.fornecedor} · {res.destino}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {c.allDone ? <Badge tone="green">✓ Viagem Finalizada</Badge> : <Badge tone="amber">Em andamento {c.concluded}/{c.total}</Badge>}
+          <button onClick={onEdit} className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-sm">Editar dados</button>
+        </div>
+      </div>
+
+      {/* Alertas */}
+      {c.alerts.length>0 && (
+        <div className="space-y-2">
+          {c.alerts.map((a,i)=>(
+            <div key={i} className={`p-3 rounded-lg font-medium ${a.level==="danger"?"bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-300 border-l-4 border-red-500":"bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-l-4 border-amber-500"}`}>⚠️ {a.msg}</div>
+          ))}
+        </div>
+      )}
+
+      <div className="grid lg:grid-cols-2 gap-5">
+        {/* Coluna esquerda: dados */}
+        <div className="space-y-5">
+          <Card className="p-4">
+            <h3 className="font-semibold mb-3">✈️ Voo & logística</h3>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div><div className="opacity-60 text-xs">Ida</div>{fmtDate(res.dataIda)} {res.horaIda}</div>
+              <div><div className="opacity-60 text-xs">Volta</div>{fmtDate(res.dataVolta)} {res.horaVolta}</div>
+            </div>
+            <div className="mt-3 text-sm whitespace-pre-wrap opacity-90">{res.voos||"—"}</div>
+            {res.servicos?.length>0 && <div className="mt-3 flex flex-wrap gap-2">{res.servicos.map((s,i)=>(<Badge key={i} tone="blue">{s}</Badge>))}</div>}
+          </Card>
+
+          <Card className="p-4">
+            <h3 className="font-semibold mb-3">👥 Viajantes ({res.passageiros.length})</h3>
+            <div className="space-y-2 text-sm">
+              {res.passageiros.map(p=>(
+                <div key={p.id} className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800">
+                  <div className="font-medium">{p.nome}</div>
+                  <div className="opacity-70 text-xs">Nasc.: {fmtDate(p.nascimento)} · {p.email} · {p.telefone}</div>
+                  {(p.docs||[]).length>0 && <div className="flex flex-wrap gap-1 mt-1">{p.docs.map((d,k)=>(<Badge key={k}>📎 {d.name}</Badge>))}</div>}
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* Documentação automática */}
+          <Card className="p-4 border-blue-300 dark:border-blue-800">
+            <h3 className="font-semibold mb-2">📋 Documentação necessária — {res.destino}</h3>
+            <ul className="text-sm list-disc list-inside space-y-1">{c.requiredDocs?.map((d,i)=>(<li key={i}>{d}</li>))}</ul>
+          </Card>
+
+          {/* Pré-embarque */}
+          <Card className="p-4">
+            <h3 className="font-semibold mb-2">🤝 Reunião de pré-embarque</h3>
+            <p className="text-sm">Prevista: {fmtDate(res.preEmbarqueData)} {res.preEmbarqueHora||""}</p>
+            <div className="flex items-center gap-2 mt-2">
+              <Badge tone={c.preStatus==="Concluído"?"green":c.preStatus==="Atrasado"?"red":"amber"}>{c.preStatus}</Badge>
+              {res.preEmbarqueRealizadaData && <span className="text-xs opacity-70">Realizada em {fmtDate(res.preEmbarqueRealizadaData)}</span>}
+            </div>
+            <button onClick={markPreEmbarque} className={`mt-3 px-3 py-1.5 rounded-lg text-sm ${res.preEmbarqueRealizadaData?"border border-slate-300 dark:border-slate-700":"bg-green-600 text-white"}`}>
+              {res.preEmbarqueRealizadaData?"Desfazer conclusão":"✓ Marcar como realizada (hoje)"}
+            </button>
+          </Card>
+        </div>
+
+        {/* Coluna direita: checklist + timeline */}
+        <div className="space-y-5">
+          <Card className="p-4">
+            <h3 className="font-semibold mb-3">✅ Checklist de auditoria ({c.concluded}/{c.total})</h3>
+            <div className="space-y-1">
+              {CHECK_DEFS.map((chk,idx)=>{
+                if(chk.type==="status"){
+                  return (
+                    <div key={chk.id} className="flex items-center justify-between gap-2 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800">
+                      <div className="flex items-center gap-2 text-sm"><span className={`w-5 h-5 flex items-center justify-center rounded ${res.tripStatus?"bg-green-500 text-white":"border border-slate-400"}`}>{res.tripStatus?"✓":idx+1}</span>{chk.label}</div>
+                      <select value={res.tripStatus||""} onChange={e=>setTripStatus(e.target.value)} className="text-sm px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900">
+                        <option value="">Selecione</option>
+                        {TRIP_STATUS.map(s=>(<option key={s} value={s}>{s}</option>))}
+                      </select>
+                    </div>
+                  );
+                }
+                const done=!!res.checks[chk.id];
+                return (
+                  <label key={chk.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer text-sm">
+                    <input type="checkbox" checked={done} onChange={()=>toggleCheck(chk.id)} className="w-4 h-4 accent-green-600"/>
+                    <span className={done?"line-through opacity-50":""}>{idx+1}. {chk.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+            {c.allDone && <div className="mt-3 p-2 rounded-lg bg-green-100 dark:bg-green-950/50 text-green-700 dark:text-green-300 text-sm font-medium text-center">🎉 Todos os checks concluídos — Viagem FINALIZADA</div>}
+          </Card>
+
+          {/* Tarefas do viajante */}
+          <Card className="p-4">
+            <h3 className="font-semibold mb-3 flex items-center gap-2">📌 Tarefas do viajante
+              {tarefas.length>0 && <Badge tone={tarefasPend>0?"amber":"green"}>{tarefasPend>0?`${tarefasPend} pendente(s)`:"todas concluídas"}</Badge>}
+            </h3>
+
+            {/* Nova tarefa */}
+            <div className="space-y-2 mb-4 p-3 rounded-lg bg-slate-50 dark:bg-slate-800">
+              <input value={tTitulo} onChange={e=>setTTitulo(e.target.value)} placeholder="Título da nova tarefa" className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"/>
+              <div className="grid grid-cols-2 gap-2">
+                <input type="date" value={tData} onChange={e=>setTData(e.target.value)} className="px-2 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"/>
+                <input type="time" value={tHora} onChange={e=>setTHora(e.target.value)} className="px-2 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"/>
+              </div>
+              <textarea value={tDesc} onChange={e=>setTDesc(e.target.value)} rows="2" placeholder="Descrição / informações extras (opcional)" className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"/>
+              <button onClick={addTask} className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium">+ Adicionar tarefa</button>
+            </div>
+
+            {/* Histórico de tarefas */}
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {tarefas.map(t=>(
+                <div key={t.id} className="p-3 rounded-lg border border-slate-200 dark:border-slate-800">
+                  {editId===t.id ? (
+                    <div className="space-y-2">
+                      <input value={edit.titulo} onChange={e=>setEdit({...edit,titulo:e.target.value})} className="w-full px-2 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"/>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input type="date" value={edit.data} onChange={e=>setEdit({...edit,data:e.target.value})} className="px-2 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"/>
+                        <input type="time" value={edit.hora} onChange={e=>setEdit({...edit,hora:e.target.value})} className="px-2 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"/>
+                      </div>
+                      <textarea value={edit.descricao} onChange={e=>setEdit({...edit,descricao:e.target.value})} rows="2" className="w-full px-2 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"/>
+                      <div className="flex gap-2">
+                        <button onClick={saveEdit} className="px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm">Salvar</button>
+                        <button onClick={()=>setEditId(null)} className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-sm">Cancelar</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-2">
+                      <input type="checkbox" checked={t.concluida} onChange={()=>toggleTask(t.id)} className="mt-1 w-4 h-4 accent-green-600"/>
+                      <div className="flex-1 min-w-0">
+                        <div className={`text-sm font-medium ${t.concluida?"line-through opacity-50":""}`}>{t.titulo}</div>
+                        <div className="text-xs opacity-60 mt-0.5">📅 {fmtDate(t.data)} {t.hora}</div>
+                        {t.descricao && <div className="text-sm mt-1 whitespace-pre-wrap opacity-90">{t.descricao}</div>}
+                        <div className="flex items-center gap-2 mt-2">
+                          {t.concluida ? <Badge tone="green">Concluída</Badge> : <Badge tone="amber">Pendente</Badge>}
+                          <button onClick={()=>startEdit(t)} className="text-xs text-brand-600 hover:underline">Remarcar / editar</button>
+                          <button onClick={()=>delTask(t.id)} className="text-xs text-red-500 hover:underline">Excluir</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {tarefas.length===0 && <p className="text-sm opacity-50">Nenhuma tarefa cadastrada para este viajante.</p>}
+            </div>
+          </Card>
+
+          {/* Timeline / CRM */}
+          <Card className="p-4">
+            <h3 className="font-semibold mb-3">🗒️ Observações importantes / Histórico</h3>
+            <div className="flex gap-2 mb-3">
+              <input value={author} onChange={e=>setAuthor(e.target.value)} className="w-28 px-2 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm" placeholder="Autor"/>
+              <input value={note} onChange={e=>setNote(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addNote()}} className="flex-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm" placeholder="Digite uma nota e pressione Enter"/>
+              <button onClick={addNote} className="px-3 py-2 rounded-lg bg-brand-600 text-white text-sm">Add</button>
+            </div>
+            <div className="space-y-3 max-h-80 overflow-y-auto">
+              {(res.observacoes||[]).slice().reverse().map(o=>(
+                <div key={o.id} className="relative pl-4 border-l-2 border-brand-500">
+                  <div className="text-sm">{o.texto}</div>
+                  <div className="text-xs opacity-60 mt-0.5">{o.autor} · {fmtDateTime(o.ts)}</div>
+                </div>
+              ))}
+              {(res.observacoes||[]).length===0 && <p className="text-sm opacity-50">Nenhuma observação registrada.</p>}
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   APP RAIZ
+   ============================================================ */
+function App(){
+  const [reservations, setReservations] = useState(loadData);
+  const [view, setView] = useState({name:"dashboard"}); // dashboard | list | form | detail
+  const [theme, setTheme] = useState(()=>localStorage.getItem(THEME_KEY)||"dark");
+
+  useEffect(()=>{ saveData(reservations); }, [reservations]);
+  useEffect(()=>{
+    document.documentElement.classList.toggle("dark", theme==="dark");
+    localStorage.setItem(THEME_KEY, theme);
+  }, [theme]);
+
+  const openDetail = (id)=> setView({name:"detail", id});
+  const openEdit = (id)=> setView({name:"form", id});
+  const current = view.id ? reservations.find(r=>r.id===view.id) : null;
+
+  const upsert = (r)=> setReservations(prev=>{
+    const i=prev.findIndex(x=>x.id===r.id);
+    if(i>=0){ const a=[...prev]; a[i]=r; return a; }
+    return [...prev, r];
+  });
+  const remove = (id)=> setReservations(prev=>prev.filter(r=>r.id!==id));
+  // Importação: faz merge por ID (atualiza existentes, adiciona novos) — recupera histórico
+  const importData = (arr)=> setReservations(prev=>{
+    const byId={}; prev.forEach(r=>byId[r.id]=r);
+    arr.forEach(r=>{ if(r && r.id) byId[r.id]=r; });
+    return Object.values(byId);
+  });
+
+  const totalAlerts = useMemo(()=> reservations.reduce((s,r)=>s+computeReservation(r).alerts.length,0), [reservations]);
+
+  const navBtn=(name,label)=>(
+    <button onClick={()=>setView({name})} className={`px-4 py-2 rounded-lg text-sm font-medium ${view.name===name?"bg-brand-600 text-white":"hover:bg-slate-200 dark:hover:bg-slate-800"}`}>{label}</button>
+  );
+
+  return (
+    <div className="min-h-full">
+      <header className="sticky top-0 z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur border-b border-slate-200 dark:border-slate-800">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="text-lg font-bold flex items-center gap-2">🧳 Pós-Venda <span className="opacity-50 font-normal hidden sm:inline">| Painel Gerencial</span></div>
+          </div>
+          <nav className="flex items-center gap-1">
+            {navBtn("dashboard","Dashboard")}
+            {navBtn("list","Reservas")}
+            <button onClick={()=>setTheme(theme==="dark"?"light":"dark")} className="ml-2 px-3 py-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800" title="Alternar tema">{theme==="dark"?"☀️":"🌙"}</button>
+          </nav>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 py-6">
+        {view.name==="dashboard" && <Dashboard reservations={reservations} onOpen={openDetail} />}
+        {view.name==="list" && <ReservationsTable reservations={reservations} onOpen={openDetail} onNew={()=>setView({name:"form"})} onDelete={remove} onUpdate={upsert} onImport={importData} />}
+        {view.name==="form" && <ReservationForm initial={current} existingIds={reservations.map(r=>r.id)} onSave={(r)=>{upsert(r); setView({name:"detail",id:r.id});}} onCancel={()=>setView(current?{name:"detail",id:current.id}:{name:"list"})} />}
+        {view.name==="detail" && current && <ReservationDetail res={current} onUpdate={upsert} onBack={()=>setView({name:"list"})} onEdit={()=>openEdit(current.id)} />}
+        {view.name==="detail" && !current && <p>Reserva não encontrada. <button className="text-brand-600 underline" onClick={()=>setView({name:"list"})}>Voltar</button></p>}
+      </main>
+
+      <footer className="max-w-7xl mx-auto px-4 py-6 text-xs opacity-50 text-center">
+        Dados salvos localmente no navegador (localStorage). {reservations.length} reserva(s) · {totalAlerts} alerta(s) ativos.
+      </footer>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+<\/script>
+</body>
+</html>
+
 </script>
 </body>
 </html>
