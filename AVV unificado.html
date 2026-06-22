@@ -911,9 +911,23 @@ function renderQuoteList(){
   let list=[...state.orcamentos].sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
   const qq=(quoteSearch||'').trim().toLowerCase();
   if(qq){ list=list.filter(o=>((o.cliente&&o.cliente.nome)||'').toLowerCase().includes(qq)||((o.venda&&o.venda.titular)||'').toLowerCase().includes(qq)||((o.destino&&o.destino.titulo)||'').toLowerCase().includes(qq)); }
-  wrap.innerHTML=`<div class="card"><div class="card-header"><h3 class="card-title">Histórico de orçamentos</h3><span class="badge neutral">${list.length} total</span></div>${list.length===0?`<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>${qq?'Nenhum orçamento encontrado para essa busca.':'Nenhum orçamento ainda. Clique em "Novo orçamento" para começar.'}</div>`:`<table class="tbl"><thead><tr><th>Cliente</th><th>Destino</th><th>Criado</th><th>Investimento</th><th>Status</th><th class="num">Ações</th></tr></thead><tbody>${list.map(o=>{ const status=o.status==='fechado'?`<span class="badge success">Fechada · ${fmtBRL(o.comissao)}</span>`:o.status==='perdido'?`<span class="badge danger">Perdida</span>`:`<span class="badge warning">Em aberto</span>`; return `<tr><td><strong>${escapeHtml(o.cliente?.nome||'—')}</strong></td><td>${escapeHtml(o.destino?.titulo||'—')}</td><td>${fmtDateBR(o.createdAt.slice(0,10))}</td><td>${o.investimento?.valor?fmtBRL(o.investimento.valor):'—'}</td><td>${status}</td><td class="num"><button class="btn-icon" title="Editar" onclick="openQuoteForm('${o.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="btn-icon" title="Gerar HTML" onclick="exportQuoteHTML('${o.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button><button class="btn-icon" title="Status" onclick="openStatusModal('${o.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></button><button class="btn-icon" title="Exportar JSON" onclick="exportQuoteJSON('${o.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button><button class="btn-icon" title="Excluir" onclick="deleteQuote('${o.id}')" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></td></tr>`; }).join('')}</tbody></table>`}</div>`;
+  wrap.innerHTML=`<div class="card"><div class="card-header"><h3 class="card-title">Histórico de orçamentos</h3><span class="badge neutral">${list.length} total</span></div>${list.length===0?`<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>${qq?'Nenhum orçamento encontrado para essa busca.':'Nenhum orçamento ainda. Clique em "Novo orçamento" para começar.'}</div>`:`<table class="tbl"><thead><tr><th>Cliente</th><th>Destino</th><th>Criado</th><th>Investimento</th><th>Status</th><th class="num">Ações</th></tr></thead><tbody>${list.map(o=>{ const status=o.status==='fechado'?`<span class="badge success">Fechada · ${fmtBRL(o.comissao)}</span>`:o.status==='perdido'?`<span class="badge danger">Perdida</span>`:`<span class="badge warning">Em aberto</span>`; return `<tr><td><strong>${escapeHtml(o.cliente?.nome||'—')}</strong></td><td>${escapeHtml(o.destino?.titulo||'—')}</td><td>${fmtDateBR(o.createdAt.slice(0,10))}</td><td>${o.investimento?.valor?fmtBRL(o.investimento.valor):'—'}</td><td>${status}</td><td class="num"><button class="btn-icon" title="Editar" onclick="editQuote('${o.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="btn-icon" title="Gerar HTML" onclick="exportQuoteHTML('${o.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button><button class="btn-icon" title="Status" onclick="openStatusModal('${o.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></button><button class="btn-icon" title="Exportar JSON" onclick="exportQuoteJSON('${o.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button><button class="btn-icon" title="Excluir" onclick="deleteQuote('${o.id}')" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></td></tr>`; }).join('')}</tbody></table>`}</div>`;
 }
 
+/* Abre o gerador novo (VOA) preenchido com o orçamento existente.
+   Usa o snapshot completo (voaData) quando houver; senão, monta um parcial. */
+function editQuote(id){
+  const o=state.orcamentos.find(x=>x.id===id); if(!o) return;
+  const data=o.voaData?JSON.parse(JSON.stringify(o.voaData)):buildVoaDataFromQuote(o);
+  VOA.openForEdit(data,id);
+}
+function buildVoaDataFromQuote(o){
+  const flights=(o.voos||[]).map(v=>({ group:'Ida', airline:v.cia||'', date:'', dur:'', ocity:v.origem||'', oiata:'', dcity:v.destino||'', diata:'', dep:v.horarioSaida||'', arr:v.horarioChegada||'' }));
+  const hotelName=(o.hospedagem&&o.hospedagem[0]&&o.hospedagem[0].nome)||'';
+  const destPeriod=(o.datas&&o.datas[0]&&o.datas[0].trecho)||'';
+  const valor=o.investimento&&o.investimento.valor?Number(o.investimento.valor).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}):'';
+  return { agentName:(state.user&&state.user.name)||'', agentPhone:'', clientName:(o.cliente&&o.cliente.nome)||'', adults:'2', children:'0', childAges:[], destName:(o.destino&&o.destino.titulo)||'', destPeriod:destPeriod, destText:(o.destino&&o.destino.descricao)||'', gallery:[], flights:flights, hotelName:hotelName, hotelImgs:[], hotelsExtra:[], passeios:[], traslados:[], docs:[], priceTotal:valor, priceInstall:(o.investimento&&o.investimento.parcelas)||'', priceNote:'' };
+}
 function openQuoteForm(id){
   if(id){ const existing=state.orcamentos.find(o=>o.id===id); if(!existing) return; currentQuote=JSON.parse(JSON.stringify(existing)); } else { currentQuote=blankQuote(); }
   renderQuoteForm();
@@ -1005,7 +1019,7 @@ function drawAgenda(){
   for(let i=1;i<=trailing;i++){ html+=`<div class="cal-day muted"><div class="num">${i}</div></div>`; }
   html+=`</div>`; document.getElementById('agendaWrap').innerHTML=html;
 }
-function openTripQuick(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) return; const datas=(o.datas||[]).map(d=>`${escapeHtml(d.trecho||'Trecho')}: ${fmtDateBR(d.inicio)} → ${fmtDateBR(d.fim)}`).join('<br>'); openModal(`<div class="modal-head"><h3>${escapeHtml(o.cliente?.nome||'Cliente')}</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><p style="font-size:13px;color:var(--text-soft);margin:0 0 6px"><strong>Destino:</strong> ${escapeHtml(o.destino?.titulo||'—')}</p><p style="font-size:13px;color:var(--text-soft);margin:0 0 6px"><strong>Datas:</strong><br>${datas}</p><p style="font-size:13px;color:var(--text-soft);margin:0 0 6px"><strong>Telefone:</strong> ${escapeHtml(o.cliente?.telefone||'—')}</p><p style="font-size:13px;color:var(--text-soft);margin:0 0 6px"><strong>Comissão:</strong> ${fmtBRL(o.comissao||0)}</p><p style="font-size:12px;color:var(--brand-red);margin-top:14px">💡 Dica: aproveite para oferecer seguro, passeios extras, transfer privativo e chip internacional!</p></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Fechar</button><button class="btn btn-primary" onclick="closeModal();setView('orcamentos');setTimeout(()=>openQuoteForm('${o.id}'),100)">Abrir orçamento</button></div>`); }
+function openTripQuick(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) return; const datas=(o.datas||[]).map(d=>`${escapeHtml(d.trecho||'Trecho')}: ${fmtDateBR(d.inicio)} → ${fmtDateBR(d.fim)}`).join('<br>'); openModal(`<div class="modal-head"><h3>${escapeHtml(o.cliente?.nome||'Cliente')}</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><p style="font-size:13px;color:var(--text-soft);margin:0 0 6px"><strong>Destino:</strong> ${escapeHtml(o.destino?.titulo||'—')}</p><p style="font-size:13px;color:var(--text-soft);margin:0 0 6px"><strong>Datas:</strong><br>${datas}</p><p style="font-size:13px;color:var(--text-soft);margin:0 0 6px"><strong>Telefone:</strong> ${escapeHtml(o.cliente?.telefone||'—')}</p><p style="font-size:13px;color:var(--text-soft);margin:0 0 6px"><strong>Comissão:</strong> ${fmtBRL(o.comissao||0)}</p><p style="font-size:12px;color:var(--brand-red);margin-top:14px">💡 Dica: aproveite para oferecer seguro, passeios extras, transfer privativo e chip internacional!</p></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Fechar</button><button class="btn btn-primary" onclick="closeModal();setView('orcamentos');setTimeout(()=>editQuote('${o.id}'),100)">Abrir orçamento</button></div>`); }
 
 /* ========= TAREFAS ========= */
 function addTarefaPrompt(presetIso){ const def=presetIso||todayISO(); openModal(`<div class="modal-head"><h3>Nova tarefa</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><div class="field"><label>Data da tarefa</label><input type="date" id="ta_data" value="${def}"></div><div class="field"><label>Descrição da tarefa</label><textarea id="ta_texto" placeholder="Ex.: Ligar para o cliente confirmando documentos"></textarea></div><p style="font-size:11px;color:var(--text-mute);margin:2px 0 0">A tarefa será lançada automaticamente no dia escolhido do calendário.</p></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveTarefa()">Adicionar</button></div>`); setTimeout(()=>{ const e=document.getElementById('ta_texto'); if(e) e.focus(); },50); }
@@ -1033,6 +1047,7 @@ const VOA = (function(){
   let _logoDataUrl = "";
   let _destTextAuto = false;
   let _debTimer = null;
+  let _editId = null;
 
   const DESTINOS = {
     "atacama":"O deserto mais árido do mundo, o Atacama é um espetáculo de paisagens surreais — salares reluzentes, gêiseres, lagoas altiplânicas e um dos céus mais estrelados do planeta.",
@@ -1261,6 +1276,8 @@ const VOA = (function(){
   }
 
   function open(){
+    _editId=null;
+    const tt=document.querySelector('#voaOverlay .voa-brand h1'); if(tt) tt.textContent='Novo Orçamento · TZ Viagens';
     const ov=vEl('voaOverlay'); ov.style.display='block'; ov.scrollTop=0;
     if(state.user&&state.user.name){ const an=vEl('voaAgentName'); if(an&&!an.value) an.value=state.user.name; }
     if(state.logo&&!_logoDataUrl){ _logoDataUrl=state.logo; vEl('voaLogoPreview').innerHTML='<img src="'+_logoDataUrl+'" alt="logo" />'; vEl('voaLogoPh').textContent='Logo carregada — clique para trocar'; }
@@ -1268,7 +1285,16 @@ const VOA = (function(){
     bindLive(document.getElementById('voaColForm'));
   }
 
-  function close(){ vEl('voaOverlay').style.display='none'; }
+  function close(){ vEl('voaOverlay').style.display='none'; _editId=null; }
+  function openForEdit(data, editId){
+    open();
+    applyData(data||{});
+    if(data&&data.logo){ _logoDataUrl=data.logo; vEl('voaLogoPreview').innerHTML='<img src="'+data.logo+'" alt="logo" />'; vEl('voaLogoPh').textContent='Logo carregada — clique para trocar'; }
+    if(data&&data.heroImg){ const hp=vEl('voaHeroPick'); if(hp){ const di=hp.querySelector('.voa-img-data'); const th=hp.querySelector('.voa-thumb'); if(di) di.value=data.heroImg; if(th){ th.style.backgroundImage="url('"+String(data.heroImg).replace(/'/g,'%27')+"')"; th.textContent=''; } } }
+    _editId=editId||null;
+    const tt=document.querySelector('#voaOverlay .voa-brand h1'); if(tt) tt.textContent=_editId?'Editar Orçamento · TZ Viagens':'Novo Orçamento · TZ Viagens';
+    updatePreview();
+  }
 
   function clearSilent(){
     document.querySelectorAll('#voaOverlay input,#voaOverlay textarea').forEach(function(i){ if(i.type!=='file'&&i.type!=='checkbox') i.value=''; });
@@ -1307,14 +1333,15 @@ const VOA = (function(){
     vEl('voaChildAges').appendChild(wrap); bindLive(wrap);
   }
 
+  function _applyImgUrl(node,url){ if(!url) return; const di=node.querySelector('.voa-img-data'); const th=node.querySelector('.voa-thumb'); if(di) di.value=url; if(th){ th.style.backgroundImage="url('"+String(url).replace(/'/g,'%27')+"')"; th.textContent=''; } }
   function addGallery(url){
     const wrap=document.createElement('div'); wrap.innerHTML=imgPickMarkup(true);
-    const node=wrap.firstChild; vEl('voaGallery').appendChild(node); bindLive(node);
+    const node=wrap.firstChild; vEl('voaGallery').appendChild(node); bindLive(node); _applyImgUrl(node,url);
   }
 
   function addHotelImg(url){
     const wrap=document.createElement('div'); wrap.innerHTML=imgPickMarkup(true);
-    const node=wrap.firstChild; vEl('voaHotelImgs').appendChild(node); bindLive(node);
+    const node=wrap.firstChild; vEl('voaHotelImgs').appendChild(node); bindLive(node); _applyImgUrl(node,url);
   }
 
   function addHotel(d){
@@ -1326,12 +1353,12 @@ const VOA = (function(){
       '<div class="voa-field"><label>Descrição</label><textarea class="he-desc">'+vEsc(d.desc||'')+'</textarea></div>'+
       '<div class="voa-field"><label>Fotos</label><div class="he-imgs"></div><button class="voa-btn voa-btn-add" type="button" onclick="VOA.addHotelPic(this)">+ Adicionar foto</button></div>';
     vEl('voaHotelsExtra').appendChild(wrap); bindLive(wrap);
-    (d.imgs||[]).forEach(function(u){ addHotelPicTo(wrap.querySelector('.he-imgs')); });
+    (d.imgs||[]).forEach(function(u){ addHotelPicTo(wrap.querySelector('.he-imgs'),u); });
   }
 
-  function addHotelPicTo(container){
+  function addHotelPicTo(container,url){
     const w=document.createElement('div'); w.innerHTML=imgPickMarkup(true);
-    const node=w.firstChild; container.appendChild(node); bindLive(node);
+    const node=w.firstChild; container.appendChild(node); bindLive(node); _applyImgUrl(node,url);
   }
   function addHotelPic(btn){ addHotelPicTo(btn.closest('.voa-hotel-block').querySelector('.he-imgs')); }
 
@@ -1448,12 +1475,13 @@ const VOA = (function(){
     a.href=URL.createObjectURL(blob); a.download='Orcamento-TZ-'+slug+'.html';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(function(){ URL.revokeObjectURL(a.href); },1500);
-    // save to AVV state
-    avvSaveFromVOA(data);
+    // save to AVV state (atualiza se for edição, senão cria novo)
+    const wasEdit=_editId;
+    avvSaveFromVOA(data,wasEdit);
     close();
     setView('orcamentos');
     showToast('✓ Orçamento exportado!');
-    toast('Orçamento salvo no AVV!','success');
+    toast(wasEdit?'Orçamento atualizado no AVV!':'Orçamento salvo no AVV!','success');
   }
 
   function exportJSON(){
@@ -1479,7 +1507,7 @@ const VOA = (function(){
     if(vEl('voaDestName')) vEl('voaDestName').value=data.destName||'';
     if(vEl('voaDestPeriod')) vEl('voaDestPeriod').value=data.destPeriod||'';
     if(vEl('voaDestText')){ vEl('voaDestText').value=data.destText||''; _destTextAuto=false; }
-    (data.gallery||[]).forEach(function(){ addGallery(''); });
+    (data.gallery||[]).forEach(function(u){ addGallery(u||''); });
     (data.flights||[]).forEach(function(f){ addFlight(f); });
     if(vEl('voaBagHand')) vEl('voaBagHand').checked=!!data.bagHand;
     if(vEl('voaBagPersonal')) vEl('voaBagPersonal').checked=!!data.bagPersonal;
@@ -1490,7 +1518,7 @@ const VOA = (function(){
     if(vEl('voaHotelRoom')) vEl('voaHotelRoom').value=data.hotelRoom||'';
     if(vEl('voaHotelMeal')) vEl('voaHotelMeal').value=data.hotelMeal||'';
     if(vEl('voaHotelDesc')) vEl('voaHotelDesc').value=data.hotelDesc||'';
-    (data.hotelImgs||[]).forEach(function(){ addHotelImg(''); });
+    (data.hotelImgs||[]).forEach(function(u){ addHotelImg(u||''); });
     (data.hotelsExtra||[]).forEach(function(h){ addHotel(h); });
     (data.passeios||[]).forEach(function(p){ addPasseio(p); });
     (data.traslados||[]).forEach(function(t){ addTraslado(t); });
@@ -1672,7 +1700,7 @@ const VOA = (function(){
   }
 
   return {
-    open,close,clearAll,
+    open,openForEdit,close,clearAll,
     addChild,addGallery,addFlight,addHotelImg,addHotel,addHotelPic,rmHotel,
     addPasseio,addTraslado,addDoc,addInclude,
     quickDoc,quickInclude,rm,
@@ -1685,8 +1713,9 @@ const VOA = (function(){
   };
 })();
 
-function avvSaveFromVOA(data){
-  const q=blankQuote();
+function avvSaveFromVOA(data,editId){
+  let q=editId?state.orcamentos.find(x=>x.id===editId):null;
+  const isNew=!q; if(isNew) q=blankQuote();
   q.cliente.nome=data.clientName||'';
   q.destino.titulo=data.destName||'';
   q.destino.descricao=data.destText||'';
@@ -1699,9 +1728,10 @@ function avvSaveFromVOA(data){
     horarioSaida:f.dep||'',horarioChegada:f.arr||'',
     bagagem:'Sem bagagem despachada',cancelamento:''
   }));
-  if(data.hotelName){ q.hospedagem=[{nome:data.hotelName,fotos:['','','',''],cancelamento:'Reembolsável'}]; }
-  if(data.destPeriod){ const p=parsePeriodo(data.destPeriod); q.datas=[{inicio:p.inicio||'',fim:p.fim||'',trecho:data.destPeriod}]; }
-  state.orcamentos.unshift(q);
+  if(data.hotelName){ q.hospedagem=[{nome:data.hotelName,fotos:['','','',''],cancelamento:(q.hospedagem&&q.hospedagem[0]&&q.hospedagem[0].cancelamento)||'Reembolsável'}]; }
+  if(data.destPeriod){ const p=parsePeriodo(data.destPeriod); q.datas=[{inicio:p.inicio||(q.datas&&q.datas[0]&&q.datas[0].inicio)||'',fim:p.fim||(q.datas&&q.datas[0]&&q.datas[0].fim)||'',trecho:data.destPeriod}]; }
+  q.voaData=data; // snapshot completo do gerador para edição fiel
+  if(isNew) state.orcamentos.unshift(q);
   persistAll();
 }
 
