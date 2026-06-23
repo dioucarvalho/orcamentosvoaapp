@@ -104,6 +104,17 @@ create table if not exists public.metas (
 );
 insert into public.metas (id) values (1) on conflict (id) do nothing;
 
+-- ----------------------------------------------------------------------------
+-- 6) AGÊNCIA — configurações globais (logo da agência, etc.)
+-- ----------------------------------------------------------------------------
+create table if not exists public.agencia (
+  id            int primary key default 1,
+  logo          text,
+  nome          text,
+  atualizado_em timestamptz default now()
+);
+insert into public.agencia (id) values (1) on conflict (id) do nothing;
+
 -- ============================================================================
 -- RLS — REGRAS DE ACESSO (a segurança de verdade, por papel)
 -- ============================================================================
@@ -112,6 +123,7 @@ alter table public.orcamentos enable row level security;
 alter table public.tarefas    enable row level security;
 alter table public.dia_extra  enable row level security;
 alter table public.metas      enable row level security;
+alter table public.agencia    enable row level security;
 
 -- PERFIS
 drop policy if exists "perfil_ler" on public.profiles;
@@ -170,6 +182,14 @@ create policy "metas_ler" on public.metas
 drop policy if exists "metas_admin_altera" on public.metas;
 create policy "metas_admin_altera" on public.metas
   for update using (public.meu_papel() = 'admin');
+
+-- AGÊNCIA — todos leem; qualquer usuário logado pode atualizar (logo)
+drop policy if exists "agencia_ler" on public.agencia;
+create policy "agencia_ler" on public.agencia
+  for select using (true);
+drop policy if exists "agencia_alterar" on public.agencia;
+create policy "agencia_alterar" on public.agencia
+  for update using (auth.uid() is not null);
 
 -- ============================================================================
 -- FIM. Depois de rodar: crie os usuários em Authentication → Users → Add user

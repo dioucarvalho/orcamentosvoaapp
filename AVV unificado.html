@@ -864,6 +864,8 @@ async function cloudLoadAll(){
     const { data:m } = await sb.from('metas').select('*').eq('id',1).maybeSingle();
     if(m){ state.metas={ agendamento:Number(m.agendamento)||0, atendimento:Number(m.atendimento)||0, orcamento:Number(m.orcamento)||0, vendas:Number(m.vendas)||0, repiques:Number(m.repiques)||0, vendaMin:Number(m.venda_min)||0 }; }
 
+    try{ const { data:ag } = await sb.from('agencia').select('logo,nome').eq('id',1).maybeSingle(); if(ag&&ag.logo){ state.logo=ag.logo; try{ localStorage.setItem(STORE.LOGO,ag.logo); localStorage.setItem('voa_agency_logo',ag.logo); }catch(e){} } }catch(e){ console.error('agencia',e); }
+
     const { data:orcs } = await sb.from('orcamentos').select('data,created_at').order('created_at',{ascending:false});
     state.orcamentos=(orcs||[]).map(r=>r.data).filter(Boolean);
 
@@ -882,6 +884,8 @@ function cloudSaveTarefa(t){ if(!sb||!state.user) return; sb.from('tarefas').ups
 function cloudDeleteTarefa(id){ if(!sb) return; sb.from('tarefas').delete().eq('id',id).then(({error})=>cloudErr(error)); }
 function cloudSaveDia(iso,e){ if(!sb||!state.user) return; sb.from('dia_extra').upsert({ user_id:state.user.id, data:iso, repiques:e.repiques||0, agendamento:e.agendamento||0, atendimento:e.atendimento||0, orcamento_ajuste:e.orcamentoAjuste||0, vendas_ajuste:e.vendasAjuste||0, comissao_ajuste:e.comissaoAjuste||0 },{onConflict:'user_id,data'}).then(({error})=>cloudErr(error)); }
 function cloudSaveMetas(){ if(!sb) return; sb.from('metas').update({ agendamento:state.metas.agendamento, atendimento:state.metas.atendimento, orcamento:state.metas.orcamento, vendas:state.metas.vendas, repiques:state.metas.repiques, venda_min:state.metas.vendaMin }).eq('id',1).then(({error})=>cloudErr(error)); }
+function cloudSaveLogo(dataUrl){ if(!sb||!dataUrl) return; sb.from('agencia').update({ logo:dataUrl }).eq('id',1).then(({error})=>cloudErr(error)); }
+function cloudSaveNome(nome){ if(!sb||!state.user) return; sb.from('profiles').update({ nome:nome }).eq('id',state.user.id).then(({error})=>cloudErr(error)); }
 
 /* Exporta TODOS os dados deste navegador (orçamentos no IndexedDB + tarefas/atividades)
    para um arquivo .json. Funciona offline e sem login — roda no arquivo da colaboradora. */
@@ -941,6 +945,7 @@ async function handleLogoUpload(ev,onDone){
     state.logo=dataUrl;
     try{ localStorage.setItem(STORE.LOGO,state.logo); toast('Logo atualizada','success'); }
     catch(err){ toast('Logo grande demais para o navegador. Tente uma menor (<1MB).','danger'); state.logo=null; return; }
+    cloudSaveLogo(state.logo); // persiste a logo da agência na nuvem (vale para todos)
     if(typeof onDone==='function') onDone();
   }catch(e){ console.error(e); toast('Não foi possível ler o arquivo','danger'); }
   finally{ ev.target.value=''; }
@@ -988,7 +993,7 @@ async function logout(){ try{ if(sb) await sb.auth.signOut(); }catch(e){} try{ l
 function requestNameChange(){
   openModal(`<div class="modal-head"><h3>Alterar nome do colaborador</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><p style="margin:0 0 12px;font-size:13px;color:var(--text-soft)">Para alterar o nome registrado, insira a senha de administrador.</p><div class="field"><label>Senha</label><input type="password" id="adminPass" autocomplete="off"></div><div class="field"><label>Novo nome</label><input type="text" id="newName" value="${state.user.name}"></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="confirmNameChange()">Salvar</button></div>`);
 }
-function confirmNameChange(){ const pass=document.getElementById('adminPass').value; const newName=document.getElementById('newName').value.trim(); if(pass!==ADMIN_PASS){ toast('Senha incorreta','danger'); return; } if(!newName){ toast('Informe um novo nome','warning'); return; } state.user.name=newName; save(STORE.USER,state.user); document.getElementById('userName').textContent=newName; document.getElementById('topUserName').textContent=newName.split(' ')[0]; document.getElementById('userInitial').textContent=newName[0].toUpperCase(); closeModal(); toast('Nome atualizado','success'); }
+function confirmNameChange(){ const pass=document.getElementById('adminPass').value; const newName=document.getElementById('newName').value.trim(); if(pass!==ADMIN_PASS){ toast('Senha incorreta','danger'); return; } if(!newName){ toast('Informe um novo nome','warning'); return; } state.user.name=newName; save(STORE.USER,state.user); cloudSaveNome(newName); document.getElementById('userName').textContent=newName; document.getElementById('topUserName').textContent=newName.split(' ')[0]; document.getElementById('userInitial').textContent=newName[0].toUpperCase(); closeModal(); toast('Nome atualizado','success'); }
 
 const VIEW_META = { administracao:{title:'Administração',sub:'Visão consolidada da equipe e da operação'}, dashboard:{title:'Dashboard',sub:'Visão geral do desempenho'}, orcamentos:{title:'Orçamentos',sub:'Gere, gerencie e acompanhe propostas de viagem'}, controle:{title:'Controle Diário',sub:'Rotina, metas e métricas do mês'}, agenda:{title:'Agenda de Viajantes',sub:'Calendário de embarques e oportunidades de upsell'}, relatorios:{title:'Relatórios',sub:'Exportação consolidada de desempenho em PDF'}, posvenda:{title:'Pós-Venda TZ Viagens',sub:'Painel gerencial de controle de viajantes'}, voaapp:{title:'VOA',sub:'Itinerário de viagem · TZ Viagens'} };
 function bindNav(){
@@ -1698,7 +1703,7 @@ const VOA = (function(){
   function handleLogo(e){
     const f=e.target.files[0]; if(!f) return;
     const r=new FileReader();
-    r.onload=function(ev){ _logoDataUrl=ev.target.result; try{ localStorage.setItem(VOA_LOGO_KEY,_logoDataUrl); }catch(err){ showToast('Logo enviada, mas grande demais para salvar fixo. Tente uma imagem menor.'); } showLogoPreview(_logoDataUrl); debouncedPreview(); };
+    r.onload=function(ev){ _logoDataUrl=ev.target.result; try{ localStorage.setItem(VOA_LOGO_KEY,_logoDataUrl); }catch(err){ showToast('Logo enviada, mas grande demais para salvar fixo. Tente uma imagem menor.'); } try{ state.logo=_logoDataUrl; localStorage.setItem(STORE.LOGO,_logoDataUrl); cloudSaveLogo(_logoDataUrl); var sl=document.getElementById('sidebarLogo'); if(sl) sl.innerHTML=logoHTML(); }catch(e){} showLogoPreview(_logoDataUrl); debouncedPreview(); };
     r.readAsDataURL(f);
   }
 
