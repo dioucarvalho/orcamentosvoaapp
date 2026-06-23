@@ -362,6 +362,12 @@ table.tbl th.num{text-align:right}
     <h1>Seja bem-vindo ao AVV</h1>
     <p>Agenda de Viajantes e Vendas · TZ Viagens</p>
     <input type="text" id="loginName" placeholder="Digite seu nome" autocomplete="off">
+    <select id="loginRole" style="width:100%;padding:13px 14px;border-radius:var(--radius-sm);border:1.5px solid var(--border);font-size:15px;outline:none;margin-top:10px;background:#fff;color:var(--text)">
+      <option value="consultora">Consultor(a) de viagens</option>
+      <option value="gerente">Gerente</option>
+      <option value="admin">Administrador</option>
+    </select>
+    <input type="password" id="loginPass" placeholder="Senha de gestão (gerente/admin)" autocomplete="off" style="display:none">
     <button class="btn btn-primary" id="loginBtn">Entrar</button>
     <div style="margin-top:14px;font-size:12px;color:var(--text-soft)">
       <a href="#" id="loginUploadLogo" style="text-decoration:underline;color:var(--brand-blue);font-weight:600">Configurar logo da agência</a>
@@ -378,6 +384,10 @@ table.tbl th.num{text-align:right}
       <div class="brand-text">TZ Viagens<small>AVV · v1.0</small></div>
     </div>
     <nav>
+      <div class="nav-item" data-view="administracao" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4z"/><path d="M9 12l2 2 4-4"/></svg>
+        Administração
+      </div>
       <div class="nav-item active" data-view="dashboard">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
         Dashboard
@@ -418,6 +428,9 @@ table.tbl th.num{text-align:right}
       <div class="actions">
         <button id="changeNameBtn">Alterar nome</button>
         <button id="changeLogoBtn">Trocar logo</button>
+      </div>
+      <div class="actions">
+        <button id="logoutBtn" style="background:rgba(226,43,43,.25)">Sair / trocar acesso</button>
       </div>
       <input type="file" id="logoFileInput" accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp" style="display:none">
     </div>
@@ -805,6 +818,8 @@ function initAuth(){
     document.getElementById('loginScreen').style.display='flex';
     document.getElementById('loginBtn').addEventListener('click',handleLogin);
     document.getElementById('loginName').addEventListener('keydown',e=>{ if(e.key==='Enter') handleLogin(); });
+    document.getElementById('loginRole').addEventListener('change',e=>{ const pass=document.getElementById('loginPass'); const gestao=e.target.value!=='consultora'; pass.style.display=gestao?'block':'none'; if(gestao) setTimeout(()=>pass.focus(),30); else pass.value=''; });
+    document.getElementById('loginPass').addEventListener('keydown',e=>{ if(e.key==='Enter') handleLogin(); });
     document.getElementById('loginUploadLogo').addEventListener('click',(e)=>{ e.preventDefault(); document.getElementById('loginLogoInput').click(); });
     document.getElementById('loginLogoInput').addEventListener('change',(e)=>handleLogoUpload(e,()=>{ document.getElementById('loginLogo').innerHTML=logoHTML(); }));
   }
@@ -823,22 +838,62 @@ async function handleLogoUpload(ev,onDone){
   }catch(e){ console.error(e); toast('Não foi possível ler o arquivo','danger'); }
   finally{ ev.target.value=''; }
 }
-function handleLogin(){ const name=document.getElementById('loginName').value.trim(); if(!name){ toast('Por favor, digite seu nome','warning'); return; } state.user={name,since:localNowISO()}; save(STORE.USER,state.user); showApp(); }
-function showApp(){ document.getElementById('loginScreen').style.display='none'; document.getElementById('app').classList.add('is-active'); document.getElementById('userName').textContent=state.user.name; document.getElementById('topUserName').textContent=state.user.name.split(' ')[0]; document.getElementById('userInitial').textContent=(state.user.name[0]||'A').toUpperCase(); bindNav(); setView('dashboard'); }
+/* ===== PAPÉIS DE ACESSO (espelham os roles do Supabase: admin/gerente/consultora) ===== */
+const ROLE_LABELS = { consultora:'Consultor(a)', gerente:'Gerente', admin:'Administrador' };
+const ROLE_MENUS = {
+  consultora: ['dashboard','orcamentos','controle','agenda','relatorios','voaapp'],
+  gerente:    ['administracao','posvenda'],
+  admin:      ['dashboard','administracao','orcamentos','controle','agenda','relatorios','posvenda','voaapp']
+};
+function userSlug(name){ return String(name||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'user'; }
+function currentRole(){ return (state.user&&state.user.role)||'admin'; }
+function canSee(view){ return (ROLE_MENUS[currentRole()]||ROLE_MENUS.consultora).indexOf(view)>=0; }
+function applyRoleUI(){
+  const allowed=ROLE_MENUS[currentRole()]||ROLE_MENUS.consultora;
+  document.querySelectorAll('.nav-item').forEach(el=>{ el.style.display = allowed.indexOf(el.dataset.view)>=0 ? '' : 'none'; });
+  const roleEl=document.querySelector('.user-panel .role'); if(roleEl) roleEl.textContent=ROLE_LABELS[currentRole()]||'Consultor(a)';
+}
+function handleLogin(){
+  const name=document.getElementById('loginName').value.trim();
+  if(!name){ toast('Por favor, digite seu nome','warning'); return; }
+  const role=document.getElementById('loginRole').value;
+  if(role==='gerente'||role==='admin'){
+    const pass=document.getElementById('loginPass').value;
+    if(pass!==ADMIN_PASS && pass!==ADMIN_PASS_LEGACY){ toast('Senha de gestão incorreta','danger'); return; }
+  }
+  state.user={name, role, id:userSlug(name), since:localNowISO()};
+  save(STORE.USER,state.user); showApp();
+}
+function showApp(){
+  // migração: usuários antigos (sem papel) assumem admin para não perder acesso
+  if(state.user && !state.user.role){ state.user.role='admin'; state.user.id=userSlug(state.user.name); save(STORE.USER,state.user); }
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('app').classList.add('is-active');
+  document.getElementById('userName').textContent=state.user.name;
+  document.getElementById('topUserName').textContent=state.user.name.split(' ')[0];
+  document.getElementById('userInitial').textContent=(state.user.name[0]||'A').toUpperCase();
+  bindNav();
+  applyRoleUI();
+  const start=(ROLE_MENUS[currentRole()]||ROLE_MENUS.consultora)[0];
+  setView(start);
+}
+function logout(){ document.getElementById('app').classList.remove('is-active'); state.user=null; try{ localStorage.removeItem(STORE.USER); }catch(e){} location.reload(); }
 function requestNameChange(){
   openModal(`<div class="modal-head"><h3>Alterar nome do colaborador</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><p style="margin:0 0 12px;font-size:13px;color:var(--text-soft)">Para alterar o nome registrado, insira a senha de administrador.</p><div class="field"><label>Senha</label><input type="password" id="adminPass" autocomplete="off"></div><div class="field"><label>Novo nome</label><input type="text" id="newName" value="${state.user.name}"></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="confirmNameChange()">Salvar</button></div>`);
 }
 function confirmNameChange(){ const pass=document.getElementById('adminPass').value; const newName=document.getElementById('newName').value.trim(); if(pass!==ADMIN_PASS){ toast('Senha incorreta','danger'); return; } if(!newName){ toast('Informe um novo nome','warning'); return; } state.user.name=newName; save(STORE.USER,state.user); document.getElementById('userName').textContent=newName; document.getElementById('topUserName').textContent=newName.split(' ')[0]; document.getElementById('userInitial').textContent=newName[0].toUpperCase(); closeModal(); toast('Nome atualizado','success'); }
 
-const VIEW_META = { dashboard:{title:'Dashboard',sub:'Visão geral do desempenho'}, orcamentos:{title:'Orçamentos',sub:'Gere, gerencie e acompanhe propostas de viagem'}, controle:{title:'Controle Diário',sub:'Rotina, metas e métricas do mês'}, agenda:{title:'Agenda de Viajantes',sub:'Calendário de embarques e oportunidades de upsell'}, relatorios:{title:'Relatórios',sub:'Exportação consolidada de desempenho em PDF'}, posvenda:{title:'Pós-Venda TZ Viagens',sub:'Painel gerencial de controle de viajantes'}, voaapp:{title:'VOA',sub:'Itinerário de viagem · TZ Viagens'} };
+const VIEW_META = { administracao:{title:'Administração',sub:'Visão consolidada da equipe e da operação'}, dashboard:{title:'Dashboard',sub:'Visão geral do desempenho'}, orcamentos:{title:'Orçamentos',sub:'Gere, gerencie e acompanhe propostas de viagem'}, controle:{title:'Controle Diário',sub:'Rotina, metas e métricas do mês'}, agenda:{title:'Agenda de Viajantes',sub:'Calendário de embarques e oportunidades de upsell'}, relatorios:{title:'Relatórios',sub:'Exportação consolidada de desempenho em PDF'}, posvenda:{title:'Pós-Venda TZ Viagens',sub:'Painel gerencial de controle de viajantes'}, voaapp:{title:'VOA',sub:'Itinerário de viagem · TZ Viagens'} };
 function bindNav(){
   document.querySelectorAll('.nav-item').forEach(el=>{ el.addEventListener('click',()=>setView(el.dataset.view)); });
   document.getElementById('menuToggle').addEventListener('click',()=>{ document.getElementById('sidebar').classList.toggle('is-open'); });
   document.getElementById('changeNameBtn').addEventListener('click',requestNameChange);
+  document.getElementById('logoutBtn').addEventListener('click',()=>{ if(confirm('Sair e voltar para a tela de acesso?')) logout(); });
   document.getElementById('changeLogoBtn').addEventListener('click',()=>{ requireAdmin('Para trocar a logo da agência, informe a senha de administrador.',()=>{ document.getElementById('logoFileInput').click(); }); });
   document.getElementById('logoFileInput').addEventListener('change',(e)=>handleLogoUpload(e,()=>{ document.getElementById('sidebarLogo').innerHTML=logoHTML(); const active=document.querySelector('.nav-item.active'); if(active) setView(active.dataset.view); }));
 }
 function setView(view){
+  if(!canSee(view)){ view=(ROLE_MENUS[currentRole()]||ROLE_MENUS.consultora)[0]; }
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.view===view));
   document.getElementById('pageTitle').textContent=VIEW_META[view].title;
   document.getElementById('pageSub').textContent=VIEW_META[view].sub;
@@ -851,6 +906,147 @@ function setView(view){
   if(view==='relatorios') renderRelatorios(c);
   if(view==='posvenda') renderPosVenda(c);
   if(view==='voaapp') renderVoaApp(c);
+  if(view==='administracao') renderAdmin(c);
+}
+
+/* ============================================================================
+   CAMADA DE DADOS (Backend) — ponto único de troca para o SUPABASE (fase 3.2).
+   Hoje lê do armazenamento local deste navegador. Com o Supabase, cada método
+   vira uma consulta ao banco e a RLS (regra de acesso por papel) já devolve
+   automaticamente só o que admin/gerente/consultora pode ver — sem mudar o
+   restante do app, que sempre passa por aqui.
+   ============================================================================ */
+const Backend = {
+  mode:'local',
+  me(){ return state.user||{name:'',role:'consultora',id:''}; },
+  // SUPABASE: const {data}=await supabase.from('orcamentos').select('*');  (RLS filtra por papel)
+  orcamentos(){ return state.orcamentos||[]; },
+  // SUPABASE: supabase.from('tarefas').select('*')
+  tarefas(){ return state.tarefas||[]; },
+  // SUPABASE: supabase.from('dia_extra').select('*')
+  diaExtra(){ return state.diaExtra||{}; }
+};
+
+/* ============================================================================
+   PAINEL DE ADMINISTRAÇÃO (admin = vê tudo; gerente = visão da equipe, leitura)
+   ============================================================================ */
+const GERENTE_VE_VALORES = false; // gerente vê atividade, não os valores em R$ (troque para true se quiser)
+let adminFilter = { month: currentMonth(), owner:'' };
+function adminPodeVerValores(){ return currentRole()==='admin' || (currentRole()==='gerente' && GERENTE_VE_VALORES); }
+function ownerNameOf(o){ return o.owner || (o.ownerId? o.ownerId : 'Sem identificação'); }
+
+function renderAdmin(c){
+  const verR$ = adminPodeVerValores();
+  const orcs = Backend.orcamentos();
+  const owners = [...new Set(orcs.map(ownerNameOf))].sort((a,b)=>a.localeCompare(b));
+  const mo = adminFilter.month || currentMonth();
+  const inMonth = o => monthOf(o.createdAt)===mo;
+  const fechadaNoMes = o => o.status==='fechado' && monthOf(o.closedAt||o.createdAt)===mo;
+
+  // agrega por funcionária
+  const rows = owners.map(nome=>{
+    const meus = orcs.filter(o=>ownerNameOf(o)===nome);
+    const orcMes = meus.filter(o=>inMonth(o) && !(o.versao>1)).length;
+    const fechadas = meus.filter(fechadaNoMes);
+    const perdidas = meus.filter(o=>o.status==='perdido' && monthOf(o.closedAt||o.createdAt)===mo).length;
+    const comissao = fechadas.reduce((s,o)=>s+Number(o.comissao||0),0);
+    const conv = orcMes? Math.round((fechadas.length/orcMes)*100):0;
+    return { nome, orcMes, vendas:fechadas.length, perdidas, comissao, conv };
+  }).filter(r=> !adminFilter.owner || r.nome===adminFilter.owner);
+
+  const tot = rows.reduce((a,r)=>({orcMes:a.orcMes+r.orcMes,vendas:a.vendas+r.vendas,perdidas:a.perdidas+r.perdidas,comissao:a.comissao+r.comissao}),{orcMes:0,vendas:0,perdidas:0,comissao:0});
+  const convTot = tot.orcMes? Math.round((tot.vendas/tot.orcMes)*100):0;
+
+  // próximas viagens (todas as funcionárias) — 30 dias
+  const today=new Date(); today.setHours(0,0,0,0); const in30=new Date(today); in30.setDate(in30.getDate()+30);
+  const embarques=[];
+  orcs.filter(o=>o.status==='fechado').forEach(o=>{ (o.datas||[]).forEach(t=>{ if(t.inicio){ const d=parseDate(t.inicio); if(d&&d>=today&&d<=in30){ embarques.push({nome:(o.venda&&o.venda.titular)||o.cliente?.nome||'Cliente',destino:o.destino?.titulo||t.trecho||'Destino',data:t.inicio,owner:ownerNameOf(o)}); } } }); });
+  embarques.sort((a,b)=>a.data.localeCompare(b.data));
+
+  // vendas fechadas no mês (para acompanhamento / pós-venda)
+  const vendasMes = orcs.filter(fechadaNoMes).sort((a,b)=>(b.closedAt||'').localeCompare(a.closedAt||''));
+
+  const cardsHTML = `
+    <div class="stat-grid">
+      <div class="stat-card blue"><div class="stat-label">Orçamentos no mês</div><div class="stat-value">${fmtNum(tot.orcMes)}</div><div class="stat-sub">${rows.length} colaborador(es)</div></div>
+      <div class="stat-card green"><div class="stat-label">Vendas fechadas</div><div class="stat-value">${fmtNum(tot.vendas)}</div><div class="stat-sub">Conversão ${convTot}%</div></div>
+      <div class="stat-card red"><div class="stat-label">Vendas perdidas</div><div class="stat-value">${fmtNum(tot.perdidas)}</div><div class="stat-sub">no período</div></div>
+      ${verR$?`<div class="stat-card amber"><div class="stat-label">Comissão da equipe</div><div class="stat-value" style="font-size:22px">${fmtBRL(tot.comissao)}</div><div class="stat-sub">${tot.vendas} venda(s)</div></div>`:''}
+    </div>`;
+
+  const rankHTML = `
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header"><h3 class="card-title">Produção por colaborador</h3><span class="badge neutral">${mo}</span></div>
+      <table class="tbl">
+        <thead><tr><th>Colaborador</th><th class="num">Orçamentos</th><th class="num">Vendas</th><th class="num">Perdidas</th><th class="num">Conversão</th>${verR$?'<th class="num">Comissão</th>':''}</tr></thead>
+        <tbody>
+          ${rows.length===0?`<tr><td colspan="${verR$?6:5}"><div class="empty">Sem dados para o período. (Quando o Supabase estiver ligado, aparecem todos os colaboradores.)</div></td></tr>`:
+          rows.sort((a,b)=>b.vendas-a.vendas||b.orcMes-a.orcMes).map(r=>`<tr>
+            <td><strong>${escapeHtml(r.nome)}</strong></td>
+            <td class="num">${fmtNum(r.orcMes)}</td>
+            <td class="num">${fmtNum(r.vendas)}</td>
+            <td class="num">${fmtNum(r.perdidas)}</td>
+            <td class="num">${r.conv}%</td>
+            ${verR$?`<td class="num">${fmtBRL(r.comissao)}</td>`:''}
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  const vendasHTML = `
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header"><h3 class="card-title">Vendas fechadas no mês</h3><span class="badge neutral">${vendasMes.length}</span></div>
+      ${vendasMes.length===0?`<div class="empty">Nenhuma venda fechada no período.</div>`:
+      `<div style="overflow-x:auto"><table class="tbl">
+        <thead><tr><th>Data</th><th>Colaborador</th><th>Cliente / Titular</th><th>Destino</th><th>Fornecedor</th><th>ID Reserva</th>${verR$?'<th class="num">Com. Agência</th><th class="num">Com. Fornecedor</th>':''}</tr></thead>
+        <tbody>${vendasMes.map(o=>{const v=o.venda||{};return `<tr>
+          <td>${fmtDateBR(v.dataFechamento||(o.closedAt||'').slice(0,10))}</td>
+          <td>${escapeHtml(ownerNameOf(o))}</td>
+          <td><strong>${escapeHtml(v.titular||o.cliente?.nome||'—')}</strong></td>
+          <td>${escapeHtml(o.destino?.titulo||'—')}</td>
+          <td>${escapeHtml(v.fornecedor||'—')}</td>
+          <td>${escapeHtml(v.idReserva||'—')}</td>
+          ${verR$?`<td class="num">${fmtBRL(v.comissaoAgencia||o.comissao||0)}</td><td class="num">${fmtBRL(v.comissaoFornecedor||0)}</td>`:''}
+        </tr>`;}).join('')}</tbody>
+      </table></div>`}
+      <p style="font-size:12px;color:var(--text-mute);margin-top:10px">💡 Cada venda fechada já traz fornecedor, ID e titular — base para o acompanhamento no Pós-Venda.</p>
+    </div>`;
+
+  const embarquesHTML = `
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header"><h3 class="card-title">Próximos embarques (30 dias)</h3><span class="badge neutral">${embarques.length}</span></div>
+      ${embarques.length===0?`<div class="empty">Sem embarques marcados nas próximas semanas.</div>`:
+      `<table class="tbl"><thead><tr><th>Embarque</th><th>Passageiro</th><th>Destino</th><th>Colaborador</th></tr></thead>
+       <tbody>${embarques.slice(0,20).map(e=>`<tr><td>${fmtDateBR(e.data)}</td><td><strong>${escapeHtml(e.nome)}</strong></td><td>${escapeHtml(e.destino)}</td><td>${escapeHtml(e.owner)}</td></tr>`).join('')}</tbody></table>`}
+    </div>`;
+
+  const posvendaHTML = currentRole()==='admin' ? `
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Pós-Venda (gerência)</h3></div>
+      <p style="font-size:13px;color:var(--text-soft);margin:0 0 12px">Acompanhe o controle de viajantes feito pela gerente.</p>
+      <button class="btn btn-primary" onclick="setView('posvenda')">Abrir Pós-Venda</button>
+      <p style="font-size:12px;color:var(--text-mute);margin-top:12px">As métricas do pós-venda no painel (reservas atrasadas, check-ins) ficam disponíveis quando migrarmos o pós-venda para o Supabase (fase 3.3).</p>
+    </div>` : '';
+
+  c.innerHTML = `
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header"><h3 class="card-title">Filtros</h3><span class="badge ${currentRole()==='admin'?'success':'neutral'}">${ROLE_LABELS[currentRole()]||''}</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">
+        <div class="field" style="margin:0;min-width:160px"><label>Mês</label><input type="month" id="admMonth" value="${mo}"></div>
+        <div class="field" style="margin:0;min-width:200px"><label>Colaborador</label>
+          <select id="admOwner"><option value="">Todos</option>${owners.map(n=>`<option ${adminFilter.owner===n?'selected':''}>${escapeHtml(n)}</option>`).join('')}</select>
+        </div>
+        <button class="btn btn-primary" id="admApply">Aplicar</button>
+      </div>
+      ${Backend.mode==='local'?`<p style="font-size:12px;color:var(--warning);margin-top:10px">⚠️ Modo local: este painel mostra os dados deste navegador. Ao ligar o Supabase, ele passa a mostrar <strong>todos os colaboradores</strong> automaticamente.</p>`:''}
+    </div>
+    ${cardsHTML}
+    ${rankHTML}
+    ${vendasHTML}
+    ${embarquesHTML}
+    ${posvendaHTML}
+  `;
+  document.getElementById('admApply').addEventListener('click',()=>{ adminFilter.month=document.getElementById('admMonth').value||currentMonth(); adminFilter.owner=document.getElementById('admOwner').value||''; renderAdmin(c); });
 }
 
 /* ========= VOA APP (itinerário — webapp embutido em iframe isolado) ========= */
@@ -904,7 +1100,7 @@ function metaRow(label,val,meta,money=false){ const pct=meta?Math.min(100,Math.r
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
 /* ========= ORÇAMENTOS ========= */
-function blankQuote(){ return { id:uid(), createdAt:localNowISO(), status:'aberto', motivoPerda:'', comissao:0, closedAt:null, versao:1, baseId:null, baseNome:'', venda:{fornecedor:'',idReserva:'',titular:'',comissaoAgencia:'',comissaoFornecedor:''}, cliente:{nome:'',telefone:'',email:''}, destino:{titulo:'',descricao:'',imagens:['','','','']}, datas:[{inicio:'',fim:'',trecho:''}], hospedagem:[{nome:'',fotos:['','','',''],cancelamento:'Reembolsável'}], voos:[{cia:'',tarifa:'',origem:'',destino:'',horarioSaida:'',horarioChegada:'',bagagem:'Sem bagagem despachada',cancelamento:''}], passeios:'', traslados:'', seguro:{resumo:'',apolice:''}, diferenciais:'Atendimento humanizado, suporte 24h, monitoramento de tarifas e curadoria personalizada.', investimento:{valor:'',parcelas:'',observacoes:''}, documentacao:'', infoImportantes:'Esta proposta tem validade de 48h e está sujeita a alterações de tarifa e disponibilidade conforme a confirmação no fornecedor.' }; }
+function blankQuote(){ return { id:uid(), createdAt:localNowISO(), owner:'', ownerId:'', status:'aberto', motivoPerda:'', comissao:0, closedAt:null, versao:1, baseId:null, baseNome:'', venda:{fornecedor:'',idReserva:'',titular:'',comissaoAgencia:'',comissaoFornecedor:''}, cliente:{nome:'',telefone:'',email:''}, destino:{titulo:'',descricao:'',imagens:['','','','']}, datas:[{inicio:'',fim:'',trecho:''}], hospedagem:[{nome:'',fotos:['','','',''],cancelamento:'Reembolsável'}], voos:[{cia:'',tarifa:'',origem:'',destino:'',horarioSaida:'',horarioChegada:'',bagagem:'Sem bagagem despachada',cancelamento:''}], passeios:'', traslados:'', seguro:{resumo:'',apolice:''}, diferenciais:'Atendimento humanizado, suporte 24h, monitoramento de tarifas e curadoria personalizada.', investimento:{valor:'',parcelas:'',observacoes:''}, documentacao:'', infoImportantes:'Esta proposta tem validade de 48h e está sujeita a alterações de tarifa e disponibilidade conforme a confirmação no fornecedor.' }; }
 
 let currentQuote=null;
 let quoteSearch='';
@@ -1057,7 +1253,7 @@ function openTripQuick(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) 
 
 /* ========= TAREFAS ========= */
 function addTarefaPrompt(presetIso){ const def=presetIso||todayISO(); openModal(`<div class="modal-head"><h3>Nova tarefa</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><div class="field"><label>Data da tarefa</label><input type="date" id="ta_data" value="${def}"></div><div class="field"><label>Descrição da tarefa</label><textarea id="ta_texto" placeholder="Ex.: Ligar para o cliente confirmando documentos"></textarea></div><p style="font-size:11px;color:var(--text-mute);margin:2px 0 0">A tarefa será lançada automaticamente no dia escolhido do calendário.</p></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveTarefa()">Adicionar</button></div>`); setTimeout(()=>{ const e=document.getElementById('ta_texto'); if(e) e.focus(); },50); }
-function saveTarefa(){ const iso=document.getElementById('ta_data').value; const t=document.getElementById('ta_texto').value.trim(); if(!iso){ toast('Selecione a data','warning'); return; } if(!t){ toast('Digite a tarefa','warning'); return; } state.tarefas.push({id:'tk'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),data:iso,texto:t,done:false}); persistAll(); closeModal(); refreshTaskViews(); toast('Tarefa adicionada','success'); }
+function saveTarefa(){ const iso=document.getElementById('ta_data').value; const t=document.getElementById('ta_texto').value.trim(); if(!iso){ toast('Selecione a data','warning'); return; } if(!t){ toast('Digite a tarefa','warning'); return; } state.tarefas.push({id:'tk'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),data:iso,texto:t,done:false,owner:(state.user&&state.user.name)||'',ownerId:(state.user&&state.user.id)||''}); persistAll(); closeModal(); refreshTaskViews(); toast('Tarefa adicionada','success'); }
 function toggleTarefa(id){ const t=state.tarefas.find(x=>x.id===id); if(!t) return; t.done=!t.done; persistAll(); refreshTaskViews(); }
 function removeTarefa(id){ state.tarefas=state.tarefas.filter(x=>x.id!==id); persistAll(); refreshTaskViews(); }
 function refreshTaskViews(){ const active=document.querySelector('.nav-item.active'); if(active) setView(active.dataset.view); }
@@ -1783,6 +1979,7 @@ function avvSaveFromVOA(data,editId){
   const q=blankQuote();
   if(editId){ const info=avvNextVersionInfo(editId); if(info){ q.baseId=info.baseId; q.versao=info.nextVersion; q.baseNome=info.originalName||data.clientName||''; } else { q.baseId=q.id; q.versao=1; q.baseNome=data.clientName||''; } }
   else { q.baseId=q.id; q.versao=1; q.baseNome=data.clientName||''; }
+  q.owner=(state.user&&state.user.name)||''; q.ownerId=(state.user&&state.user.id)||userSlug(q.owner);
   q.cliente.nome=data.clientName||'';
   q.destino.titulo=data.destName||'';
   q.destino.descricao=data.destText||'';
