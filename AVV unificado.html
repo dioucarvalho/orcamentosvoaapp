@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>
 :root{
@@ -361,14 +362,10 @@ table.tbl th.num{text-align:right}
     <div class="logo-wrap" id="loginLogo"></div>
     <h1>Seja bem-vindo ao AVV</h1>
     <p>Agenda de Viajantes e Vendas · TZ Viagens</p>
-    <input type="text" id="loginName" placeholder="Digite seu nome" autocomplete="off">
-    <select id="loginRole" style="width:100%;padding:13px 14px;border-radius:var(--radius-sm);border:1.5px solid var(--border);font-size:15px;outline:none;margin-top:10px;background:#fff;color:var(--text)">
-      <option value="consultora">Consultor(a) de viagens</option>
-      <option value="gerente">Gerente</option>
-      <option value="admin">Administrador</option>
-    </select>
-    <input type="password" id="loginPass" placeholder="Senha de gestão (gerente/admin)" autocomplete="off" style="display:none">
+    <input type="email" id="loginEmail" placeholder="E-mail" autocomplete="username">
+    <input type="password" id="loginPass" placeholder="Senha" autocomplete="current-password" style="margin-top:10px">
     <button class="btn btn-primary" id="loginBtn">Entrar</button>
+    <div id="loginMsg" style="margin-top:10px;font-size:12.5px;color:var(--danger);min-height:14px"></div>
     <div style="margin-top:14px;font-size:12px;color:var(--text-soft)">
       <a href="#" id="loginUploadLogo" style="text-decoration:underline;color:var(--brand-blue);font-weight:600">Configurar logo da agência</a>
     </div>
@@ -811,18 +808,33 @@ function toast(msg,type='info'){ const t=document.createElement('div'); t.classN
 function openModal(html){ const ov=document.getElementById('modalOverlay'); document.getElementById('modal').innerHTML=html; ov.classList.add('is-open'); ov.onclick=(e)=>{ if(e.target===ov) closeModal(); }; }
 function closeModal(){ document.getElementById('modalOverlay').classList.remove('is-open'); }
 
-function initAuth(){
+/* ===== SUPABASE (conexão com o banco na nuvem) ===== */
+const SB_URL='https://mvwkjmdmmyxetqoequdv.supabase.co';
+const SB_KEY='sb_publishable_R5Afe6ggELtLDIhXT2jpeA_TRc5SsQ3';
+const sb=(window.supabase&&window.supabase.createClient)?window.supabase.createClient(SB_URL,SB_KEY):null;
+
+async function initAuth(){
   document.getElementById('loginLogo').innerHTML=logoHTML();
   document.getElementById('sidebarLogo').innerHTML=logoHTML();
-  if(state.user&&state.user.name){ showApp(); } else {
-    document.getElementById('loginScreen').style.display='flex';
-    document.getElementById('loginBtn').addEventListener('click',handleLogin);
-    document.getElementById('loginName').addEventListener('keydown',e=>{ if(e.key==='Enter') handleLogin(); });
-    document.getElementById('loginRole').addEventListener('change',e=>{ const pass=document.getElementById('loginPass'); const gestao=e.target.value!=='consultora'; pass.style.display=gestao?'block':'none'; if(gestao) setTimeout(()=>pass.focus(),30); else pass.value=''; });
-    document.getElementById('loginPass').addEventListener('keydown',e=>{ if(e.key==='Enter') handleLogin(); });
-    document.getElementById('loginUploadLogo').addEventListener('click',(e)=>{ e.preventDefault(); document.getElementById('loginLogoInput').click(); });
-    document.getElementById('loginLogoInput').addEventListener('change',(e)=>handleLogoUpload(e,()=>{ document.getElementById('loginLogo').innerHTML=logoHTML(); }));
-  }
+  const screen=document.getElementById('loginScreen');
+  if(!sb){ screen.style.display='flex'; const m=document.getElementById('loginMsg'); if(m) m.textContent='Não foi possível carregar a conexão. Verifique a internet e recarregue.'; return; }
+  // já existe sessão ativa?
+  try{ const { data:{ session } } = await sb.auth.getSession(); if(session){ await loadProfileAndShow(session.user); return; } }catch(e){ console.error('getSession',e); }
+  // mostra tela de login
+  screen.style.display='flex';
+  document.getElementById('loginBtn').addEventListener('click',handleLogin);
+  document.getElementById('loginEmail').addEventListener('keydown',e=>{ if(e.key==='Enter') handleLogin(); });
+  document.getElementById('loginPass').addEventListener('keydown',e=>{ if(e.key==='Enter') handleLogin(); });
+  document.getElementById('loginUploadLogo').addEventListener('click',(e)=>{ e.preventDefault(); document.getElementById('loginLogoInput').click(); });
+  document.getElementById('loginLogoInput').addEventListener('change',(e)=>handleLogoUpload(e,()=>{ document.getElementById('loginLogo').innerHTML=logoHTML(); }));
+}
+async function loadProfileAndShow(authUser){
+  let role='consultora', nome=authUser.email;
+  try{ const { data:prof } = await sb.from('profiles').select('nome,role').eq('id',authUser.id).single(); if(prof){ role=prof.role||'consultora'; nome=prof.nome||authUser.email; } }
+  catch(e){ console.error('perfil',e); }
+  state.user={ id:authUser.id, email:authUser.email, name:nome, role:role };
+  save(STORE.USER,state.user);
+  showApp();
 }
 
 async function handleLogoUpload(ev,onDone){
@@ -846,27 +858,27 @@ const ROLE_MENUS = {
   admin:      ['dashboard','administracao','orcamentos','controle','agenda','relatorios','posvenda','voaapp']
 };
 function userSlug(name){ return String(name||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'user'; }
-function currentRole(){ return (state.user&&state.user.role)||'admin'; }
+function currentRole(){ return (state.user&&state.user.role)||'consultora'; }
 function canSee(view){ return (ROLE_MENUS[currentRole()]||ROLE_MENUS.consultora).indexOf(view)>=0; }
 function applyRoleUI(){
   const allowed=ROLE_MENUS[currentRole()]||ROLE_MENUS.consultora;
   document.querySelectorAll('.nav-item').forEach(el=>{ el.style.display = allowed.indexOf(el.dataset.view)>=0 ? '' : 'none'; });
   const roleEl=document.querySelector('.user-panel .role'); if(roleEl) roleEl.textContent=ROLE_LABELS[currentRole()]||'Consultor(a)';
 }
-function handleLogin(){
-  const name=document.getElementById('loginName').value.trim();
-  if(!name){ toast('Por favor, digite seu nome','warning'); return; }
-  const role=document.getElementById('loginRole').value;
-  if(role==='gerente'||role==='admin'){
-    const pass=document.getElementById('loginPass').value;
-    if(pass!==ADMIN_PASS && pass!==ADMIN_PASS_LEGACY){ toast('Senha de gestão incorreta','danger'); return; }
-  }
-  state.user={name, role, id:userSlug(name), since:localNowISO()};
-  save(STORE.USER,state.user); showApp();
+async function handleLogin(){
+  const email=document.getElementById('loginEmail').value.trim();
+  const pass=document.getElementById('loginPass').value;
+  const msg=document.getElementById('loginMsg'); msg.textContent='';
+  if(!email||!pass){ msg.textContent='Informe e-mail e senha.'; return; }
+  if(!sb){ msg.textContent='Conexão indisponível. Recarregue a página.'; return; }
+  const btn=document.getElementById('loginBtn'); const old=btn.textContent; btn.textContent='Entrando…'; btn.disabled=true;
+  try{
+    const { data, error } = await sb.auth.signInWithPassword({ email, password:pass });
+    if(error){ msg.textContent='E-mail ou senha incorretos.'; btn.textContent=old; btn.disabled=false; return; }
+    await loadProfileAndShow(data.user);
+  }catch(e){ console.error('login',e); msg.textContent='Erro ao conectar. Tente novamente.'; btn.textContent=old; btn.disabled=false; }
 }
 function showApp(){
-  // migração: usuários antigos (sem papel) assumem admin para não perder acesso
-  if(state.user && !state.user.role){ state.user.role='admin'; state.user.id=userSlug(state.user.name); save(STORE.USER,state.user); }
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('app').classList.add('is-active');
   document.getElementById('userName').textContent=state.user.name;
@@ -877,7 +889,7 @@ function showApp(){
   const start=(ROLE_MENUS[currentRole()]||ROLE_MENUS.consultora)[0];
   setView(start);
 }
-function logout(){ document.getElementById('app').classList.remove('is-active'); state.user=null; try{ localStorage.removeItem(STORE.USER); }catch(e){} location.reload(); }
+async function logout(){ try{ if(sb) await sb.auth.signOut(); }catch(e){} try{ localStorage.removeItem(STORE.USER); }catch(e){} location.reload(); }
 function requestNameChange(){
   openModal(`<div class="modal-head"><h3>Alterar nome do colaborador</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><p style="margin:0 0 12px;font-size:13px;color:var(--text-soft)">Para alterar o nome registrado, insira a senha de administrador.</p><div class="field"><label>Senha</label><input type="password" id="adminPass" autocomplete="off"></div><div class="field"><label>Novo nome</label><input type="text" id="newName" value="${state.user.name}"></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="confirmNameChange()">Salvar</button></div>`);
 }
