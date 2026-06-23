@@ -841,8 +841,8 @@ async function handleLogoUpload(ev,onDone){
 /* ===== PAPÉIS DE ACESSO (espelham os roles do Supabase: admin/gerente/consultora) ===== */
 const ROLE_LABELS = { consultora:'Consultor(a)', gerente:'Gerente', admin:'Administrador' };
 const ROLE_MENUS = {
-  consultora: ['dashboard','orcamentos','controle','agenda','relatorios','voaapp'],
-  gerente:    ['administracao','posvenda'],
+  consultora: ['dashboard','orcamentos','controle','agenda','relatorios'],
+  gerente:    ['administracao','posvenda','voaapp'],
   admin:      ['dashboard','administracao','orcamentos','controle','agenda','relatorios','posvenda','voaapp']
 };
 function userSlug(name){ return String(name||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'user'; }
@@ -957,6 +957,17 @@ function renderAdmin(c){
   const tot = rows.reduce((a,r)=>({orcMes:a.orcMes+r.orcMes,vendas:a.vendas+r.vendas,perdidas:a.perdidas+r.perdidas,comissao:a.comissao+r.comissao}),{orcMes:0,vendas:0,perdidas:0,comissao:0});
   const convTot = tot.orcMes? Math.round((tot.vendas/tot.orcMes)*100):0;
 
+  // atividades manuais do Controle Diário por colaborador (repiques/agendamentos/atendimentos)
+  const idToName={}; orcs.forEach(o=>{ if(o.ownerId) idToName[o.ownerId]=ownerNameOf(o); }); if(state.user&&state.user.id) idToName[state.user.id]=state.user.name;
+  const manualByName={};
+  Object.keys(Backend.diaExtra()).forEach(key=>{
+    const e=state.diaExtra[key]||{}; const iso=key.indexOf('|')>=0?key.split('|')[1]:key; if(monthOf(iso)!==mo) return;
+    const oid=e.ownerId||''; const nome=oid?(idToName[oid]||e.owner||oid):(e.owner||(state.user&&state.user.name)||'Sem identificação');
+    if(adminFilter.owner && nome!==adminFilter.owner) return;
+    const m=manualByName[nome]||(manualByName[nome]={repiques:0,agendamento:0,atendimento:0});
+    m.repiques+=Number(e.repiques||0); m.agendamento+=Number(e.agendamento||0); m.atendimento+=Number(e.atendimento||0);
+  });
+
   // próximas viagens (todas as funcionárias) — 30 dias
   const today=new Date(); today.setHours(0,0,0,0); const in30=new Date(today); in30.setDate(in30.getDate()+30);
   const embarques=[];
@@ -991,6 +1002,28 @@ function renderAdmin(c){
           </tr>`).join('')}
         </tbody>
       </table>
+    </div>`;
+
+  const metasHTML = `
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header"><h3 class="card-title">Controle diário & metas por colaborador</h3><span class="badge neutral">${mo}</span></div>
+      <div style="overflow-x:auto"><table class="tbl">
+        <thead><tr><th>Colaborador</th><th class="num">Repiques</th><th class="num">Agend.</th><th class="num">Atend.</th><th class="num">Orçamentos</th><th class="num">Vendas</th>${verR$?'<th class="num">Comissão</th>':''}<th class="num">Progresso (meta vendas)</th></tr></thead>
+        <tbody>
+          ${rows.length===0?`<tr><td colspan="${verR$?8:7}"><div class="empty">Sem dados no período.</div></td></tr>`:
+          rows.map(r=>{ const man=manualByName[r.nome]||{repiques:0,agendamento:0,atendimento:0}; const metaV=state.metas.vendas||0; const pct=metaV?Math.round((r.vendas/metaV)*100):0; const badge=pct>=100?'<span class="badge success">Atingiu</span>':(pct>=70?`<span class="badge warning">Perto · ${pct}%</span>`:`<span class="badge neutral">${pct}%</span>`); return `<tr>
+            <td><strong>${escapeHtml(r.nome)}</strong></td>
+            <td class="num">${fmtNum(man.repiques)}</td>
+            <td class="num">${fmtNum(man.agendamento)}</td>
+            <td class="num">${fmtNum(man.atendimento)}</td>
+            <td class="num">${fmtNum(r.orcMes)}</td>
+            <td class="num">${fmtNum(r.vendas)}</td>
+            ${verR$?`<td class="num">${fmtBRL(r.comissao)}</td>`:''}
+            <td class="num">${badge}</td>
+          </tr>`; }).join('')}
+        </tbody>
+      </table></div>
+      <p style="font-size:12px;color:var(--text-mute);margin-top:10px">Metas do mês — Repiques: ${fmtNum(state.metas.repiques)} · Agend.: ${fmtNum(state.metas.agendamento)} · Atend.: ${fmtNum(state.metas.atendimento)} · Orçamentos: ${fmtNum(state.metas.orcamento)} · Vendas: ${fmtNum(state.metas.vendas)}${verR$?' · Comissão mín.: '+fmtBRL(state.metas.vendaMin):''}. "Perto" = ≥ 70% da meta de vendas.</p>
     </div>`;
 
   const vendasHTML = `
@@ -1042,6 +1075,7 @@ function renderAdmin(c){
     </div>
     ${cardsHTML}
     ${rankHTML}
+    ${metasHTML}
     ${vendasHTML}
     ${embarquesHTML}
     ${posvendaHTML}
@@ -1225,7 +1259,7 @@ function renderControle(c){
 }
 function renderCtrlResult(){ const wrap=document.getElementById('ctrlResult'); let agg,label; if(ctrlFilter.mode==='range'){ if(!ctrlFilter.start||!ctrlFilter.end){ wrap.innerHTML=`<div class="empty">Selecione data inicial e final.</div>`; return; } agg=aggregateRange(ctrlFilter.start,ctrlFilter.end); label=`${fmtDateBR(ctrlFilter.start)} → ${fmtDateBR(ctrlFilter.end)}`; } else { agg=aggregateMonth(ctrlFilter.month); label=ctrlFilter.month; } const t=agg.total; const cat=[{key:'agendamento',label:'Agendamento',meta:state.metas.agendamento,val:t.agendamento},{key:'atendimento',label:'Atendimento',meta:state.metas.atendimento,val:t.atendimento},{key:'orcamento',label:'Orçamento',meta:state.metas.orcamento,val:t.orcamento},{key:'vendas',label:'Vendas',meta:state.metas.vendas,val:t.vendas},{key:'repiques',label:'Repiques',meta:state.metas.repiques,val:t.repiques},{key:'vendaMin',label:'Meta de Vendas Mínima (R$)',meta:state.metas.vendaMin,val:t.comissao,money:true}]; wrap.innerHTML=`<div class="card" style="margin-bottom:18px"><div class="card-header"><h3 class="card-title">Resumo por categoria</h3><span class="badge neutral">${label}</span></div><table class="tbl"><thead><tr><th>Categoria</th><th class="num">Meta</th><th class="num">Atual</th><th class="num">Diferença</th><th>Status</th></tr></thead><tbody>${cat.map(c=>{ const diff=(c.meta||0)-c.val; const ok=c.val>=(c.meta||0); const fmt=c.money?fmtBRL:fmtNum; return `<tr><td><strong>${c.label}</strong></td><td class="num">${fmt(c.meta||0)}</td><td class="num">${fmt(c.val)}</td><td class="num" style="color:${ok?'var(--success)':'var(--danger)'}">${fmt(diff)}</td><td>${ok?`<span class="badge success">Atingida</span>`:`<span class="badge warning">Em andamento</span>`}</td></tr>`; }).join('')}</tbody></table></div><div class="card"><div class="card-header"><h3 class="card-title">Transações diárias</h3><span class="badge neutral">${agg.days.length} dia(s)</span></div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Data</th><th class="num">Repiques</th><th class="num">Agendamento</th><th class="num">Atendimento</th><th class="num">Orçamento</th><th class="num">Vendas</th><th class="num">Comissão do dia</th><th class="num">Editar</th></tr></thead><tbody>${agg.days.map(d=>`<tr><td>${fmtDateBR(d.data)}</td><td class="num">${fmtNum(d.repiques)}</td><td class="num">${fmtNum(d.agendamento)}</td><td class="num">${fmtNum(d.atendimento)}</td><td class="num">${fmtNum(d.orcamento)}</td><td class="num">${fmtNum(d.vendas)}</td><td class="num">${fmtBRL(d.comissao)}</td><td class="num"><button class="btn-icon" onclick="openDayEditor('${d.data}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></td></tr>`).join('')}<tr style="background:var(--surface-alt);font-weight:700"><td>Total</td><td class="num">${fmtNum(t.repiques)}</td><td class="num">${fmtNum(t.agendamento)}</td><td class="num">${fmtNum(t.atendimento)}</td><td class="num">${fmtNum(t.orcamento)}</td><td class="num">${fmtNum(t.vendas)}</td><td class="num">${fmtBRL(t.comissao)}</td><td></td></tr></tbody></table></div></div>`; }
 function openDayEditor(iso){ const extra=state.diaExtra[iso]||{}; openModal(`<div class="modal-head"><h3>Registrar atividades de ${fmtDateBR(iso)}</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><div class="field-row"><div class="field"><label>Repiques</label><input id="de_repiques" type="number" min="0" value="${extra.repiques||0}"></div><div class="field"><label>Agendamento</label><input id="de_agendamento" type="number" min="0" value="${extra.agendamento||0}"></div><div class="field"><label>Atendimento</label><input id="de_atendimento" type="number" min="0" value="${extra.atendimento||0}"></div></div><div class="field-row"><div class="field"><label>Ajuste manual Orçamentos</label><input id="de_orc" type="number" value="${extra.orcamentoAjuste||0}"></div><div class="field"><label>Ajuste manual Vendas</label><input id="de_vendas" type="number" value="${extra.vendasAjuste||0}"></div><div class="field"><label>Ajuste manual Comissão (R$)</label><input id="de_com" type="number" step="0.01" value="${extra.comissaoAjuste||0}"></div></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveDayEditor('${iso}')">Salvar</button></div>`); }
-function saveDayEditor(iso){ state.diaExtra[iso]={repiques:parseFloat(document.getElementById('de_repiques').value)||0,agendamento:parseFloat(document.getElementById('de_agendamento').value)||0,atendimento:parseFloat(document.getElementById('de_atendimento').value)||0,orcamentoAjuste:parseFloat(document.getElementById('de_orc').value)||0,vendasAjuste:parseFloat(document.getElementById('de_vendas').value)||0,comissaoAjuste:parseFloat(document.getElementById('de_com').value)||0}; persistAll(); closeModal(); renderCtrlResult(); toast('Atividades registradas','success'); }
+function saveDayEditor(iso){ state.diaExtra[iso]={repiques:parseFloat(document.getElementById('de_repiques').value)||0,agendamento:parseFloat(document.getElementById('de_agendamento').value)||0,atendimento:parseFloat(document.getElementById('de_atendimento').value)||0,orcamentoAjuste:parseFloat(document.getElementById('de_orc').value)||0,vendasAjuste:parseFloat(document.getElementById('de_vendas').value)||0,comissaoAjuste:parseFloat(document.getElementById('de_com').value)||0,owner:(state.user&&state.user.name)||'',ownerId:(state.user&&state.user.id)||''}; persistAll(); closeModal(); renderCtrlResult(); toast('Atividades registradas','success'); }
 function openMetasModal(){ const m=state.metas; openModal(`<div class="modal-head"><h3>Editar metas mensais</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><div class="field-row"><div class="field"><label>Agendamento</label><input id="mt_a" type="number" value="${m.agendamento}"></div><div class="field"><label>Atendimento</label><input id="mt_at" type="number" value="${m.atendimento}"></div><div class="field"><label>Orçamento</label><input id="mt_o" type="number" value="${m.orcamento}"></div><div class="field"><label>Vendas</label><input id="mt_v" type="number" value="${m.vendas}"></div><div class="field"><label>Repiques</label><input id="mt_r" type="number" value="${m.repiques}"></div><div class="field"><label>Meta de vendas mín. (R$)</label><input id="mt_min" type="number" value="${m.vendaMin}"></div></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveMetas()">Salvar</button></div>`); }
 function saveMetas(){ state.metas={agendamento:parseFloat(document.getElementById('mt_a').value)||0,atendimento:parseFloat(document.getElementById('mt_at').value)||0,orcamento:parseFloat(document.getElementById('mt_o').value)||0,vendas:parseFloat(document.getElementById('mt_v').value)||0,repiques:parseFloat(document.getElementById('mt_r').value)||0,vendaMin:parseFloat(document.getElementById('mt_min').value)||0}; persistAll(); closeModal(); renderCtrlResult(); toast('Metas atualizadas','success'); }
 
