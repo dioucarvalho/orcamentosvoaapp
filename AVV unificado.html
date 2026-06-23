@@ -1082,6 +1082,12 @@ const VOA = (function(){
   let _destTextAuto = false;
   let _debTimer = null;
   let _editId = null;
+  const VOA_LOGO_KEY = 'voa_agency_logo';
+  function savedAgencyLogo(){ try{ return localStorage.getItem(VOA_LOGO_KEY)||''; }catch(e){ return ''; } }
+  function showLogoPreview(url){
+    if(url){ vEl('voaLogoPreview').innerHTML='<img src="'+url+'" alt="logo" />'; vEl('voaLogoPh').textContent='Logo da agência salva — clique para trocar'; }
+    else { vEl('voaLogoPreview').innerHTML=''; vEl('voaLogoPh').textContent='📷 Clique para enviar sua logo (PNG/JPG/SVG)'; }
+  }
 
   const DESTINOS = {
     "atacama":"O deserto mais árido do mundo, o Atacama é um espetáculo de paisagens surreais — salares reluzentes, gêiseres, lagoas altiplânicas e um dos céus mais estrelados do planeta.",
@@ -1314,7 +1320,7 @@ const VOA = (function(){
     const tt=document.querySelector('#voaOverlay .voa-brand h1'); if(tt) tt.textContent='Novo Orçamento · TZ Viagens';
     const ov=vEl('voaOverlay'); ov.style.display='block'; ov.scrollTop=0;
     if(state.user&&state.user.name){ const an=vEl('voaAgentName'); if(an&&!an.value) an.value=state.user.name; }
-    if(state.logo&&!_logoDataUrl){ _logoDataUrl=state.logo; vEl('voaLogoPreview').innerHTML='<img src="'+_logoDataUrl+'" alt="logo" />'; vEl('voaLogoPh').textContent='Logo carregada — clique para trocar'; }
+    if(!_logoDataUrl){ const saved=savedAgencyLogo()||state.logo; if(saved){ _logoDataUrl=saved; showLogoPreview(saved); } }
     debouncedPreview();
     bindLive(document.getElementById('voaColForm'));
   }
@@ -1323,7 +1329,8 @@ const VOA = (function(){
   function openForEdit(data, editId){
     open();
     applyData(data||{});
-    if(data&&data.logo){ _logoDataUrl=data.logo; vEl('voaLogoPreview').innerHTML='<img src="'+data.logo+'" alt="logo" />'; vEl('voaLogoPh').textContent='Logo carregada — clique para trocar'; }
+    if(data&&data.logo){ _logoDataUrl=data.logo; showLogoPreview(data.logo); }
+    else { const saved=savedAgencyLogo()||state.logo; if(saved){ _logoDataUrl=saved; showLogoPreview(saved); } }
     if(data&&data.heroImg){ const hp=vEl('voaHeroPick'); if(hp){ const di=hp.querySelector('.voa-img-data'); const th=hp.querySelector('.voa-thumb'); if(di) di.value=data.heroImg; if(th){ th.style.backgroundImage="url('"+String(data.heroImg).replace(/'/g,'%27')+"')"; th.textContent=''; } } }
     _editId=editId||null;
     const tt=document.querySelector('#voaOverlay .voa-brand h1'); if(tt) tt.textContent=_editId?'Editar Orçamento · TZ Viagens':'Novo Orçamento · TZ Viagens';
@@ -1339,14 +1346,15 @@ const VOA = (function(){
   function clearAll(){
     if(!confirm('Limpar todos os campos?')) return;
     clearSilent();
-    _logoDataUrl=''; vEl('voaLogoPreview').innerHTML=''; vEl('voaLogoPh').textContent='📷 Clique para enviar sua logo (PNG/JPG/SVG)';
+    const saved=savedAgencyLogo()||state.logo; // a logo da agência permanece fixa
+    _logoDataUrl=saved||''; showLogoPreview(_logoDataUrl);
     updatePreview();
   }
 
   function handleLogo(e){
     const f=e.target.files[0]; if(!f) return;
     const r=new FileReader();
-    r.onload=function(ev){ _logoDataUrl=ev.target.result; vEl('voaLogoPreview').innerHTML='<img src="'+_logoDataUrl+'" alt="logo" />'; vEl('voaLogoPh').textContent='Logo carregada — clique para trocar'; debouncedPreview(); };
+    r.onload=function(ev){ _logoDataUrl=ev.target.result; try{ localStorage.setItem(VOA_LOGO_KEY,_logoDataUrl); }catch(err){ showToast('Logo enviada, mas grande demais para salvar fixo. Tente uma imagem menor.'); } showLogoPreview(_logoDataUrl); debouncedPreview(); };
     r.readAsDataURL(f);
   }
 
