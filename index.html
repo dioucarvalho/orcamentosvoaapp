@@ -369,6 +369,9 @@ table.tbl th.num{text-align:right}
     <div style="margin-top:14px;font-size:12px;color:var(--text-soft)">
       <a href="#" id="loginUploadLogo" style="text-decoration:underline;color:var(--brand-blue);font-weight:600">Configurar logo da agência</a>
     </div>
+    <div style="margin-top:6px;font-size:12px">
+      <a href="#" id="loginExportBackup" style="text-decoration:underline;color:var(--text-soft)">Exportar backup deste computador</a>
+    </div>
     <input type="file" id="loginLogoInput" accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp" style="display:none">
   </div>
 </div>
@@ -426,6 +429,10 @@ table.tbl th.num{text-align:right}
         <button id="changeNameBtn">Alterar nome</button>
         <button id="changeLogoBtn">Trocar logo</button>
       </div>
+      <div class="actions">
+        <button id="importBackupBtn">Importar backup</button>
+      </div>
+      <input type="file" id="importBackupInput" accept="application/json" style="display:none">
       <div class="actions">
         <button id="logoutBtn" style="background:rgba(226,43,43,.25)">Sair / trocar acesso</button>
       </div>
@@ -827,6 +834,7 @@ async function initAuth(){
   document.getElementById('loginPass').addEventListener('keydown',e=>{ if(e.key==='Enter') handleLogin(); });
   document.getElementById('loginUploadLogo').addEventListener('click',(e)=>{ e.preventDefault(); document.getElementById('loginLogoInput').click(); });
   document.getElementById('loginLogoInput').addEventListener('change',(e)=>handleLogoUpload(e,()=>{ document.getElementById('loginLogo').innerHTML=logoHTML(); }));
+  document.getElementById('loginExportBackup').addEventListener('click',(e)=>{ e.preventDefault(); exportBackupLocal(); });
 }
 async function loadProfileAndShow(authUser){
   let role='consultora', nome=authUser.email;
@@ -874,6 +882,37 @@ function cloudSaveTarefa(t){ if(!sb||!state.user) return; sb.from('tarefas').ups
 function cloudDeleteTarefa(id){ if(!sb) return; sb.from('tarefas').delete().eq('id',id).then(({error})=>cloudErr(error)); }
 function cloudSaveDia(iso,e){ if(!sb||!state.user) return; sb.from('dia_extra').upsert({ user_id:state.user.id, data:iso, repiques:e.repiques||0, agendamento:e.agendamento||0, atendimento:e.atendimento||0, orcamento_ajuste:e.orcamentoAjuste||0, vendas_ajuste:e.vendasAjuste||0, comissao_ajuste:e.comissaoAjuste||0 },{onConflict:'user_id,data'}).then(({error})=>cloudErr(error)); }
 function cloudSaveMetas(){ if(!sb) return; sb.from('metas').update({ agendamento:state.metas.agendamento, atendimento:state.metas.atendimento, orcamento:state.metas.orcamento, vendas:state.metas.vendas, repiques:state.metas.repiques, venda_min:state.metas.vendaMin }).eq('id',1).then(({error})=>cloudErr(error)); }
+
+/* Exporta TODOS os dados deste navegador (orçamentos no IndexedDB + tarefas/atividades)
+   para um arquivo .json. Funciona offline e sem login — roda no arquivo da colaboradora. */
+async function exportBackupLocal(){
+  try{
+    let orcs=[];
+    try{ if(!_idb){ _idb=await openIDB(); } orcs=await idbGetAll(); }catch(e){ orcs=load(STORE.ORC,[]); }
+    if(!orcs||!orcs.length) orcs=load(STORE.ORC,[]);
+    const backup={ tipo:'avv_backup', exportadoEm:new Date().toISOString(), orcamentos:orcs||[], tarefas:load(STORE.TAREFAS,[]), diaExtra:load(STORE.DIA,{}) };
+    const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='backup-avv-'+todayISO()+'.json'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+    toast('Backup exportado! Guarde o arquivo .json e importe na plataforma.','success');
+  }catch(e){ console.error(e); toast('Não foi possível exportar o backup.','danger'); }
+}
+/* Importa um backup .json para a nuvem, como o usuário LOGADO (cada uma importa o seu). */
+async function importBackupToCloud(ev){
+  const file=ev.target.files&&ev.target.files[0]; if(!file){ return; }
+  if(!sb||!state.user){ toast('Faça login primeiro.','danger'); ev.target.value=''; return; }
+  let bk; try{ bk=JSON.parse(await file.text()); }catch(e){ toast('Arquivo inválido.','danger'); ev.target.value=''; return; }
+  const orcs=bk.orcamentos||[]; const tars=bk.tarefas||[]; const dias=bk.diaExtra||{};
+  if(!confirm('Importar para a nuvem (como SEUS): '+orcs.length+' orçamento(s) e '+tars.length+' tarefa(s)?')){ ev.target.value=''; return; }
+  toast('Importando…','info');
+  try{
+    for(const q of orcs){ if(!q||!q.id) continue; await sb.from('orcamentos').upsert({ id:q.id, user_id:state.user.id, owner_nome:q.owner||state.user.name, status:q.status||null, versao:q.versao||1, created_at:q.createdAt?toISO(q.createdAt):new Date().toISOString(), closed_at:q.closedAt?toISO(q.closedAt):null, data:q }); }
+    for(const t of tars){ if(!t||!t.id) continue; await sb.from('tarefas').upsert({ id:t.id, user_id:state.user.id, data:t.data||null, texto:t.texto||'', done:!!t.done }); }
+    for(const k of Object.keys(dias)){ if(k.indexOf('|')>=0) continue; const e=dias[k]; await sb.from('dia_extra').upsert({ user_id:state.user.id, data:k, repiques:e.repiques||0, agendamento:e.agendamento||0, atendimento:e.atendimento||0, orcamento_ajuste:e.orcamentoAjuste||0, vendas_ajuste:e.vendasAjuste||0, comissao_ajuste:e.comissaoAjuste||0 },{onConflict:'user_id,data'}); }
+    toast('Importado com sucesso! Recarregando…','success'); setTimeout(()=>location.reload(),1300);
+  }catch(e){ console.error(e); toast('Erro ao importar: '+(e?.message||''),'danger'); }
+  ev.target.value='';
+}
 
 /* Envia para a nuvem apenas os itens deste navegador que ainda NÃO existem no banco. */
 async function migrarLocalParaNuvem(){
@@ -957,6 +996,8 @@ function bindNav(){
   document.getElementById('menuToggle').addEventListener('click',()=>{ document.getElementById('sidebar').classList.toggle('is-open'); });
   document.getElementById('changeNameBtn').addEventListener('click',requestNameChange);
   document.getElementById('logoutBtn').addEventListener('click',()=>{ if(confirm('Sair e voltar para a tela de acesso?')) logout(); });
+  document.getElementById('importBackupBtn').addEventListener('click',()=>document.getElementById('importBackupInput').click());
+  document.getElementById('importBackupInput').addEventListener('change',importBackupToCloud);
   document.getElementById('changeLogoBtn').addEventListener('click',()=>{ requireAdmin('Para trocar a logo da agência, informe a senha de administrador.',()=>{ document.getElementById('logoFileInput').click(); }); });
   document.getElementById('logoFileInput').addEventListener('change',(e)=>handleLogoUpload(e,()=>{ document.getElementById('sidebarLogo').innerHTML=logoHTML(); const active=document.querySelector('.nav-item.active'); if(active) setView(active.dataset.view); }));
 }
