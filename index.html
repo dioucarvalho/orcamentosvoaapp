@@ -859,7 +859,24 @@ async function cloudLoadAll(){
     try{ const { data:ag } = await sb.from('agencia').select('logo,nome').eq('id',1).maybeSingle(); if(ag&&ag.logo){ state.logo=ag.logo; try{ localStorage.setItem(STORE.LOGO,ag.logo); localStorage.setItem('voa_agency_logo',ag.logo); }catch(e){} } }catch(e){ console.error('agencia',e); }
 
     const { data:orcs } = await sb.from('orcamentos').select('data,user_id,owner_nome,created_at').order('created_at',{ascending:false});
-    state.orcamentos=(orcs||[]).filter(r=>r.data).map(r=>{ const q=r.data; q.ownerId=r.user_id||q.ownerId||''; q.owner=(r.user_id&&state.profilesById[r.user_id])||r.owner_nome||q.owner||''; return q; });
+    let cloudOrcamentos=(orcs||[]).filter(r=>r.data).map(r=>{ const q=r.data; q.ownerId=r.user_id||q.ownerId||''; q.owner=(r.user_id&&state.profilesById[r.user_id])||r.owner_nome||q.owner||''; return q; });
+    // Reconciliação: se algum orçamento foi criado neste navegador (gravado no
+    // IndexedDB local) mas nunca chegou à nuvem — por exemplo, por uma falha de
+    // rede no momento do salvamento — ele reaparece aqui sem isso, então
+    // detectamos e reenviamos automaticamente para não perdê-lo de vez.
+    if(_idbReady){
+      try{
+        const localList=await idbGetAll();
+        const cloudIds=new Set(cloudOrcamentos.map(q=>q.id));
+        const missing=localList.filter(q=>q&&q.id&&!cloudIds.has(q.id)&&!_deletedIds.has(q.id));
+        if(missing.length){
+          missing.forEach(q=>cloudSaveOrcamento(q));
+          cloudOrcamentos=cloudOrcamentos.concat(missing);
+          toast(`${missing.length} orçamento(s) salvo(s) só neste navegador foram encontrados e reenviados para a nuvem.`,'warning');
+        }
+      }catch(e){ console.error('reconciliação de orçamentos locais',e); }
+    }
+    state.orcamentos=cloudOrcamentos;
 
     const { data:tars } = await sb.from('tarefas').select('*');
     state.tarefas=(tars||[]).map(r=>({ id:r.id, data:r.data, texto:r.texto, done:!!r.done, ownerId:r.user_id, owner:(state.profilesById[r.user_id])||'' }));
@@ -870,7 +887,14 @@ async function cloudLoadAll(){
   }catch(e){ console.error('cloudLoadAll',e); toast('Não foi possível carregar os dados da nuvem.','danger'); }
 }
 
-function cloudSaveOrcamento(q){ if(!sb||!state.user) return; sb.from('orcamentos').upsert({ id:q.id, user_id:state.user.id, owner_nome:q.owner||state.user.name||null, status:q.status||null, versao:q.versao||1, created_at:q.createdAt?toISO(q.createdAt):new Date().toISOString(), closed_at:q.closedAt?toISO(q.closedAt):null, data:q }).then(({error})=>cloudErr(error)); }
+function cloudSaveOrcamento(q){
+  if(!sb||!state.user) return Promise.resolve(false);
+  return sb.from('orcamentos').upsert({ id:q.id, user_id:state.user.id, owner_nome:q.owner||state.user.name||null, status:q.status||null, versao:q.versao||1, created_at:q.createdAt?toISO(q.createdAt):new Date().toISOString(), closed_at:q.closedAt?toISO(q.closedAt):null, data:q }).select().then(({data,error})=>{
+    if(error){ cloudErr(error); return false; }
+    if(!data||!data.length){ console.error('cloudSaveOrcamento: 0 linhas afetadas — verifique a permissão deste usuário.'); cloudErr({message:'Não foi possível confirmar o salvamento na nuvem.'}); return false; }
+    return true;
+  });
+}
 function cloudDeleteOrcamento(id){ if(!sb) return; sb.from('orcamentos').delete().eq('id',id).then(({error})=>cloudErr(error)); }
 function cloudSaveTarefa(t){ if(!sb||!state.user) return; sb.from('tarefas').upsert({ id:t.id, user_id:state.user.id, data:t.data||null, texto:t.texto||'', done:!!t.done }).then(({error})=>cloudErr(error)); }
 function cloudDeleteTarefa(id){ if(!sb) return; sb.from('tarefas').delete().eq('id',id).then(({error})=>cloudErr(error)); }
@@ -1425,7 +1449,16 @@ function removeVoo(i){ currentQuote.voos.splice(i,1); renderVoos(); }
 function updateVoo(i,key,val){ currentQuote.voos[i][key]=val; }
 
 function readFormIntoQuote(){ const q=currentQuote; q.cliente.nome=document.getElementById('qf_cliNome').value.trim(); q.cliente.telefone=document.getElementById('qf_cliTel').value.trim(); q.cliente.email=document.getElementById('qf_cliEmail').value.trim(); q.destino.titulo=document.getElementById('qf_destTitle').value.trim(); q.destino.descricao=document.getElementById('qf_destDesc').value; q.passeios=document.getElementById('qf_passeios').value; q.traslados=document.getElementById('qf_traslados').value; q.seguro.resumo=document.getElementById('qf_segResumo').value; q.seguro.apolice=document.getElementById('qf_segApolice').value; q.diferenciais=document.getElementById('qf_diferenciais').value; q.investimento.valor=parseFloat(document.getElementById('qf_invValor').value)||0; q.investimento.parcelas=document.getElementById('qf_invParc').value; q.investimento.observacoes=document.getElementById('qf_invObs').value; q.documentacao=document.getElementById('qf_docs').value; q.infoImportantes=document.getElementById('qf_info').value; }
-function saveCurrentQuote(){ readFormIntoQuote(); if(!currentQuote.cliente.nome){ toast('Informe o nome do cliente','warning'); return; } const idx=state.orcamentos.findIndex(o=>o.id===currentQuote.id); if(idx>=0) state.orcamentos[idx]=currentQuote; else state.orcamentos.push(currentQuote); persistAll(); cloudSaveOrcamento(currentQuote); toast('Orçamento salvo','success'); cancelQuoteForm(); }
+async function saveCurrentQuote(){
+  readFormIntoQuote();
+  if(!currentQuote.cliente.nome){ toast('Informe o nome do cliente','warning'); return; }
+  const idx=state.orcamentos.findIndex(o=>o.id===currentQuote.id);
+  if(idx>=0) state.orcamentos[idx]=currentQuote; else state.orcamentos.push(currentQuote);
+  persistAll();
+  cancelQuoteForm();
+  const cloudOk=await cloudSaveOrcamento(currentQuote);
+  toast(cloudOk?'Orçamento salvo na nuvem':'Orçamento salvo neste navegador, mas falhou ao confirmar na nuvem. Tentaremos novamente automaticamente.',cloudOk?'success':'warning');
+}
 function cancelQuoteForm(){ currentQuote=null; document.getElementById('quoteFormWrap').innerHTML=''; renderQuoteList(); }
 function deleteQuote(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) return; requireAdmin(`A exclusão de orçamentos é uma ação restrita ao administrador. Para excluir o orçamento de "${o.cliente?.nome||'cliente'}", informe a senha.`,()=>{ state.orcamentos=state.orcamentos.filter(x=>x.id!==id); _deletedIds.add(id); persistAll(); cloudDeleteOrcamento(id); renderQuoteList(); toast('Orçamento excluído','success'); }); }
 
