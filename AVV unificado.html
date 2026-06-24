@@ -366,13 +366,9 @@ table.tbl th.num{text-align:right}
     <input type="password" id="loginPass" placeholder="Senha" autocomplete="current-password" style="margin-top:10px">
     <button class="btn btn-primary" id="loginBtn">Entrar</button>
     <div id="loginMsg" style="margin-top:10px;font-size:12.5px;color:var(--danger);min-height:14px"></div>
-    <div style="margin-top:14px;font-size:12px;color:var(--text-soft)">
-      <a href="#" id="loginUploadLogo" style="text-decoration:underline;color:var(--brand-blue);font-weight:600">Configurar logo da agência</a>
-    </div>
-    <div style="margin-top:6px;font-size:12px">
+    <div style="margin-top:14px;font-size:12px">
       <a href="#" id="loginExportBackup" style="text-decoration:underline;color:var(--text-soft)">Exportar backup deste computador</a>
     </div>
-    <input type="file" id="loginLogoInput" accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp" style="display:none">
   </div>
 </div>
 
@@ -821,10 +817,12 @@ const SB_KEY='sb_publishable_R5Afe6ggELtLDIhXT2jpeA_TRc5SsQ3';
 const sb=(window.supabase&&window.supabase.createClient)?window.supabase.createClient(SB_URL,SB_KEY):null;
 
 async function initAuth(){
+  const screen=document.getElementById('loginScreen');
+  if(!sb){ document.getElementById('loginLogo').innerHTML=logoHTML(); document.getElementById('sidebarLogo').innerHTML=logoHTML(); screen.style.display='flex'; const m=document.getElementById('loginMsg'); if(m) m.textContent='Não foi possível carregar a conexão. Verifique a internet e recarregue.'; return; }
+  // a logo da agência é pública: carrega da nuvem para já mostrar na tela de login
+  try{ const { data:ag } = await sb.from('agencia').select('logo').eq('id',1).maybeSingle(); if(ag&&ag.logo){ state.logo=ag.logo; try{ localStorage.setItem(STORE.LOGO,ag.logo); localStorage.setItem('voa_agency_logo',ag.logo); }catch(e){} } }catch(e){ console.error('agencia(login)',e); }
   document.getElementById('loginLogo').innerHTML=logoHTML();
   document.getElementById('sidebarLogo').innerHTML=logoHTML();
-  const screen=document.getElementById('loginScreen');
-  if(!sb){ screen.style.display='flex'; const m=document.getElementById('loginMsg'); if(m) m.textContent='Não foi possível carregar a conexão. Verifique a internet e recarregue.'; return; }
   // já existe sessão ativa?
   try{ const { data:{ session } } = await sb.auth.getSession(); if(session){ await loadProfileAndShow(session.user); return; } }catch(e){ console.error('getSession',e); }
   // mostra tela de login
@@ -832,8 +830,6 @@ async function initAuth(){
   document.getElementById('loginBtn').addEventListener('click',handleLogin);
   document.getElementById('loginEmail').addEventListener('keydown',e=>{ if(e.key==='Enter') handleLogin(); });
   document.getElementById('loginPass').addEventListener('keydown',e=>{ if(e.key==='Enter') handleLogin(); });
-  document.getElementById('loginUploadLogo').addEventListener('click',(e)=>{ e.preventDefault(); document.getElementById('loginLogoInput').click(); });
-  document.getElementById('loginLogoInput').addEventListener('change',(e)=>handleLogoUpload(e,()=>{ document.getElementById('loginLogo').innerHTML=logoHTML(); }));
   document.getElementById('loginExportBackup').addEventListener('click',(e)=>{ e.preventDefault(); exportBackupLocal(); });
 }
 async function loadProfileAndShow(authUser){
