@@ -4282,8 +4282,14 @@ function loadData(){
       if(raw){ state = Object.assign(deepClone(DEFAULT_DATA), JSON.parse(raw)); }
     }catch(e){ console.warn('LocalStorage indisponível:',e); }
   }
-  // Ensure owner block always exists with all defaults
-  state.owner = Object.assign(deepClone(DEFAULT_DATA.owner), state.owner||{});
+  // Em modo scalable, os dados da agência vêm sempre da configuração da instalação
+  // (DEFAULT_DATA.owner, já carregada da nuvem) — nunca do owner embutido num arquivo
+  // de viagem salvo localmente, que pode estar vazio/desatualizado num navegador novo.
+  if(SCALABLE_OWNER_LOCKED){
+    state.owner = deepClone(DEFAULT_DATA.owner);
+  } else {
+    state.owner = Object.assign(deepClone(DEFAULT_DATA.owner), state.owner||{});
+  }
   // If a PRESET_OWNER was baked into this file (white-label generated for agency), override
   if(PRESET_OWNER){ state.owner = Object.assign(deepClone(DEFAULT_DATA.owner), deepClone(PRESET_OWNER)); }
 }
