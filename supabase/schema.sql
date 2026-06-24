@@ -167,10 +167,10 @@ create policy "orc_inserir" on public.orcamentos
   for insert with check (user_id = auth.uid());
 drop policy if exists "orc_atualizar" on public.orcamentos;
 create policy "orc_atualizar" on public.orcamentos
-  for update using (user_id = auth.uid());
+  for update using (user_id = auth.uid() or public.eh_gestao());
 drop policy if exists "orc_excluir" on public.orcamentos;
 create policy "orc_excluir" on public.orcamentos
-  for delete using (user_id = auth.uid());
+  for delete using (user_id = auth.uid() or public.eh_gestao());
 
 -- TAREFAS — mesmo padrão
 drop policy if exists "tar_ler" on public.tarefas;
