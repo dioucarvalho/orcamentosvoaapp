@@ -915,6 +915,33 @@ function cloudSaveLogo(dataUrl){ if(!sb||!dataUrl) return Promise.resolve(false)
 function cloudSaveNome(nome){ if(!sb||!state.user) return Promise.resolve(false); return cloudConfirm(sb.from('profiles').update({ nome:nome }).eq('id',state.user.id).select(),'cloudSaveNome'); }
 function cloudSavePosvenda(arr){ if(!sb||!state.user) return Promise.resolve(false); return cloudConfirm(sb.from('posvenda_dados').update({ dados:arr, atualizado_em:new Date().toISOString() }).eq('id',1).select(),'cloudSavePosvenda'); }
 async function cloudLoadPosvenda(){ if(!sb) return null; try{ const { data, error } = await sb.from('posvenda_dados').select('dados').eq('id',1).maybeSingle(); if(error){ console.error('cloudLoadPosvenda',error); return null; } return (data&&data.dados)?data.dados:null; }catch(e){ console.error('cloudLoadPosvenda',e); return null; } }
+// === Anexos do Pós-Venda (vouchers, passagens) — guardados no Supabase Storage, não na nuvem de dados ===
+const POSVENDA_BUCKET='posvenda-docs';
+// Faz upload de um arquivo e devolve {name,size,path} — ou null em caso de falha. O conteúdo NÃO entra no JSON da reserva.
+async function cloudUploadPosvendaDoc(file){
+  if(!sb||!state.user||!file) return null;
+  try{
+    const safe=String(file.name||'arquivo').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-zA-Z0-9._-]+/g,'_');
+    const path=state.user.id+'/'+Date.now()+'-'+Math.random().toString(36).slice(2,8)+'-'+safe;
+    const { error } = await sb.storage.from(POSVENDA_BUCKET).upload(path, file, { contentType:file.type||'application/octet-stream', upsert:false });
+    if(error){ console.error('cloudUploadPosvendaDoc',error); return null; }
+    return { name:file.name, size:file.size, path:path };
+  }catch(e){ console.error('cloudUploadPosvendaDoc',e); return null; }
+}
+// Gera um link temporário (assinado) para baixar/visualizar o anexo. Retorna a URL ou null.
+async function cloudGetPosvendaDocUrl(path){
+  if(!sb||!path) return null;
+  try{
+    const { data, error } = await sb.storage.from(POSVENDA_BUCKET).createSignedUrl(path, 300);
+    if(error){ console.error('cloudGetPosvendaDocUrl',error); return null; }
+    return (data&&data.signedUrl)||null;
+  }catch(e){ console.error('cloudGetPosvendaDocUrl',e); return null; }
+}
+// Remove o arquivo do Storage (ao excluir um anexo). Retorna true/false.
+async function cloudDeletePosvendaDoc(path){
+  if(!sb||!path) return false;
+  try{ const { error } = await sb.storage.from(POSVENDA_BUCKET).remove([path]); if(error){ console.error('cloudDeletePosvendaDoc',error); return false; } return true; }catch(e){ console.error('cloudDeletePosvendaDoc',e); return false; }
+}
 function cloudSaveVoaAppConfig(cfg){
   if(!sb||!state.user) return Promise.resolve(false);
   return sb.from('voa_app_config').update({ dados:cfg, atualizado_em:new Date().toISOString() }).eq('id',1).select().then(({data,error})=>{
@@ -2453,6 +2480,15 @@ function fmtDate(dateStr){ if(!dateStr) return "—"; const [y,m,d]=dateStr.spli
 function fmtDateTime(iso){ const d=new Date(iso); return d.toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function monthOf(dateStr){ return dateStr ? dateStr.slice(0,7) : ""; } // "YYYY-MM"
+// Abre um anexo (voucher/passagem) numa nova aba via link assinado temporário do Storage.
+async function openPosvendaDoc(doc){
+  if(!doc) return;
+  if(!doc.path){ alert("Este anexo é antigo e não tem o arquivo salvo na nuvem (só o nome foi guardado). Por favor, anexe o arquivo novamente."); return; }
+  if(!(window.parent && window.parent.cloudGetPosvendaDocUrl)){ alert("Conexão com a nuvem indisponível. Recarregue a página."); return; }
+  const url=await window.parent.cloudGetPosvendaDocUrl(doc.path);
+  if(url){ window.open(url, "_blank"); }
+  else { alert('Não foi possível abrir "'+(doc.name||'arquivo')+'". Tente novamente em instantes.'); }
+}
 const MESES=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 const DIAS_SEMANA=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 
@@ -2975,13 +3011,37 @@ function ReservationForm({initial, onSave, onCancel, existingIds}){
     servicos:[], passageiros:[blankPax()], tripStatus:"Confirmada", checks:{}, observacoes:[], tarefas:[]
   });
   const [servInput, setServInput] = useState("");
+  const [uploading, setUploading] = useState(false);
   const isEdit = !!initial;
   const set=(k,v)=>setF(p=>({...p,[k]:v}));
   const setPax=(i,k,v)=>setF(p=>{const a=[...p.passageiros];a[i]={...a[i],[k]:v};return{...p,passageiros:a}});
 
-  function handleFiles(i, fileList){
-    const files=Array.from(fileList).map(file=>({name:file.name, size:file.size}));
-    setF(p=>{const a=[...p.passageiros];a[i]={...a[i],docs:[...(a[i].docs||[]),...files]};return{...p,passageiros:a}});
+  async function handleFiles(i, fileList){
+    const list=Array.from(fileList);
+    if(!list.length) return;
+    if(!(window.parent && window.parent.cloudUploadPosvendaDoc)){
+      alert("Não foi possível enviar o arquivo: conexão com a nuvem indisponível. Tente recarregar a página.");
+      return;
+    }
+    setUploading(true);
+    const enviados=[];
+    for(const file of list){
+      const r=await window.parent.cloudUploadPosvendaDoc(file); // {name,size,path} ou null
+      if(r && r.path){ enviados.push(r); }
+      else { alert('Falha ao enviar "'+file.name+'" para a nuvem. O arquivo NÃO foi salvo. Tente novamente.'); }
+    }
+    if(enviados.length){
+      setF(p=>{const a=[...p.passageiros];a[i]={...a[i],docs:[...(a[i].docs||[]),...enviados]};return{...p,passageiros:a}});
+    }
+    setUploading(false);
+  }
+
+  async function removeDoc(i, k){
+    const doc=(f.passageiros[i].docs||[])[k];
+    if(!doc) return;
+    if(!confirm('Remover o anexo "'+(doc.name||'arquivo')+'"?')) return;
+    if(doc.path && window.parent && window.parent.cloudDeletePosvendaDoc){ try{ await window.parent.cloudDeletePosvendaDoc(doc.path); }catch(e){} }
+    setF(p=>{const a=[...p.passageiros];a[i]={...a[i],docs:(a[i].docs||[]).filter((_,idx)=>idx!==k)};return{...p,passageiros:a}});
   }
 
   function submit(){
@@ -3032,8 +3092,14 @@ function ReservationForm({initial, onSave, onCancel, existingIds}){
             </div>
             <div>
               <label className={labelCls}>Documentos pessoais (PDF/Imagens)</label>
-              <input type="file" multiple accept=".pdf,image/*" onChange={e=>handleFiles(i,e.target.files)} className="text-sm"/>
-              {(p.docs||[]).length>0 && <div className="flex flex-wrap gap-2 mt-2">{p.docs.map((d,k)=>(<Badge key={k} tone="blue">📎 {d.name}</Badge>))}</div>}
+              <input type="file" multiple accept=".pdf,image/*" disabled={uploading} onChange={e=>handleFiles(i,e.target.files)} className="text-sm"/>
+              {uploading && <span className="ml-2 text-xs text-amber-600">⏳ Enviando para a nuvem...</span>}
+              {(p.docs||[]).length>0 && <div className="flex flex-wrap gap-2 mt-2">{p.docs.map((d,k)=>(
+                <span key={k} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                  <button type="button" onClick={()=>openPosvendaDoc(d)} className="hover:underline" title={d.path?"Clique para abrir/baixar":"Anexo antigo sem arquivo — reenvie"}>📎 {d.name}{d.path?"":" ⚠️"}</button>
+                  <button type="button" onClick={()=>removeDoc(i,k)} className="opacity-60 hover:opacity-100 hover:text-red-600" title="Remover anexo">×</button>
+                </span>
+              ))}</div>}
             </div>
           </div>
         ))}
@@ -3172,7 +3238,9 @@ function ReservationDetail({res, onUpdate, onBack, onEdit}){
                 <div key={p.id} className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800">
                   <div className="font-medium">{p.nome}</div>
                   <div className="opacity-70 text-xs">Nasc.: {fmtDate(p.nascimento)} · {p.email} · {p.telefone}</div>
-                  {(p.docs||[]).length>0 && <div className="flex flex-wrap gap-1 mt-1">{p.docs.map((d,k)=>(<Badge key={k}>📎 {d.name}</Badge>))}</div>}
+                  {(p.docs||[]).length>0 && <div className="flex flex-wrap gap-1 mt-1">{p.docs.map((d,k)=>(
+                    <button key={k} type="button" onClick={()=>openPosvendaDoc(d)} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 hover:underline" title={d.path?"Clique para abrir/baixar":"Anexo antigo sem arquivo — reenvie pelo botão Editar"}>📎 {d.name}{d.path?"":" ⚠️"}</button>
+                  ))}</div>}
                 </div>
               ))}
             </div>
