@@ -409,6 +409,10 @@ table.tbl th.num{text-align:right}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
         VOA
       </div>
+      <div class="nav-item" data-view="liberarespaco" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>
+        Liberar espaço
+      </div>
     </nav>
     <div class="user-panel">
       <div class="who">
@@ -942,6 +946,17 @@ async function cloudDeletePosvendaDoc(path){
   if(!sb||!path) return false;
   try{ const { error } = await sb.storage.from(POSVENDA_BUCKET).remove([path]); if(error){ console.error('cloudDeletePosvendaDoc',error); return false; } return true; }catch(e){ console.error('cloudDeletePosvendaDoc',e); return false; }
 }
+// Remove vários arquivos de uma vez (limpeza por período). Retorna a quantidade removida.
+async function cloudDeletePosvendaDocs(paths){
+  if(!sb||!paths||!paths.length) return 0;
+  let removidos=0;
+  for(let i=0;i<paths.length;i+=100){ // a API aceita lotes; vamos de 100 em 100 por segurança
+    const lote=paths.slice(i,i+100);
+    try{ const { data, error } = await sb.storage.from(POSVENDA_BUCKET).remove(lote); if(error){ console.error('cloudDeletePosvendaDocs',error); } else { removidos += (data&&data.length)||lote.length; } }
+    catch(e){ console.error('cloudDeletePosvendaDocs',e); }
+  }
+  return removidos;
+}
 function cloudSaveVoaAppConfig(cfg){
   if(!sb||!state.user) return Promise.resolve(false);
   return sb.from('voa_app_config').update({ dados:cfg, atualizado_em:new Date().toISOString() }).eq('id',1).select().then(({data,error})=>{
@@ -1005,7 +1020,7 @@ const ROLE_LABELS = { consultora:'Consultor(a)', gerente:'Gerente', admin:'Admin
 const ROLE_MENUS = {
   consultora: ['dashboard','orcamentos','controle','agenda','relatorios'],
   gerente:    ['administracao','posvenda','voaapp'],
-  admin:      ['dashboard','administracao','orcamentos','controle','agenda','relatorios','posvenda','voaapp']
+  admin:      ['dashboard','administracao','orcamentos','controle','agenda','relatorios','posvenda','voaapp','liberarespaco']
 };
 function userSlug(name){ return String(name||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'user'; }
 function currentRole(){ return (state.user&&state.user.role)||'consultora'; }
@@ -1045,7 +1060,7 @@ function requestNameChange(){
 }
 async function confirmNameChange(){ const pass=document.getElementById('adminPass').value; const newName=document.getElementById('newName').value.trim(); if(pass!==ADMIN_PASS){ toast('Senha incorreta','danger'); return; } if(!newName){ toast('Informe um novo nome','warning'); return; } state.user.name=newName; save(STORE.USER,state.user); document.getElementById('userName').textContent=newName; document.getElementById('topUserName').textContent=newName.split(' ')[0]; document.getElementById('userInitial').textContent=newName[0].toUpperCase(); closeModal(); const cloudOk=await cloudSaveNome(newName); toast(cloudOk?'Nome atualizado na nuvem':'Falhou ao confirmar na nuvem. Verifique a conexão e salve de novo.',cloudOk?'success':'warning'); }
 
-const VIEW_META = { administracao:{title:'Administração',sub:'Visão consolidada da equipe e da operação'}, dashboard:{title:'Dashboard',sub:'Visão geral do desempenho'}, orcamentos:{title:'Orçamentos',sub:'Gere, gerencie e acompanhe propostas de viagem'}, controle:{title:'Controle Diário',sub:'Rotina, metas e métricas do mês'}, agenda:{title:'Agenda de Viajantes',sub:'Calendário de embarques e oportunidades de upsell'}, relatorios:{title:'Relatórios',sub:'Exportação consolidada de desempenho em PDF'}, posvenda:{title:'Pós-Venda TZ Viagens',sub:'Painel gerencial de controle de viajantes'}, voaapp:{title:'VOA',sub:'Itinerário de viagem · TZ Viagens'} };
+const VIEW_META = { administracao:{title:'Administração',sub:'Visão consolidada da equipe e da operação'}, dashboard:{title:'Dashboard',sub:'Visão geral do desempenho'}, orcamentos:{title:'Orçamentos',sub:'Gere, gerencie e acompanhe propostas de viagem'}, controle:{title:'Controle Diário',sub:'Rotina, metas e métricas do mês'}, agenda:{title:'Agenda de Viajantes',sub:'Calendário de embarques e oportunidades de upsell'}, relatorios:{title:'Relatórios',sub:'Exportação consolidada de desempenho em PDF'}, posvenda:{title:'Pós-Venda TZ Viagens',sub:'Painel gerencial de controle de viajantes'}, voaapp:{title:'VOA',sub:'Itinerário de viagem · TZ Viagens'}, liberarespaco:{title:'Liberar espaço',sub:'Apaga apenas fotos e PDFs antigos para liberar espaço na nuvem'} };
 function bindNav(){
   document.querySelectorAll('.nav-item').forEach(el=>{ el.addEventListener('click',()=>setView(el.dataset.view)); });
   document.getElementById('menuToggle').addEventListener('click',()=>{ document.getElementById('sidebar').classList.toggle('is-open'); });
@@ -1071,6 +1086,170 @@ function setView(view){
   if(view==='posvenda') renderPosVenda(c);
   if(view==='voaapp') renderVoaApp(c);
   if(view==='administracao') renderAdmin(c);
+  if(view==='liberarespaco') renderLiberarEspaco(c);
+}
+
+/* ============================================================================
+   LIBERAR ESPAÇO (somente admin) — apaga APENAS fotos de orçamentos e PDFs do
+   pós-venda de um período escolhido, mantendo TODO o resto intacto.
+   Dupla trava: menu visível só ao admin + senha extra. Sempre mostra uma
+   prévia (o que será apagado) antes de qualquer exclusão.
+   ============================================================================ */
+const LIBERAR_PASS = 'Dionathan120720@';
+let _liberarUnlocked = false;
+let _libOrcSel = null;   // {ids:[], count, bytes} resultado da última prévia de orçamentos
+let _libPvSel  = null;   // {arr, idxs, paths, count, bytes} resultado da última prévia do pós-venda
+
+function _fmtBytes(b){ if(!b) return '0 KB'; if(b<1024*1024) return (b/1024).toFixed(0)+' KB'; return (b/1024/1024).toFixed(1)+' MB'; }
+function _orcPhotoStats(q){
+  let count=0, bytes=0;
+  const add=x=>{ if(x&&typeof x==='string'){ count++; bytes += Math.floor(x.length*0.75); } };
+  ((q.destino&&q.destino.imagens)||[]).forEach(add);
+  (q.hospedagem||[]).forEach(h=>(h.fotos||[]).forEach(add));
+  const v=q.voaData;
+  if(v){ (v.gallery||[]).forEach(add); (v.hotelImgs||[]).forEach(add); add(v.heroImg); (v.hotelsExtra||[]).forEach(h=>(h.imgs||[]).forEach(add)); }
+  return {count,bytes};
+}
+function _orcStripPhotos(q){ // zera SOMENTE imagens; preserva textos, valores, datas, tudo
+  if(q.destino&&Array.isArray(q.destino.imagens)) q.destino.imagens=q.destino.imagens.map(()=> '');
+  (q.hospedagem||[]).forEach(h=>{ if(Array.isArray(h.fotos)) h.fotos=h.fotos.map(()=> ''); });
+  const v=q.voaData;
+  if(v){
+    if(Array.isArray(v.gallery)) v.gallery=v.gallery.map(()=> '');
+    if(Array.isArray(v.hotelImgs)) v.hotelImgs=v.hotelImgs.map(()=> '');
+    if(v.heroImg) v.heroImg='';
+    (v.hotelsExtra||[]).forEach(h=>{ if(Array.isArray(h.imgs)) h.imgs=h.imgs.map(()=> ''); });
+  }
+}
+
+function renderLiberarEspaco(c){
+  if(currentRole()!=='admin'){ c.innerHTML='<div class="card"><p>Acesso restrito ao administrador.</p></div>'; return; }
+  _libOrcSel=null; _libPvSel=null;
+  if(!_liberarUnlocked){ _renderLiberarLock(c); return; }
+  _renderLiberarTools(c);
+}
+
+function _renderLiberarLock(c){
+  c.innerHTML=`<div class="card" style="max-width:460px;margin:24px auto">
+    <div class="card-header"><h3 class="card-title">🔒 Área protegida</h3></div>
+    <p style="color:var(--text-mute);font-size:13px;margin:6px 0 14px;line-height:1.5">Esta área apaga <strong>permanentemente</strong> fotos de orçamentos e PDFs do pós-venda de períodos antigos, para liberar espaço na nuvem. Nada além das imagens e PDFs é tocado. Por segurança, informe a senha extra.</p>
+    <div class="field"><label>Senha de liberação</label><input type="password" id="libPass" placeholder="••••••••" autocomplete="off"></div>
+    <button class="btn btn-primary" id="libUnlockBtn" style="width:100%">Desbloquear</button>
+  </div>`;
+  const go=()=>{ const v=(document.getElementById('libPass').value||''); if(v===LIBERAR_PASS){ _liberarUnlocked=true; _renderLiberarTools(c); } else { toast('Senha incorreta.','danger'); } };
+  document.getElementById('libUnlockBtn').addEventListener('click',go);
+  document.getElementById('libPass').addEventListener('keydown',e=>{ if(e.key==='Enter') go(); });
+  setTimeout(()=>{ const e=document.getElementById('libPass'); if(e) e.focus(); },50);
+}
+
+function _renderLiberarTools(c){
+  const hoje=todayISO();
+  c.innerHTML=`
+  <div class="card" style="margin-bottom:18px;border-left:4px solid #e22b2b">
+    <p style="font-size:13px;color:var(--text-soft);margin:0;line-height:1.5">⚠️ <strong>Atenção:</strong> a exclusão é <strong>permanente</strong> e não tem volta. Sempre clique em <strong>Pré-visualizar</strong> primeiro para conferir exatamente o que será apagado. Só as <strong>imagens</strong> (orçamentos) e os <strong>PDFs anexados</strong> (pós-venda) são removidos — todos os textos, valores, datas e dados das reservas permanecem intactos.</p>
+  </div>
+
+  <div class="card" style="margin-bottom:18px">
+    <div class="card-header"><h3 class="card-title">📷 Fotos dos orçamentos</h3></div>
+    <p style="font-size:12px;color:var(--text-mute);margin:2px 0 12px">Apaga as fotos de <strong>destino e hospedagem</strong> dos orçamentos criados no período escolhido (filtro pela <strong>data de criação</strong> do orçamento).</p>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+      <div class="field" style="margin:0"><label>De</label><input type="date" id="libOrcIni" max="${hoje}"></div>
+      <div class="field" style="margin:0"><label>Até</label><input type="date" id="libOrcFim" max="${hoje}" value="${hoje}"></div>
+      <button class="btn btn-ghost" id="libOrcPrev">Pré-visualizar</button>
+    </div>
+    <div id="libOrcOut" style="margin-top:14px"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3 class="card-title">📎 PDFs do pós-venda</h3></div>
+    <p style="font-size:12px;color:var(--text-mute);margin:2px 0 12px">Apaga os <strong>PDFs anexados</strong> (vouchers, passagens) das reservas cujo <strong>embarque</strong> esteja no período escolhido — ideal para passageiros que já viajaram. A reserva e seus dados continuam intactos.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+      <div class="field" style="margin:0"><label>Embarque de</label><input type="date" id="libPvIni"></div>
+      <div class="field" style="margin:0"><label>Embarque até</label><input type="date" id="libPvFim" value="${hoje}"></div>
+      <button class="btn btn-ghost" id="libPvPrev">Pré-visualizar</button>
+    </div>
+    <div id="libPvOut" style="margin-top:14px"></div>
+  </div>`;
+  document.getElementById('libOrcPrev').addEventListener('click',_libPreviewOrc);
+  document.getElementById('libPvPrev').addEventListener('click',_libPreviewPv);
+}
+
+function _libPreviewOrc(){
+  const ini=document.getElementById('libOrcIni').value, fim=document.getElementById('libOrcFim').value;
+  const out=document.getElementById('libOrcOut'); _libOrcSel=null;
+  if(!ini||!fim){ out.innerHTML='<p style="color:var(--danger);font-size:13px">Informe as duas datas.</p>'; return; }
+  if(ini>fim){ out.innerHTML='<p style="color:var(--danger);font-size:13px">A data inicial não pode ser maior que a final.</p>'; return; }
+  let ids=[], count=0, bytes=0, comFoto=0;
+  (state.orcamentos||[]).forEach(q=>{ const d=(q.createdAt||'').slice(0,10); if(d>=ini&&d<=fim){ const st=_orcPhotoStats(q); if(st.count>0){ ids.push(q.id); count+=st.count; bytes+=st.bytes; comFoto++; } } });
+  if(!ids.length){ out.innerHTML='<p style="font-size:13px;color:var(--text-mute)">Nenhum orçamento com fotos encontrado nesse período.</p>'; return; }
+  _libOrcSel={ids,count,bytes};
+  out.innerHTML=`<div style="background:var(--surface-2,rgba(0,0,0,.04));border-radius:10px;padding:14px;font-size:13px;line-height:1.7">
+    <div><strong>${comFoto}</strong> orçamento(s) no período têm fotos.</div>
+    <div><strong>${count}</strong> foto(s) serão apagadas — liberando aprox. <strong>${_fmtBytes(bytes)}</strong>.</div>
+    <div style="color:var(--text-mute);margin-top:4px">Os orçamentos continuarão com todos os textos, valores e dados — só sem as imagens.</div>
+  </div>
+  <button class="btn btn-danger" id="libOrcExec" style="margin-top:12px">Apagar essas ${count} foto(s) definitivamente</button>`;
+  document.getElementById('libOrcExec').addEventListener('click',_libExecOrc);
+}
+
+async function _libExecOrc(){
+  if(!_libOrcSel||!_libOrcSel.ids.length) return;
+  const {ids,count}=_libOrcSel;
+  if(!confirm(`Apagar definitivamente ${count} foto(s) de ${ids.length} orçamento(s)?\n\nEsta ação NÃO tem volta. Os textos e dados dos orçamentos serão mantidos.`)) return;
+  const btn=document.getElementById('libOrcExec'); if(btn){ btn.disabled=true; btn.textContent='Apagando...'; }
+  let ok=0, fail=0;
+  for(const id of ids){
+    const q=(state.orcamentos||[]).find(x=>x.id===id); if(!q) continue;
+    _orcStripPhotos(q);
+    const cloudOk=await cloudSaveOrcamento(q);
+    if(cloudOk) ok++; else fail++;
+  }
+  persistAll();
+  const out=document.getElementById('libOrcOut');
+  out.innerHTML=`<div style="background:rgba(16,185,129,.12);border-radius:10px;padding:14px;font-size:13px;line-height:1.6">
+    ✅ Fotos apagadas de <strong>${ok}</strong> orçamento(s).${fail?` <span style="color:var(--danger)">${fail} não confirmaram na nuvem — tente de novo.</span>`:''}
+  </div>`;
+  _libOrcSel=null;
+  toast(fail?`Concluído com ${fail} falha(s) na nuvem`:'Espaço liberado com sucesso',fail?'warning':'success');
+}
+
+async function _libPreviewPv(){
+  const ini=document.getElementById('libPvIni').value, fim=document.getElementById('libPvFim').value;
+  const out=document.getElementById('libPvOut'); _libPvSel=null;
+  if(!ini||!fim){ out.innerHTML='<p style="color:var(--danger);font-size:13px">Informe as duas datas.</p>'; return; }
+  if(ini>fim){ out.innerHTML='<p style="color:var(--danger);font-size:13px">A data inicial não pode ser maior que a final.</p>'; return; }
+  out.innerHTML='<p style="font-size:13px;color:var(--text-mute)">Carregando reservas da nuvem...</p>';
+  const arr=await cloudLoadPosvenda();
+  if(!Array.isArray(arr)){ out.innerHTML='<p style="color:var(--danger);font-size:13px">Não foi possível carregar as reservas do pós-venda. Tente novamente.</p>'; return; }
+  let idxs=[], paths=[], count=0, bytes=0, reservas=0;
+  arr.forEach((r,i)=>{ const d=r&&r.dataIda; if(d&&d>=ini&&d<=fim){ let temDoc=false; (r.passageiros||[]).forEach(p=>(p.docs||[]).forEach(doc=>{ if(doc&&doc.path){ paths.push(doc.path); count++; bytes+=(doc.size||0); temDoc=true; } })); if(temDoc){ idxs.push(i); reservas++; } } });
+  if(!count){ out.innerHTML='<p style="font-size:13px;color:var(--text-mute)">Nenhum PDF anexado encontrado para embarques nesse período.</p>'; return; }
+  _libPvSel={arr,idxs,paths,count,bytes};
+  out.innerHTML=`<div style="background:var(--surface-2,rgba(0,0,0,.04));border-radius:10px;padding:14px;font-size:13px;line-height:1.7">
+    <div><strong>${reservas}</strong> reserva(s) com embarque no período têm PDFs anexados.</div>
+    <div><strong>${count}</strong> PDF(s) serão apagados — liberando aprox. <strong>${_fmtBytes(bytes)}</strong>.</div>
+    <div style="color:var(--text-mute);margin-top:4px">As reservas e todos os seus dados permanecem; só os arquivos anexados são removidos.</div>
+  </div>
+  <button class="btn btn-danger" id="libPvExec" style="margin-top:12px">Apagar esses ${count} PDF(s) definitivamente</button>`;
+  document.getElementById('libPvExec').addEventListener('click',_libExecPv);
+}
+
+async function _libExecPv(){
+  if(!_libPvSel||!_libPvSel.paths.length) return;
+  const {arr,idxs,paths,count}=_libPvSel;
+  if(!confirm(`Apagar definitivamente ${count} PDF(s) de ${idxs.length} reserva(s)?\n\nEsta ação NÃO tem volta. Os dados das reservas serão mantidos.`)) return;
+  const btn=document.getElementById('libPvExec'); if(btn){ btn.disabled=true; btn.textContent='Apagando...'; }
+  const removidos=await cloudDeletePosvendaDocs(paths);
+  // remove as referências dos docs apenas nas reservas do período, mantendo o resto
+  idxs.forEach(i=>{ const r=arr[i]; (r.passageiros||[]).forEach(p=>{ if(Array.isArray(p.docs)) p.docs=p.docs.filter(doc=>!(doc&&doc.path)); }); });
+  const saveOk=await cloudSavePosvenda(arr);
+  const out=document.getElementById('libPvOut');
+  out.innerHTML=`<div style="background:rgba(16,185,129,.12);border-radius:10px;padding:14px;font-size:13px;line-height:1.6">
+    ✅ <strong>${removidos}</strong> PDF(s) removidos do cofre.${saveOk?'':' <span style="color:var(--danger)">Atenção: a atualização das reservas não confirmou na nuvem — tente de novo.</span>'}
+    <div style="color:var(--text-mute);margin-top:4px">Reabra a aba Pós-Venda para ver a lista atualizada.</div>
+  </div>`;
+  _libPvSel=null;
+  toast(saveOk?'Espaço liberado com sucesso':'PDFs apagados, mas a reserva não confirmou na nuvem',saveOk?'success':'warning');
 }
 
 /* ============================================================================
