@@ -427,10 +427,6 @@ table.tbl th.num{text-align:right}
         <button id="changeLogoBtn">Trocar logo</button>
       </div>
       <div class="actions">
-        <button id="importBackupBtn">Importar backup</button>
-      </div>
-      <input type="file" id="importBackupInput" accept="application/json" style="display:none">
-      <div class="actions">
         <button id="logoutBtn" style="background:rgba(226,43,43,.25)">Sair / trocar acesso</button>
       </div>
       <input type="file" id="logoFileInput" accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp" style="display:none">
@@ -1029,6 +1025,7 @@ function applyRoleUI(){
   const allowed=ROLE_MENUS[currentRole()]||ROLE_MENUS.consultora;
   document.querySelectorAll('.nav-item').forEach(el=>{ el.style.display = allowed.indexOf(el.dataset.view)>=0 ? '' : 'none'; });
   const roleEl=document.querySelector('.user-panel .role'); if(roleEl) roleEl.textContent=ROLE_LABELS[currentRole()]||'Consultor(a)';
+  const logoBtn=document.getElementById('changeLogoBtn'); if(logoBtn) logoBtn.style.display = currentRole()==='admin' ? '' : 'none'; // a logo é compartilhada — só admin troca
 }
 async function handleLogin(){
   const email=document.getElementById('loginEmail').value.trim();
@@ -1066,8 +1063,6 @@ function bindNav(){
   document.getElementById('menuToggle').addEventListener('click',()=>{ document.getElementById('sidebar').classList.toggle('is-open'); });
   document.getElementById('changeNameBtn').addEventListener('click',requestNameChange);
   document.getElementById('logoutBtn').addEventListener('click',()=>{ if(confirm('Sair e voltar para a tela de acesso?')) logout(); });
-  document.getElementById('importBackupBtn').addEventListener('click',()=>document.getElementById('importBackupInput').click());
-  document.getElementById('importBackupInput').addEventListener('change',importBackupToCloud);
   document.getElementById('changeLogoBtn').addEventListener('click',()=>{ requireAdmin('Para trocar a logo da agência, informe a senha de administrador.',()=>{ document.getElementById('logoFileInput').click(); }); });
   document.getElementById('logoFileInput').addEventListener('change',(e)=>handleLogoUpload(e,()=>{ document.getElementById('sidebarLogo').innerHTML=logoHTML(); const active=document.querySelector('.nav-item.active'); if(active) setView(active.dataset.view); }));
 }
