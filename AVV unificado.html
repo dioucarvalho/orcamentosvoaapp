@@ -880,7 +880,7 @@ function cloudSaveLogo(dataUrl){ if(!sb||!dataUrl) return; sb.from('agencia').up
 function cloudSaveNome(nome){ if(!sb||!state.user) return; sb.from('profiles').update({ nome:nome }).eq('id',state.user.id).then(({error})=>cloudErr(error)); }
 function cloudSavePosvenda(arr){ if(!sb||!state.user) return; sb.from('posvenda_dados').update({ dados:arr, atualizado_em:new Date().toISOString() }).eq('id',1).then(({error})=>cloudErr(error)); }
 async function cloudLoadPosvenda(){ if(!sb) return null; try{ const { data, error } = await sb.from('posvenda_dados').select('dados').eq('id',1).maybeSingle(); if(error){ console.error('cloudLoadPosvenda',error); return null; } return (data&&data.dados)?data.dados:null; }catch(e){ console.error('cloudLoadPosvenda',e); return null; } }
-function cloudSaveVoaAppConfig(cfg){ if(!sb||!state.user) return; sb.from('voa_app_config').update({ dados:cfg, atualizado_em:new Date().toISOString() }).eq('id',1).then(({error})=>cloudErr(error)); }
+function cloudSaveVoaAppConfig(cfg){ if(!sb||!state.user) return Promise.resolve(false); return sb.from('voa_app_config').update({ dados:cfg, atualizado_em:new Date().toISOString() }).eq('id',1).then(({error})=>{ if(error){ cloudErr(error); return false; } return true; }); }
 async function cloudLoadVoaAppConfig(){ if(!sb) return null; try{ const { data, error } = await sb.from('voa_app_config').select('dados').eq('id',1).maybeSingle(); if(error){ console.error('cloudLoadVoaAppConfig',error); return null; } return (data&&data.dados)?data.dados:null; }catch(e){ console.error('cloudLoadVoaAppConfig',e); return null; } }
 /* Importa um backup .json para a nuvem, como o usuário LOGADO (cada uma importa o seu). */
 async function importBackupToCloud(ev){
@@ -3620,13 +3620,11 @@ body.admin-mode .admin-only.inline{display:inline-flex}
 // Sem trial, sem licença anual: Wix faz o controle de acesso por fora.
 // ============================================================================
 const SCALABLE_MODE = true;
-const MASTER_VERIFY_SECRET = 'VOA-Dx7K-MQR4-9PN2-VL8H-5J6T-XW3B-ZAYE-1F4U';
 
 const SC_K = {
   ONBOARDED:   'voa_sc_onboarded',
   INSTALL_ID:  'voa_sc_install_id',
-  AGENCY:      'voa_sc_agency',
-  EDIT_NONCE:  'voa_sc_edit_nonce'
+  AGENCY:      'voa_sc_agency'
 };
 
 let SCALABLE_OWNER_LOCKED = false;
@@ -3876,34 +3874,15 @@ function scGenerateInstallId(){
   return hex.match(/.{4}/g).join('-');
 }
 
-function scGenerateNonce(){
-  const buf = new Uint8Array(4);
-  if(typeof crypto !== 'undefined' && crypto.getRandomValues){
-    crypto.getRandomValues(buf);
-  } else {
-    for(let i=0;i<4;i++) buf[i] = Math.floor(Math.random()*256);
-  }
-  return Array.from(buf).map(b=>b.toString(16).padStart(2,'0')).join('').toUpperCase();
-}
-
-// Hash usado APENAS para liberação de edição. Prefixo 'EDIT|' garante que
-// os códigos sejam cripto-distintos de qualquer outro uso futuro do secret.
-async function scComputeEditUnlockHash(installId, nonce){
-  const buf = new TextEncoder().encode('EDIT|' + installId + '|' + nonce + '|' + MASTER_VERIFY_SECRET);
-  const h = await crypto.subtle.digest('SHA-256', buf);
-  return Array.from(new Uint8Array(h)).map(b=>b.toString(16).padStart(2,'0')).join('').toUpperCase().slice(0,8);
-}
-
 function scGetState(){
   try{
     return {
       onboarded: localStorage.getItem(SC_K.ONBOARDED) === '1',
       installId: localStorage.getItem(SC_K.INSTALL_ID) || '',
-      agency:    JSON.parse(localStorage.getItem(SC_K.AGENCY) || 'null'),
-      editNonce: localStorage.getItem(SC_K.EDIT_NONCE) || ''
+      agency:    JSON.parse(localStorage.getItem(SC_K.AGENCY) || 'null')
     };
   }catch(e){
-    return {onboarded:false,installId:'',agency:null,editNonce:''};
+    return {onboarded:false,installId:'',agency:null};
   }
 }
 
@@ -4006,8 +3985,7 @@ function showOnboardingModal(){
     <div class="onb-error" id="onbError"></div>
 
     <div class="onb-note">
-      <strong>Atenção:</strong> ao concluir, esses dados ficam travados nessa instalação.
-      Para alterá-los depois você precisa solicitar um código de liberação ao suporte VOA, dentro do próprio sistema.
+      <strong>Atenção:</strong> esses dados serão salvos na nuvem e poderão ser editados depois, a qualquer momento, pelo botão <strong>"Atualizar Dados da Agência"</strong> no painel administrativo.
     </div>
 
     <div class="onb-actions">
@@ -4094,7 +4072,8 @@ async function completeOnboarding(agency){
     localStorage.setItem(SC_K.INSTALL_ID, installId);
     localStorage.setItem(SC_K.AGENCY, JSON.stringify(agency));
     localStorage.setItem(SC_K.ONBOARDED, '1');
-    try{ if(window.parent && window.parent.cloudSaveVoaAppConfig) window.parent.cloudSaveVoaAppConfig({ installId, agency }); }catch(e){}
+    let cloudOk = false;
+    try{ if(window.parent && window.parent.cloudSaveVoaAppConfig) cloudOk = await window.parent.cloudSaveVoaAppConfig({ installId, agency }); }catch(e){}
 
     const card = document.getElementById('onbCard');
     card.innerHTML = `
@@ -4102,8 +4081,10 @@ async function completeOnboarding(agency){
         <div class="ico">🎉</div>
         <h3>Tudo pronto, ${esc(agency.brandName)}!</h3>
         <p>Seu sistema está configurado e pronto pra uso.</p>
-        <p style="font-size:13px;color:#475569;margin-top:14px">
-          Os dados da agência ficaram travados nesta instalação. Para alterar logo, nome ou cores no futuro, use o botão <strong>"Atualizar Dados da Agência"</strong> dentro do painel administrativo — você receberá um código de liberação ao solicitar via suporte.
+        <p style="font-size:13px;color:${cloudOk ? '#475569' : '#B91C1C'};margin-top:14px">
+          ${cloudOk
+            ? 'Os dados da agência foram salvos na nuvem e vão aparecer em qualquer navegador. Para alterar logo, nome ou cores no futuro, use o botão <strong>"Atualizar Dados da Agência"</strong> dentro do painel administrativo.'
+            : 'Os dados foram salvos neste navegador, mas não foi possível confirmar o salvamento na nuvem. Verifique sua conexão e tente atualizar os dados novamente pelo painel administrativo.'}
         </p>
         <div class="onb-actions" style="margin-top:22px">
           <button class="onb-btn-primary" id="onbStart">Começar a usar agora</button>
@@ -4123,84 +4104,27 @@ async function completeOnboarding(agency){
 }
 
 // ============================================================================
-// MODAL DE LIBERAÇÃO DE EDIÇÃO (single-use code, vinculado à instalação)
+// MODAL DE ATUALIZAÇÃO DOS DADOS DA AGÊNCIA (edição livre, sem código)
 // ============================================================================
 
-async function showEditUnlockModal(){
+function showEditUnlockModal(){
   const overlay = document.getElementById('edtOverlay');
   const card = document.getElementById('edtCard');
   if(!overlay || !card) return;
 
-  const st = scGetState();
-  const installId = st.installId;
-  if(!installId){
-    alert('Erro: instalação sem ID. Refaça o onboarding.');
-    return;
-  }
-
-  // Reutiliza o nonce existente se houver (Decisão B: pedido fica aberto)
-  let nonce = st.editNonce;
-  let isPending = !!nonce;
-
-  const buildRequestCode = (id, n) => 'EDIT-' + id.replace(/-/g,'') + '-' + n;
-  let requestCode = nonce ? buildRequestCode(installId, nonce) : '';
-
   card.innerHTML = `
     <button class="edt-close" id="edtCloseBtn" aria-label="Fechar">&times;</button>
     <div class="edt-head">
-      <div class="edt-eyebrow">Modo Proprietário</div>
+      <div class="edt-eyebrow">Dados da Agência</div>
       <h2>Atualizar Dados da Agência</h2>
     </div>
-
-    ${isPending ? `<div class="edt-pending-note"><strong>Pedido em aberto.</strong> Você já gerou um código de pedido. Cole o código de liberação que o suporte enviou, ou cancele este pedido e gere um novo.</div>` : ''}
-
     <div class="edt-divider"></div>
-
-    <div class="edt-step" id="edtStep1">
-      <div class="edt-step-title"><span class="edt-step-num">1</span>Solicitar liberação ao suporte</div>
-      <div class="edt-step-desc">Gere um código de pedido único e envie ao suporte VOA pelo WhatsApp. Esse código é válido só pra esta instalação e só desbloqueia 1 alteração.</div>
-
-      <div id="edtCodeArea" style="${requestCode ? '' : 'display:none'}">
-        <div class="edt-code-box" id="edtRequestCode">${requestCode}</div>
-        <div class="edt-actions-row">
-          <button class="edt-btn-copy" id="edtCopyBtn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-            Copiar
-          </button>
-          <button class="edt-btn-share" id="edtShareBtn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347"/></svg>
-            WhatsApp
-          </button>
-        </div>
-      </div>
-
-      <button class="edt-btn-gen" id="edtGenBtn" style="${requestCode ? 'display:none' : ''}">
-        Gerar código de pedido
-      </button>
-    </div>
-
-    <div class="edt-step" id="edtStep2">
-      <div class="edt-step-title"><span class="edt-step-num">2</span>Inserir código de liberação</div>
-      <div class="edt-step-desc">Quando o suporte te enviar o código de liberação, cole no campo abaixo e clique em "Liberar".</div>
-      <input type="text" class="edt-input" id="edtUnlockInput" placeholder="UNL-XXXXXXXX" autocomplete="off">
-      <button class="edt-btn-primary" id="edtUnlockBtn">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>
-        Liberar Edição
-      </button>
-      <div class="edt-err" id="edtUnlockErr"></div>
-      <div class="edt-ok" id="edtUnlockOk"></div>
-    </div>
-
-    ${isPending ? '<button class="edt-cancel-link" id="edtCancelLink">Cancelar este pedido e gerar um novo</button>' : ''}
-
-    <div class="edt-edit-section" id="edtEditSection">
-      <div class="edt-divider"></div>
-      <div class="edt-step-title"><span class="edt-step-num">3</span>Editar dados</div>
-      <div class="edt-step-desc">Edite os campos que quiser e clique em <strong>Salvar e Travar</strong>. Após salvar, será necessário um novo código pra editar de novo.</div>
+    <div class="edt-edit-section show" id="edtEditSection">
+      <div class="edt-step-desc">Edite os campos que quiser e clique em <strong>Salvar</strong>.</div>
       <div id="edtEditFields"></div>
       <button class="edt-btn-primary" id="edtSaveBtn" style="margin-top:8px">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-        Salvar e Travar
+        Salvar
       </button>
     </div>
   `;
@@ -4208,94 +4132,9 @@ async function showEditUnlockModal(){
   overlay.classList.add('open');
   document.body.style.overflow = 'hidden';
 
-  // Bindings
   document.getElementById('edtCloseBtn').addEventListener('click', closeEditUnlockModal);
 
-  // Gerar código de pedido
-  const genBtn = document.getElementById('edtGenBtn');
-  if(genBtn){
-    genBtn.addEventListener('click', ()=>{
-      const newNonce = scGenerateNonce();
-      localStorage.setItem(SC_K.EDIT_NONCE, newNonce);
-      const code = buildRequestCode(installId, newNonce);
-      document.getElementById('edtRequestCode').textContent = code;
-      document.getElementById('edtCodeArea').style.display = '';
-      genBtn.style.display = 'none';
-    });
-  }
-
-  // Copiar
-  document.getElementById('edtCopyBtn')?.addEventListener('click', async ()=>{
-    const code = document.getElementById('edtRequestCode').textContent;
-    try{
-      await navigator.clipboard.writeText(code);
-      const b = document.getElementById('edtCopyBtn');
-      const orig = b.innerHTML;
-      b.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"></polyline></svg> Copiado!';
-      setTimeout(()=>b.innerHTML = orig, 1800);
-    }catch(e){}
-  });
-
-  // WhatsApp share
-  document.getElementById('edtShareBtn')?.addEventListener('click', ()=>{
-    const code = document.getElementById('edtRequestCode').textContent;
-    const msg = encodeURIComponent('Olá! Preciso atualizar os dados da minha agência no sistema VOA. Segue o código do pedido:\n\n' + code + '\n\nAguardo o código de liberação. Obrigado!');
-    window.open('https://wa.me/5531975953950?text=' + msg, '_blank');
-  });
-
-  // Cancelar pedido
-  document.getElementById('edtCancelLink')?.addEventListener('click', ()=>{
-    if(confirm('Cancelar este pedido? Você precisará gerar um novo código.')){
-      localStorage.removeItem(SC_K.EDIT_NONCE);
-      closeEditUnlockModal();
-      setTimeout(showEditUnlockModal, 50);
-    }
-  });
-
-  // Liberar
-  const unlockBtn = document.getElementById('edtUnlockBtn');
-  const unlockInp = document.getElementById('edtUnlockInput');
-  const unlockErr = document.getElementById('edtUnlockErr');
-  const unlockOk = document.getElementById('edtUnlockOk');
-  async function tryUnlock(){
-    unlockErr.classList.remove('show');
-    unlockOk.classList.remove('show');
-    const code = (unlockInp.value||'').trim().toUpperCase();
-    if(!code){ unlockInp.focus(); return; }
-    const currentNonce = localStorage.getItem(SC_K.EDIT_NONCE);
-    if(!currentNonce){
-      unlockErr.textContent = 'Nenhum pedido em aberto. Gere o código de pedido antes de inserir o de liberação.';
-      unlockErr.classList.add('show');
-      return;
-    }
-    unlockBtn.disabled = true; unlockBtn.textContent = 'Verificando…';
-    try{
-      const m = code.match(/^UNL-([A-F0-9]{8})$/);
-      if(!m){
-        throw new Error('Formato inválido. Use UNL-XXXXXXXX.');
-      }
-      const provided = m[1];
-      const expected = await scComputeEditUnlockHash(installId, currentNonce);
-      if(provided !== expected){
-        throw new Error('Código incorreto ou não pertence a este pedido.');
-      }
-      // Sucesso → revela seção de edição
-      unlockOk.textContent = '✓ Liberado. Edite os campos abaixo.';
-      unlockOk.classList.add('show');
-      unlockBtn.style.background = '#10B981';
-      unlockBtn.textContent = '✓ Liberado';
-      setTimeout(()=>showEditFormFields(), 400);
-    }catch(e){
-      unlockErr.textContent = e.message || 'Erro ao validar.';
-      unlockErr.classList.add('show');
-      unlockBtn.disabled = false;
-      unlockBtn.textContent = 'Liberar Edição';
-      unlockInp.value = '';
-      unlockInp.focus();
-    }
-  }
-  unlockBtn.addEventListener('click', tryUnlock);
-  unlockInp.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); tryUnlock(); } });
+  showEditFormFields();
 }
 
 function showEditFormFields(){
@@ -4357,17 +4196,27 @@ function showEditFormFields(){
     if(!newAgency.supportPhone1 || !newAgency.supportPhone1Display){ alert('Telefone 1 e exibição são obrigatórios.'); return; }
     if(!newAgency.supportEmail){ alert('E-mail é obrigatório.'); return; }
 
+    const saveBtn = document.getElementById('edtSaveBtn');
+    saveBtn.disabled = true; saveBtn.textContent = 'Salvando…';
+
     // Salva no localStorage
     localStorage.setItem(SC_K.AGENCY, JSON.stringify(newAgency));
-    try{ if(window.parent && window.parent.cloudSaveVoaAppConfig) window.parent.cloudSaveVoaAppConfig({ installId: localStorage.getItem(SC_K.INSTALL_ID)||'', agency:newAgency }); }catch(e){}
     // Atualiza state.owner em memória + aplica no DOM
     Object.assign(state.owner, newAgency);
     saveData();
     applyBranding();
-    // Queima o nonce — código fica inutilizável
-    localStorage.removeItem(SC_K.EDIT_NONCE);
+
+    let cloudOk = false;
+    try{
+      if(window.parent && window.parent.cloudSaveVoaAppConfig){
+        cloudOk = await window.parent.cloudSaveVoaAppConfig({ installId: localStorage.getItem(SC_K.INSTALL_ID)||'', agency:newAgency });
+      }
+    }catch(e){}
+
     closeEditUnlockModal();
-    toast('Dados atualizados e travados com sucesso!');
+    toast(cloudOk
+      ? 'Dados salvos na nuvem! Vão aparecer em qualquer navegador.'
+      : 'Salvo neste navegador, mas falhou ao confirmar na nuvem. Verifique a conexão e tente salvar novamente.');
   });
 }
 
@@ -4694,8 +4543,8 @@ function renderAdmin(){
   const updateAgencyHTML = SCALABLE_OWNER_LOCKED ? `
     <div class="sc-update-section">
       <div class="icon">🏢</div>
-      <h3>Dados da Agência travados</h3>
-      <p>Logo, nome, telefones, e-mail e cor estão protegidos. Para alterar, solicite um código de liberação ao suporte VOA.</p>
+      <h3>Dados da Agência</h3>
+      <p>Logo, nome, telefones, e-mail e cor da agência. Edite e salve quando quiser.</p>
       <button class="sc-update-btn" id="btnUpdateAgency">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-9-9c2.5 0 4.7 1 6.3 2.7"></path><polyline points="21 3 21 9 15 9"></polyline></svg>
         Atualizar Dados da Agência
