@@ -862,8 +862,8 @@ async function cloudLoadAll(){
 
     try{ const { data:ag } = await sb.from('agencia').select('logo,nome').eq('id',1).maybeSingle(); if(ag&&ag.logo){ state.logo=ag.logo; try{ localStorage.setItem(STORE.LOGO,ag.logo); localStorage.setItem('voa_agency_logo',ag.logo); }catch(e){} } }catch(e){ console.error('agencia',e); }
 
-    const { data:orcs } = await sb.from('orcamentos').select('data,created_at').order('created_at',{ascending:false});
-    state.orcamentos=(orcs||[]).map(r=>r.data).filter(Boolean);
+    const { data:orcs } = await sb.from('orcamentos').select('data,user_id,owner_nome,created_at').order('created_at',{ascending:false});
+    state.orcamentos=(orcs||[]).filter(r=>r.data).map(r=>{ const q=r.data; q.ownerId=r.user_id||q.ownerId||''; q.owner=(r.user_id&&state.profilesById[r.user_id])||r.owner_nome||q.owner||''; return q; });
 
     const { data:tars } = await sb.from('tarefas').select('*');
     state.tarefas=(tars||[]).map(r=>({ id:r.id, data:r.data, texto:r.texto, done:!!r.done, ownerId:r.user_id, owner:(state.profilesById[r.user_id])||'' }));
