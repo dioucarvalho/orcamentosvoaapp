@@ -880,7 +880,14 @@ function cloudSaveLogo(dataUrl){ if(!sb||!dataUrl) return; sb.from('agencia').up
 function cloudSaveNome(nome){ if(!sb||!state.user) return; sb.from('profiles').update({ nome:nome }).eq('id',state.user.id).then(({error})=>cloudErr(error)); }
 function cloudSavePosvenda(arr){ if(!sb||!state.user) return; sb.from('posvenda_dados').update({ dados:arr, atualizado_em:new Date().toISOString() }).eq('id',1).then(({error})=>cloudErr(error)); }
 async function cloudLoadPosvenda(){ if(!sb) return null; try{ const { data, error } = await sb.from('posvenda_dados').select('dados').eq('id',1).maybeSingle(); if(error){ console.error('cloudLoadPosvenda',error); return null; } return (data&&data.dados)?data.dados:null; }catch(e){ console.error('cloudLoadPosvenda',e); return null; } }
-function cloudSaveVoaAppConfig(cfg){ if(!sb||!state.user) return Promise.resolve(false); return sb.from('voa_app_config').update({ dados:cfg, atualizado_em:new Date().toISOString() }).eq('id',1).then(({error})=>{ if(error){ cloudErr(error); return false; } return true; }); }
+function cloudSaveVoaAppConfig(cfg){
+  if(!sb||!state.user) return Promise.resolve(false);
+  return sb.from('voa_app_config').update({ dados:cfg, atualizado_em:new Date().toISOString() }).eq('id',1).select().then(({data,error})=>{
+    if(error){ console.error('cloudSaveVoaAppConfig',error); return false; }
+    if(!data || !data.length){ console.error('cloudSaveVoaAppConfig: 0 linhas afetadas — RLS bloqueou a atualização (verifique o papel do usuário logado: precisa ser admin ou gerente).'); return false; }
+    return true;
+  });
+}
 async function cloudLoadVoaAppConfig(){ if(!sb) return null; try{ const { data, error } = await sb.from('voa_app_config').select('dados').eq('id',1).maybeSingle(); if(error){ console.error('cloudLoadVoaAppConfig',error); return null; } return (data&&data.dados)?data.dados:null; }catch(e){ console.error('cloudLoadVoaAppConfig',e); return null; } }
 /* Importa um backup .json para a nuvem, como o usuário LOGADO (cada uma importa o seu). */
 async function importBackupToCloud(ev){
