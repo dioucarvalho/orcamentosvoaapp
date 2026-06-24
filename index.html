@@ -2491,12 +2491,13 @@ function computeReservation(r){
   const amanha = addDays(t,1);
   const emViagem = r.dataIda && r.dataVolta && r.dataIda <= t && r.dataVolta >= t && r.tripStatus!=="Cancelada";
   const viajaAmanha = r.dataIda === amanha && r.tripStatus!=="Cancelada";
+  const preEmbarqueAmanha = r.preEmbarqueData === amanha && r.tripStatus!=="Cancelada";
   const retornaHoje = r.dataVolta === t && r.tripStatus!=="Cancelada";
   const checkinIdaPend = idaDT && !checks.checkin_ida && hoursBetween(n,idaDT) <= 48 && hoursBetween(n,idaDT) >= -2;
   const checkinVoltaPend = voltaDT && !checks.checkin_volta && hoursBetween(n,voltaDT) <= 48 && hoursBetween(n,voltaDT) >= -2;
 
   return { allDone, concluded, total: CHECK_DEFS.length, alerts, preStatus, requiredDocs,
-           emViagem, viajaAmanha, retornaHoje, checkinIdaPend, checkinVoltaPend, idaDT, voltaDT };
+           emViagem, viajaAmanha, preEmbarqueAmanha, retornaHoje, checkinIdaPend, checkinVoltaPend, idaDT, voltaDT };
 }
 
 /* ============================================================
@@ -2552,7 +2553,7 @@ function Card({children, className=""}){
 }
 
 function StatCard({label, value, tone, onClick, active}){
-  const tones={blue:"from-blue-500 to-blue-600",amber:"from-amber-500 to-orange-600",red:"from-red-500 to-rose-600",green:"from-emerald-500 to-green-600",violet:"from-violet-500 to-purple-600"};
+  const tones={blue:"from-blue-500 to-blue-600",amber:"from-amber-500 to-orange-600",red:"from-red-500 to-rose-600",green:"from-emerald-500 to-green-600",violet:"from-violet-500 to-purple-600",cyan:"from-cyan-500 to-sky-600"};
   return (
     <button onClick={onClick} className={`text-left rounded-xl p-4 bg-gradient-to-br ${tones[tone]} text-white shadow transition hover:scale-[1.02] ${active?'ring-4 ring-offset-2 ring-offset-transparent ring-white/60':''}`}>
       <div className="text-3xl font-bold">{value}</div>
@@ -2681,20 +2682,22 @@ function Dashboard({reservations, onOpen}){
   const groups = {
     emViagem: computed.filter(x=>x.c.emViagem),
     viajaAmanha: computed.filter(x=>x.c.viajaAmanha),
+    preEmbarqueAmanha: computed.filter(x=>x.c.preEmbarqueAmanha),
     checkinIda: computed.filter(x=>x.c.checkinIdaPend),
     checkinVolta: computed.filter(x=>x.c.checkinVoltaPend),
     retornaHoje: computed.filter(x=>x.c.retornaHoje),
   };
   const [filter, setFilter] = useState(null);
-  const labels={emViagem:"Clientes em viagem",viajaAmanha:"Viajam amanhã",checkinIda:"Check-ins de ida pendentes",checkinVolta:"Check-ins de volta pendentes",retornaHoje:"Retornam hoje (disparar pós-venda)"};
+  const labels={emViagem:"Clientes em viagem",viajaAmanha:"Viajam amanhã",preEmbarqueAmanha:"Pré-embarques amanhã",checkinIda:"Check-ins de ida pendentes",checkinVolta:"Check-ins de volta pendentes",retornaHoje:"Retornam hoje (disparar pós-venda)"};
 
   const allAlerts = computed.flatMap(x => x.c.alerts.map(a=>({...a, res:x.r})));
 
   return (
     <div className="space-y-6 fade-in">
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <StatCard label="Clientes em viagem" value={groups.emViagem.length} tone="blue" active={filter==="emViagem"} onClick={()=>setFilter(filter==="emViagem"?null:"emViagem")} />
         <StatCard label="Viajam amanhã" value={groups.viajaAmanha.length} tone="violet" active={filter==="viajaAmanha"} onClick={()=>setFilter(filter==="viajaAmanha"?null:"viajaAmanha")} />
+        <StatCard label="Pré-embarques amanhã" value={groups.preEmbarqueAmanha.length} tone="cyan" active={filter==="preEmbarqueAmanha"} onClick={()=>setFilter(filter==="preEmbarqueAmanha"?null:"preEmbarqueAmanha")} />
         <StatCard label="Check-ins de ida pendentes (<48h)" value={groups.checkinIda.length} tone="amber" active={filter==="checkinIda"} onClick={()=>setFilter(filter==="checkinIda"?null:"checkinIda")} />
         <StatCard label="Check-ins de volta pendentes (<48h)" value={groups.checkinVolta.length} tone="red" active={filter==="checkinVolta"} onClick={()=>setFilter(filter==="checkinVolta"?null:"checkinVolta")} />
         <StatCard label="Retornam hoje (pós-venda)" value={groups.retornaHoje.length} tone="green" active={filter==="retornaHoje"} onClick={()=>setFilter(filter==="retornaHoje"?null:"retornaHoje")} />
