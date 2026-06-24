@@ -884,6 +884,8 @@ function cloudSaveLogo(dataUrl){ if(!sb||!dataUrl) return; sb.from('agencia').up
 function cloudSaveNome(nome){ if(!sb||!state.user) return; sb.from('profiles').update({ nome:nome }).eq('id',state.user.id).then(({error})=>cloudErr(error)); }
 function cloudSavePosvenda(arr){ if(!sb||!state.user) return; sb.from('posvenda_dados').update({ dados:arr, atualizado_em:new Date().toISOString() }).eq('id',1).then(({error})=>cloudErr(error)); }
 async function cloudLoadPosvenda(){ if(!sb) return null; try{ const { data, error } = await sb.from('posvenda_dados').select('dados').eq('id',1).maybeSingle(); if(error){ cloudErr(error); return null; } return (data&&data.dados)?data.dados:null; }catch(e){ console.error('cloudLoadPosvenda',e); return null; } }
+function cloudSaveVoaAppConfig(cfg){ if(!sb||!state.user) return; sb.from('voa_app_config').update({ dados:cfg, atualizado_em:new Date().toISOString() }).eq('id',1).then(({error})=>cloudErr(error)); }
+async function cloudLoadVoaAppConfig(){ if(!sb) return null; try{ const { data, error } = await sb.from('voa_app_config').select('dados').eq('id',1).maybeSingle(); if(error){ cloudErr(error); return null; } return (data&&data.dados)?data.dados:null; }catch(e){ console.error('cloudLoadVoaAppConfig',e); return null; } }
 
 /* Exporta TODOS os dados deste navegador (orçamentos no IndexedDB + tarefas/atividades)
    para um arquivo .json. Funciona offline e sem login — roda no arquivo da colaboradora. */
@@ -4111,6 +4113,7 @@ async function completeOnboarding(agency){
     localStorage.setItem(SC_K.INSTALL_ID, installId);
     localStorage.setItem(SC_K.AGENCY, JSON.stringify(agency));
     localStorage.setItem(SC_K.ONBOARDED, '1');
+    try{ if(window.parent && window.parent.cloudSaveVoaAppConfig) window.parent.cloudSaveVoaAppConfig({ installId, agency }); }catch(e){}
 
     const card = document.getElementById('onbCard');
     card.innerHTML = `
@@ -4375,6 +4378,7 @@ function showEditFormFields(){
 
     // Salva no localStorage
     localStorage.setItem(SC_K.AGENCY, JSON.stringify(newAgency));
+    try{ if(window.parent && window.parent.cloudSaveVoaAppConfig) window.parent.cloudSaveVoaAppConfig({ installId: localStorage.getItem(SC_K.INSTALL_ID)||'', agency:newAgency }); }catch(e){}
     // Atualiza state.owner em memória + aplica no DOM
     Object.assign(state.owner, newAgency);
     saveData();
@@ -5564,7 +5568,18 @@ function applyLock(){
   }
 }
 
-if(!window.__LIC_LOCKED__){
+async function voaBootstrap(){
+  if(window.__LIC_LOCKED__) return;
+  try{
+    if(window.parent && window.parent.cloudLoadVoaAppConfig){
+      const cloudCfg = await window.parent.cloudLoadVoaAppConfig();
+      if(cloudCfg && cloudCfg.agency){
+        localStorage.setItem(SC_K.INSTALL_ID, cloudCfg.installId || localStorage.getItem(SC_K.INSTALL_ID) || scGenerateInstallId());
+        localStorage.setItem(SC_K.AGENCY, JSON.stringify(cloudCfg.agency));
+        localStorage.setItem(SC_K.ONBOARDED, '1');
+      }
+    }
+  }catch(e){}
   if(scalableInit()){
     // Onboarding em curso, app não inicializa ainda
   } else {
@@ -5573,6 +5588,7 @@ if(!window.__LIC_LOCKED__){
     render();
   }
 }
+voaBootstrap();
 ENDSCRIPT_b3f9c2a17e
 </body>
 </html>

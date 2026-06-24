@@ -125,6 +125,16 @@ create table if not exists public.posvenda_dados (
 );
 insert into public.posvenda_dados (id) values (1) on conflict (id) do nothing;
 
+-- ----------------------------------------------------------------------------
+-- 8) VOA APP — configuração da agência (logo, nome, telefones) do app VOA
+-- ----------------------------------------------------------------------------
+create table if not exists public.voa_app_config (
+  id            int primary key default 1,
+  dados         jsonb,
+  atualizado_em timestamptz default now()
+);
+insert into public.voa_app_config (id) values (1) on conflict (id) do nothing;
+
 -- ============================================================================
 -- RLS — REGRAS DE ACESSO (a segurança de verdade, por papel)
 -- ============================================================================
@@ -135,6 +145,7 @@ alter table public.dia_extra     enable row level security;
 alter table public.metas         enable row level security;
 alter table public.agencia       enable row level security;
 alter table public.posvenda_dados enable row level security;
+alter table public.voa_app_config enable row level security;
 
 -- PERFIS
 drop policy if exists "perfil_ler" on public.profiles;
@@ -208,6 +219,14 @@ create policy "posvenda_ler" on public.posvenda_dados
   for select using (public.eh_gestao());
 drop policy if exists "posvenda_alterar" on public.posvenda_dados;
 create policy "posvenda_alterar" on public.posvenda_dados
+  for update using (public.eh_gestao());
+
+-- VOA APP — só admin/gerente leem e alteram
+drop policy if exists "voa_app_ler" on public.voa_app_config;
+create policy "voa_app_ler" on public.voa_app_config
+  for select using (public.eh_gestao());
+drop policy if exists "voa_app_alterar" on public.voa_app_config;
+create policy "voa_app_alterar" on public.voa_app_config
   for update using (public.eh_gestao());
 
 -- ============================================================================
