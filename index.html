@@ -836,8 +836,12 @@ async function loadProfileAndShow(authUser){
   save(STORE.USER,state.user);
   // guarda o que existe localmente neste navegador (para eventual migração)
   window._localSnapshot={ orcamentos:(state.orcamentos||[]).slice(), tarefas:(state.tarefas||[]).slice(), diaExtra:Object.assign({},state.diaExtra||{}) };
-  await cloudLoadAll();
+  // Abre o app IMEDIATAMENTE; os dados da nuvem entram em segundo plano logo em
+  // seguida e a tela se atualiza sozinha — o usuário não fica esperando.
+  _cloudLoading=true;
   showApp();
+  const reRender=()=>{ _cloudLoading=false; const active=document.querySelector('.nav-item.active'); if(active) setView(active.dataset.view); };
+  cloudLoadAll().then(reRender).catch(e=>{ console.error('cloudLoadAll(bg)',e); reRender(); });
 }
 
 /* ============================================================================
@@ -849,31 +853,40 @@ function cloudErr(e){ if(e){ console.error('cloud',e); toast('Falha ao salvar na
 async function cloudLoadAll(){
   if(!sb||!state.user) return;
   try{
-    state.profilesById={};
-    const { data:profs } = await sb.from('profiles').select('id,nome,role');
-    (profs||[]).forEach(p=>{ state.profilesById[p.id]=p.nome||''; });
+    // Busca tudo EM PARALELO (em vez de uma consulta de cada vez) — corta bastante
+    // o tempo de carregamento, pois as idas ao servidor acontecem ao mesmo tempo.
+    const [profsR, mR, agR, orcsR, tarsR, diasR, tombR] = await Promise.all([
+      sb.from('profiles').select('id,nome,role'),
+      sb.from('metas').select('*').eq('id',1).maybeSingle(),
+      sb.from('agencia').select('logo,nome').eq('id',1).maybeSingle(),
+      sb.from('orcamentos').select('data,user_id,owner_nome,created_at').order('created_at',{ascending:false}),
+      sb.from('tarefas').select('*'),
+      sb.from('dia_extra').select('*'),
+      sb.from('orcamentos_excluidos').select('id')
+    ]);
 
-    const { data:m } = await sb.from('metas').select('*').eq('id',1).maybeSingle();
+    state.profilesById={};
+    (profsR.data||[]).forEach(p=>{ state.profilesById[p.id]=p.nome||''; });
+
+    const m=mR.data;
     if(m){ state.metas={ agendamento:Number(m.agendamento)||0, atendimento:Number(m.atendimento)||0, orcamento:Number(m.orcamento)||0, vendas:Number(m.vendas)||0, repiques:Number(m.repiques)||0, vendaMin:Number(m.venda_min)||0 }; }
 
-    try{ const { data:ag } = await sb.from('agencia').select('logo,nome').eq('id',1).maybeSingle(); if(ag&&ag.logo){ state.logo=ag.logo; try{ localStorage.setItem(STORE.LOGO,ag.logo); localStorage.setItem('voa_agency_logo',ag.logo); }catch(e){} } }catch(e){ console.error('agencia',e); }
+    const ag=agR.data; if(ag&&ag.logo){ state.logo=ag.logo; try{ localStorage.setItem(STORE.LOGO,ag.logo); localStorage.setItem('voa_agency_logo',ag.logo); }catch(e){} }
 
-    const { data:orcs } = await sb.from('orcamentos').select('data,user_id,owner_nome,created_at').order('created_at',{ascending:false});
-    let cloudOrcamentos=(orcs||[]).filter(r=>r.data).map(r=>{ const q=r.data; q.ownerId=r.user_id||q.ownerId||''; q.owner=(r.user_id&&state.profilesById[r.user_id])||r.owner_nome||q.owner||''; return q; });
-    // Reconciliação: se algum orçamento foi criado neste navegador (gravado no
-    // IndexedDB local) mas nunca chegou à nuvem — por exemplo, por uma falha de
-    // rede no momento do salvamento — ele reaparece aqui sem isso, então
-    // detectamos e reenviamos automaticamente para não perdê-lo de vez.
+    let cloudOrcamentos=(orcsR.data||[]).filter(r=>r.data).map(r=>{ const q=r.data; q.ownerId=r.user_id||q.ownerId||''; q.owner=(r.user_id&&state.profilesById[r.user_id])||r.owner_nome||q.owner||''; return q; });
     // Lista de exclusões (tombstones): orçamentos apagados pela gestão. Garante
     // que a exclusão se propague para todos os navegadores e que a reconciliação
     // abaixo NÃO ressuscite um orçamento que foi apagado de propósito.
     let tombstones=new Set();
-    try{ const { data:tomb } = await sb.from('orcamentos_excluidos').select('id'); (tomb||[]).forEach(t=>tombstones.add(t.id)); }catch(e){ console.error('orcamentos_excluidos',e); }
+    (tombR.data||[]).forEach(t=>tombstones.add(t.id));
     if(tombstones.size) cloudOrcamentos=cloudOrcamentos.filter(q=>!tombstones.has(q.id));
+    // Reconciliação: se algum orçamento foi criado neste navegador (gravado no
+    // IndexedDB local) mas nunca chegou à nuvem — por exemplo, por uma falha de
+    // rede no momento do salvamento — detectamos e reenviamos automaticamente
+    // para não perdê-lo de vez (sem ressuscitar os que foram excluídos).
     if(_idbReady){
       try{
         const localList=await idbGetAll();
-        // remove da cópia local deste navegador qualquer orçamento já excluído na nuvem
         for(const q of localList){ if(q&&q.id&&tombstones.has(q.id)){ try{ await idbDelete(q.id); }catch(e){} } }
         const cloudIds=new Set(cloudOrcamentos.map(q=>q.id));
         const missing=localList.filter(q=>q&&q.id&&!cloudIds.has(q.id)&&!_deletedIds.has(q.id)&&!tombstones.has(q.id));
@@ -886,12 +899,10 @@ async function cloudLoadAll(){
     }
     state.orcamentos=cloudOrcamentos;
 
-    const { data:tars } = await sb.from('tarefas').select('*');
-    state.tarefas=(tars||[]).map(r=>({ id:r.id, data:r.data, texto:r.texto, done:!!r.done, ownerId:r.user_id, owner:(state.profilesById[r.user_id])||'' }));
+    state.tarefas=(tarsR.data||[]).map(r=>({ id:r.id, data:r.data, texto:r.texto, done:!!r.done, ownerId:r.user_id, owner:(state.profilesById[r.user_id])||'' }));
 
-    const { data:dias } = await sb.from('dia_extra').select('*');
     state.diaExtra={};
-    (dias||[]).forEach(r=>{ const key=r.user_id===state.user.id?r.data:(r.user_id+'|'+r.data); state.diaExtra[key]={ repiques:Number(r.repiques)||0, agendamento:Number(r.agendamento)||0, atendimento:Number(r.atendimento)||0, orcamentoAjuste:Number(r.orcamento_ajuste)||0, vendasAjuste:Number(r.vendas_ajuste)||0, comissaoAjuste:Number(r.comissao_ajuste)||0, ownerId:r.user_id, owner:(state.profilesById[r.user_id])||'' }; });
+    (diasR.data||[]).forEach(r=>{ const key=r.user_id===state.user.id?r.data:(r.user_id+'|'+r.data); state.diaExtra[key]={ repiques:Number(r.repiques)||0, agendamento:Number(r.agendamento)||0, atendimento:Number(r.atendimento)||0, orcamentoAjuste:Number(r.orcamento_ajuste)||0, vendasAjuste:Number(r.vendas_ajuste)||0, comissaoAjuste:Number(r.comissao_ajuste)||0, ownerId:r.user_id, owner:(state.profilesById[r.user_id])||'' }; });
   }catch(e){ console.error('cloudLoadAll',e); toast('Não foi possível carregar os dados da nuvem.','danger'); }
 }
 
@@ -903,7 +914,7 @@ async function cloudLoadAll(){
    sem precisar dar F5. Tem throttle (no máx. a cada 8s) e nunca re-renderiza
    por cima de um modal ou formulário que esteja sendo preenchido.
    ---------------------------------------------------------------------------- */
-let _lastCloudRefresh=0, _orcSig=null, _refreshing=false;
+let _lastCloudRefresh=0, _orcSig=null, _refreshing=false, _cloudLoading=false;
 async function _fetchOrcSig(){
   const [{ data:orcs }, { data:tomb }] = await Promise.all([
     sb.from('orcamentos').select('id,status,versao,closed_at'),
@@ -1122,6 +1133,7 @@ function setView(view){
   document.getElementById('pageSub').textContent=VIEW_META[view].sub;
   document.getElementById('sidebar').classList.remove('is-open');
   const c=document.getElementById('content'); c.innerHTML='';
+  if(_cloudLoading){ c.innerHTML='<div class="card" style="text-align:center;padding:56px 24px"><div class="empty">Carregando seus dados…</div></div>'; return; } // dados ainda chegando da nuvem
   if(view==='dashboard') renderDashboard(c);
   if(view==='orcamentos') renderOrcamentos(c);
   if(view==='controle') renderControle(c);
