@@ -366,9 +366,6 @@ table.tbl th.num{text-align:right}
     <input type="password" id="loginPass" placeholder="Senha" autocomplete="current-password" style="margin-top:10px">
     <button class="btn btn-primary" id="loginBtn">Entrar</button>
     <div id="loginMsg" style="margin-top:10px;font-size:12.5px;color:var(--danger);min-height:14px"></div>
-    <div style="margin-top:14px;font-size:12px">
-      <a href="#" id="loginExportBackup" style="text-decoration:underline;color:var(--text-soft)">Exportar backup deste computador</a>
-    </div>
   </div>
 </div>
 
@@ -830,7 +827,6 @@ async function initAuth(){
   document.getElementById('loginBtn').addEventListener('click',handleLogin);
   document.getElementById('loginEmail').addEventListener('keydown',e=>{ if(e.key==='Enter') handleLogin(); });
   document.getElementById('loginPass').addEventListener('keydown',e=>{ if(e.key==='Enter') handleLogin(); });
-  document.getElementById('loginExportBackup').addEventListener('click',(e)=>{ e.preventDefault(); exportBackupLocal(); });
 }
 async function loadProfileAndShow(authUser){
   let role='consultora', nome=authUser.email;
@@ -883,24 +879,9 @@ function cloudSaveMetas(){ if(!sb) return; sb.from('metas').update({ agendamento
 function cloudSaveLogo(dataUrl){ if(!sb||!dataUrl) return; sb.from('agencia').update({ logo:dataUrl }).eq('id',1).then(({error})=>cloudErr(error)); }
 function cloudSaveNome(nome){ if(!sb||!state.user) return; sb.from('profiles').update({ nome:nome }).eq('id',state.user.id).then(({error})=>cloudErr(error)); }
 function cloudSavePosvenda(arr){ if(!sb||!state.user) return; sb.from('posvenda_dados').update({ dados:arr, atualizado_em:new Date().toISOString() }).eq('id',1).then(({error})=>cloudErr(error)); }
-async function cloudLoadPosvenda(){ if(!sb) return null; try{ const { data, error } = await sb.from('posvenda_dados').select('dados').eq('id',1).maybeSingle(); if(error){ cloudErr(error); return null; } return (data&&data.dados)?data.dados:null; }catch(e){ console.error('cloudLoadPosvenda',e); return null; } }
+async function cloudLoadPosvenda(){ if(!sb) return null; try{ const { data, error } = await sb.from('posvenda_dados').select('dados').eq('id',1).maybeSingle(); if(error){ console.error('cloudLoadPosvenda',error); return null; } return (data&&data.dados)?data.dados:null; }catch(e){ console.error('cloudLoadPosvenda',e); return null; } }
 function cloudSaveVoaAppConfig(cfg){ if(!sb||!state.user) return; sb.from('voa_app_config').update({ dados:cfg, atualizado_em:new Date().toISOString() }).eq('id',1).then(({error})=>cloudErr(error)); }
-async function cloudLoadVoaAppConfig(){ if(!sb) return null; try{ const { data, error } = await sb.from('voa_app_config').select('dados').eq('id',1).maybeSingle(); if(error){ cloudErr(error); return null; } return (data&&data.dados)?data.dados:null; }catch(e){ console.error('cloudLoadVoaAppConfig',e); return null; } }
-
-/* Exporta TODOS os dados deste navegador (orçamentos no IndexedDB + tarefas/atividades)
-   para um arquivo .json. Funciona offline e sem login — roda no arquivo da colaboradora. */
-async function exportBackupLocal(){
-  try{
-    let orcs=[];
-    try{ if(!_idb){ _idb=await openIDB(); } orcs=await idbGetAll(); }catch(e){ orcs=load(STORE.ORC,[]); }
-    if(!orcs||!orcs.length) orcs=load(STORE.ORC,[]);
-    const backup={ tipo:'avv_backup', exportadoEm:new Date().toISOString(), orcamentos:orcs||[], tarefas:load(STORE.TAREFAS,[]), diaExtra:load(STORE.DIA,{}) };
-    const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='backup-avv-'+todayISO()+'.json'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(()=>URL.revokeObjectURL(a.href),1500);
-    toast('Backup exportado! Guarde o arquivo .json e importe na plataforma.','success');
-  }catch(e){ console.error(e); toast('Não foi possível exportar o backup.','danger'); }
-}
+async function cloudLoadVoaAppConfig(){ if(!sb) return null; try{ const { data, error } = await sb.from('voa_app_config').select('dados').eq('id',1).maybeSingle(); if(error){ console.error('cloudLoadVoaAppConfig',error); return null; } return (data&&data.dados)?data.dados:null; }catch(e){ console.error('cloudLoadVoaAppConfig',e); return null; } }
 /* Importa um backup .json para a nuvem, como o usuário LOGADO (cada uma importa o seu). */
 async function importBackupToCloud(ev){
   const file=ev.target.files&&ev.target.files[0]; if(!file){ return; }
