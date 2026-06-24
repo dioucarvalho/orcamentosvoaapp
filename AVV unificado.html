@@ -882,6 +882,8 @@ function cloudSaveDia(iso,e){ if(!sb||!state.user) return; sb.from('dia_extra').
 function cloudSaveMetas(){ if(!sb) return; sb.from('metas').update({ agendamento:state.metas.agendamento, atendimento:state.metas.atendimento, orcamento:state.metas.orcamento, vendas:state.metas.vendas, repiques:state.metas.repiques, venda_min:state.metas.vendaMin }).eq('id',1).then(({error})=>cloudErr(error)); }
 function cloudSaveLogo(dataUrl){ if(!sb||!dataUrl) return; sb.from('agencia').update({ logo:dataUrl }).eq('id',1).then(({error})=>cloudErr(error)); }
 function cloudSaveNome(nome){ if(!sb||!state.user) return; sb.from('profiles').update({ nome:nome }).eq('id',state.user.id).then(({error})=>cloudErr(error)); }
+function cloudSavePosvenda(arr){ if(!sb||!state.user) return; sb.from('posvenda_dados').upsert({ id:1, dados:arr, atualizado_em:new Date().toISOString() }).then(({error})=>cloudErr(error)); }
+async function cloudLoadPosvenda(){ if(!sb) return null; try{ const { data, error } = await sb.from('posvenda_dados').select('dados').eq('id',1).maybeSingle(); if(error){ cloudErr(error); return null; } return (data&&data.dados)?data.dados:null; }catch(e){ console.error('cloudLoadPosvenda',e); return null; } }
 
 /* Exporta TODOS os dados deste navegador (orçamentos no IndexedDB + tarefas/atividades)
    para um arquivo .json. Funciona offline e sem login — roda no arquivo da colaboradora. */
@@ -2341,7 +2343,7 @@ function loadData(){
   try { const raw = localStorage.getItem(STORAGE_KEY); if(raw) return JSON.parse(raw); } catch(e){}
   return seed();
 }
-function saveData(d){ localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); }
+function saveData(d){ localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); try{ if(window.parent && window.parent.cloudSavePosvenda) window.parent.cloudSavePosvenda(d); }catch(e){} }
 
 function seed(){
   const t = new Date();
@@ -3109,8 +3111,24 @@ function App(){
   const [reservations, setReservations] = useState(loadData);
   const [view, setView] = useState({name:"dashboard"}); // dashboard | list | form | detail
   const [theme, setTheme] = useState(()=>localStorage.getItem(THEME_KEY)||"dark");
+  const [cloudReady, setCloudReady] = useState(false);
 
-  useEffect(()=>{ saveData(reservations); }, [reservations]);
+  useEffect(()=>{
+    let cancelado=false;
+    try{
+      if(window.parent && window.parent.cloudLoadPosvenda){
+        window.parent.cloudLoadPosvenda().then(cloudArr=>{
+          if(cancelado) return;
+          if(cloudArr && Array.isArray(cloudArr)) setReservations(cloudArr);
+          setCloudReady(true);
+        }).catch(()=>{ if(!cancelado) setCloudReady(true); });
+        return ()=>{ cancelado=true; };
+      }
+    }catch(e){}
+    setCloudReady(true);
+  }, []);
+
+  useEffect(()=>{ if(cloudReady) saveData(reservations); }, [reservations, cloudReady]);
   useEffect(()=>{
     document.documentElement.classList.toggle("dark", theme==="dark");
     localStorage.setItem(THEME_KEY, theme);
@@ -3163,7 +3181,7 @@ function App(){
       </main>
 
       <footer className="max-w-7xl mx-auto px-4 py-6 text-xs opacity-50 text-center">
-        Dados salvos localmente no navegador (localStorage). {reservations.length} reserva(s) · {totalAlerts} alerta(s) ativos.
+        Dados salvos na nuvem (e localmente como reserva). {reservations.length} reserva(s) · {totalAlerts} alerta(s) ativos.
       </footer>
     </div>
   );
