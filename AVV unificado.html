@@ -895,6 +895,46 @@ async function cloudLoadAll(){
   }catch(e){ console.error('cloudLoadAll',e); toast('Não foi possível carregar os dados da nuvem.','danger'); }
 }
 
+/* ----------------------------------------------------------------------------
+   ATUALIZAÇÃO LEVE AO TROCAR DE MENU — ao navegar (ou voltar para a aba), o
+   sistema faz uma checagem rápida na nuvem (só ids/status/versão + exclusões,
+   SEM baixar as fotos). Se nada mudou, não baixa nada pesado. Se mudou (ex.:
+   admin excluiu um orçamento), aí sim recarrega tudo e atualiza a tela —
+   sem precisar dar F5. Tem throttle (no máx. a cada 8s) e nunca re-renderiza
+   por cima de um modal ou formulário que esteja sendo preenchido.
+   ---------------------------------------------------------------------------- */
+let _lastCloudRefresh=0, _orcSig=null, _refreshing=false;
+async function _fetchOrcSig(){
+  const [{ data:orcs }, { data:tomb }] = await Promise.all([
+    sb.from('orcamentos').select('id,status,versao,closed_at'),
+    sb.from('orcamentos_excluidos').select('id')
+  ]);
+  return JSON.stringify([
+    (orcs||[]).map(o=>o.id+':'+(o.status||'')+':'+(o.versao||1)+':'+(o.closed_at||'')).sort(),
+    (tomb||[]).map(t=>t.id).sort()
+  ]);
+}
+async function maybeRefreshFromCloud(){
+  if(!sb||!state.user||_refreshing) return;
+  const now=Date.now();
+  if(now-_lastCloudRefresh<8000) return; // throttle: evita rebuscar a cada clique
+  _refreshing=true;
+  try{
+    const sig=await _fetchOrcSig();
+    _lastCloudRefresh=Date.now();
+    if(_orcSig===null){ _orcSig=sig; return; } // primeira checagem: só registra o estado atual
+    if(sig===_orcSig) return;                   // nada mudou na nuvem — não baixa o conteúdo pesado
+    _orcSig=sig;
+    await cloudLoadAll();                        // algo mudou: recarrega tudo (inclui fotos)
+    const active=document.querySelector('.nav-item.active'); const av=active&&active.dataset.view;
+    const modalOpen=(()=>{ const ov=document.getElementById('modalOverlay'); return ov&&ov.classList.contains('is-open'); })();
+    const formOpen=!!document.getElementById('qf_cliNome'); // formulário de orçamento aberto
+    // re-renderiza a tela atual já atualizada, exceto telas em iframe (pós-venda/VOA) e quando há edição em andamento
+    if(av&&av!=='posvenda'&&av!=='voaapp'&&!modalOpen&&!formOpen) setView(av);
+  }catch(e){ console.error('maybeRefreshFromCloud',e); }
+  finally{ _refreshing=false; }
+}
+
 function cloudSaveOrcamento(q){
   if(!sb||!state.user) return Promise.resolve(false);
   return sb.from('orcamentos').upsert({ id:q.id, user_id:state.user.id, owner_nome:q.owner||state.user.name||null, status:q.status||null, versao:q.versao||1, created_at:q.createdAt?toISO(q.createdAt):new Date().toISOString(), closed_at:q.closedAt?toISO(q.closedAt):null, data:q }).select().then(({data,error})=>{
@@ -1073,6 +1113,7 @@ function bindNav(){
   document.getElementById('logoutBtn').addEventListener('click',()=>{ if(confirm('Sair e voltar para a tela de acesso?')) logout(); });
   document.getElementById('changeLogoBtn').addEventListener('click',()=>{ requireAdmin('Para trocar a logo da agência, informe a senha de administrador.',()=>{ document.getElementById('logoFileInput').click(); }); });
   document.getElementById('logoFileInput').addEventListener('change',(e)=>handleLogoUpload(e,()=>{ document.getElementById('sidebarLogo').innerHTML=logoHTML(); const active=document.querySelector('.nav-item.active'); if(active) setView(active.dataset.view); }));
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) maybeRefreshFromCloud(); }); // atualiza ao voltar para a aba
 }
 function setView(view){
   if(!canSee(view)){ view=(ROLE_MENUS[currentRole()]||ROLE_MENUS.consultora)[0]; }
@@ -1090,6 +1131,7 @@ function setView(view){
   if(view==='voaapp') renderVoaApp(c);
   if(view==='administracao') renderAdmin(c);
   if(view==='liberarespaco') renderLiberarEspaco(c);
+  maybeRefreshFromCloud(); // checa a nuvem em segundo plano e atualiza se algo mudou
 }
 
 /* ============================================================================
