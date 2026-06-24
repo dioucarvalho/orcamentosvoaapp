@@ -896,13 +896,24 @@ function cloudSaveOrcamento(q){
   });
 }
 function cloudDeleteOrcamento(id){ if(!sb) return; sb.from('orcamentos').delete().eq('id',id).then(({error})=>cloudErr(error)); }
-function cloudSaveTarefa(t){ if(!sb||!state.user) return; sb.from('tarefas').upsert({ id:t.id, user_id:state.user.id, data:t.data||null, texto:t.texto||'', done:!!t.done }).then(({error})=>cloudErr(error)); }
-function cloudDeleteTarefa(id){ if(!sb) return; sb.from('tarefas').delete().eq('id',id).then(({error})=>cloudErr(error)); }
-function cloudSaveDia(iso,e){ if(!sb||!state.user) return; sb.from('dia_extra').upsert({ user_id:state.user.id, data:iso, repiques:e.repiques||0, agendamento:e.agendamento||0, atendimento:e.atendimento||0, orcamento_ajuste:e.orcamentoAjuste||0, vendas_ajuste:e.vendasAjuste||0, comissao_ajuste:e.comissaoAjuste||0 },{onConflict:'user_id,data'}).then(({error})=>cloudErr(error)); }
-function cloudSaveMetas(){ if(!sb) return; sb.from('metas').update({ agendamento:state.metas.agendamento, atendimento:state.metas.atendimento, orcamento:state.metas.orcamento, vendas:state.metas.vendas, repiques:state.metas.repiques, venda_min:state.metas.vendaMin }).eq('id',1).then(({error})=>cloudErr(error)); }
-function cloudSaveLogo(dataUrl){ if(!sb||!dataUrl) return; sb.from('agencia').update({ logo:dataUrl }).eq('id',1).then(({error})=>cloudErr(error)); }
-function cloudSaveNome(nome){ if(!sb||!state.user) return; sb.from('profiles').update({ nome:nome }).eq('id',state.user.id).then(({error})=>cloudErr(error)); }
-function cloudSavePosvenda(arr){ if(!sb||!state.user) return; sb.from('posvenda_dados').update({ dados:arr, atualizado_em:new Date().toISOString() }).eq('id',1).then(({error})=>cloudErr(error)); }
+// Confere se a escrita de fato afetou alguma linha. O Supabase NÃO retorna
+// erro quando uma política de segurança (RLS) bloqueia um update/upsert —
+// ele só atualiza 0 linhas e segue como "sucesso". Sem essa checagem, o app
+// acharia que salvou na nuvem mesmo quando nada foi gravado de verdade.
+function cloudConfirm(promise,label){
+  return promise.then(({data,error})=>{
+    if(error){ console.error(label,error); return false; }
+    if(!data||!data.length){ console.error(label+': 0 linhas afetadas — verifique a permissão deste usuário.'); return false; }
+    return true;
+  });
+}
+function cloudSaveTarefa(t){ if(!sb||!state.user) return Promise.resolve(false); return cloudConfirm(sb.from('tarefas').upsert({ id:t.id, user_id:state.user.id, data:t.data||null, texto:t.texto||'', done:!!t.done }).select(),'cloudSaveTarefa'); }
+function cloudDeleteTarefa(id){ if(!sb) return Promise.resolve(false); return sb.from('tarefas').delete().eq('id',id).then(({error})=>{ cloudErr(error); return !error; }); }
+function cloudSaveDia(iso,e){ if(!sb||!state.user) return Promise.resolve(false); return cloudConfirm(sb.from('dia_extra').upsert({ user_id:state.user.id, data:iso, repiques:e.repiques||0, agendamento:e.agendamento||0, atendimento:e.atendimento||0, orcamento_ajuste:e.orcamentoAjuste||0, vendas_ajuste:e.vendasAjuste||0, comissao_ajuste:e.comissaoAjuste||0 },{onConflict:'user_id,data'}).select(),'cloudSaveDia'); }
+function cloudSaveMetas(){ if(!sb) return Promise.resolve(false); return cloudConfirm(sb.from('metas').update({ agendamento:state.metas.agendamento, atendimento:state.metas.atendimento, orcamento:state.metas.orcamento, vendas:state.metas.vendas, repiques:state.metas.repiques, venda_min:state.metas.vendaMin }).eq('id',1).select(),'cloudSaveMetas'); }
+function cloudSaveLogo(dataUrl){ if(!sb||!dataUrl) return Promise.resolve(false); return cloudConfirm(sb.from('agencia').update({ logo:dataUrl }).eq('id',1).select(),'cloudSaveLogo'); }
+function cloudSaveNome(nome){ if(!sb||!state.user) return Promise.resolve(false); return cloudConfirm(sb.from('profiles').update({ nome:nome }).eq('id',state.user.id).select(),'cloudSaveNome'); }
+function cloudSavePosvenda(arr){ if(!sb||!state.user) return Promise.resolve(false); return cloudConfirm(sb.from('posvenda_dados').update({ dados:arr, atualizado_em:new Date().toISOString() }).eq('id',1).select(),'cloudSavePosvenda'); }
 async function cloudLoadPosvenda(){ if(!sb) return null; try{ const { data, error } = await sb.from('posvenda_dados').select('dados').eq('id',1).maybeSingle(); if(error){ console.error('cloudLoadPosvenda',error); return null; } return (data&&data.dados)?data.dados:null; }catch(e){ console.error('cloudLoadPosvenda',e); return null; } }
 function cloudSaveVoaAppConfig(cfg){
   if(!sb||!state.user) return Promise.resolve(false);
@@ -1005,7 +1016,7 @@ async function logout(){ try{ if(sb) await sb.auth.signOut(); }catch(e){} try{ l
 function requestNameChange(){
   openModal(`<div class="modal-head"><h3>Alterar nome do colaborador</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><p style="margin:0 0 12px;font-size:13px;color:var(--text-soft)">Para alterar o nome registrado, insira a senha de administrador.</p><div class="field"><label>Senha</label><input type="password" id="adminPass" autocomplete="off"></div><div class="field"><label>Novo nome</label><input type="text" id="newName" value="${state.user.name}"></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="confirmNameChange()">Salvar</button></div>`);
 }
-function confirmNameChange(){ const pass=document.getElementById('adminPass').value; const newName=document.getElementById('newName').value.trim(); if(pass!==ADMIN_PASS){ toast('Senha incorreta','danger'); return; } if(!newName){ toast('Informe um novo nome','warning'); return; } state.user.name=newName; save(STORE.USER,state.user); cloudSaveNome(newName); document.getElementById('userName').textContent=newName; document.getElementById('topUserName').textContent=newName.split(' ')[0]; document.getElementById('userInitial').textContent=newName[0].toUpperCase(); closeModal(); toast('Nome atualizado','success'); }
+async function confirmNameChange(){ const pass=document.getElementById('adminPass').value; const newName=document.getElementById('newName').value.trim(); if(pass!==ADMIN_PASS){ toast('Senha incorreta','danger'); return; } if(!newName){ toast('Informe um novo nome','warning'); return; } state.user.name=newName; save(STORE.USER,state.user); document.getElementById('userName').textContent=newName; document.getElementById('topUserName').textContent=newName.split(' ')[0]; document.getElementById('userInitial').textContent=newName[0].toUpperCase(); closeModal(); const cloudOk=await cloudSaveNome(newName); toast(cloudOk?'Nome atualizado na nuvem':'Falhou ao confirmar na nuvem. Verifique a conexão e salve de novo.',cloudOk?'success':'warning'); }
 
 const VIEW_META = { administracao:{title:'Administração',sub:'Visão consolidada da equipe e da operação'}, dashboard:{title:'Dashboard',sub:'Visão geral do desempenho'}, orcamentos:{title:'Orçamentos',sub:'Gere, gerencie e acompanhe propostas de viagem'}, controle:{title:'Controle Diário',sub:'Rotina, metas e métricas do mês'}, agenda:{title:'Agenda de Viajantes',sub:'Calendário de embarques e oportunidades de upsell'}, relatorios:{title:'Relatórios',sub:'Exportação consolidada de desempenho em PDF'}, posvenda:{title:'Pós-Venda TZ Viagens',sub:'Painel gerencial de controle de viajantes'}, voaapp:{title:'VOA',sub:'Itinerário de viagem · TZ Viagens'} };
 function bindNav(){
@@ -1482,7 +1493,7 @@ function deleteQuote(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) re
 
 function openStatusModal(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) return; if(o.status==='fechado'){ requireAdmin('Esta venda já foi efetivada e está bloqueada. Informe a senha de administrador para visualizar ou editar os dados da venda.', ()=>_openStatusModal(id)); return; } _openStatusModal(id); }
 function _openStatusModal(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) return; openModal(`<div class="modal-head"><h3>Atualizar status do orçamento</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><p style="font-size:13px;color:var(--text-soft);margin:0 0 14px"><strong>${escapeHtml(o.cliente?.nome||'')}</strong> · ${escapeHtml(o.destino?.titulo||'')}</p><div class="field"><label>Status</label><select id="st_status"><option value="aberto" ${o.status==='aberto'?'selected':''}>Em aberto</option><option value="fechado" ${o.status==='fechado'?'selected':''}>Fechada</option><option value="perdido" ${o.status==='perdido'?'selected':''}>Perdida</option></select></div><div id="st_extra"></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveStatus('${id}')">Salvar</button></div>`); const sel=document.getElementById('st_status'); const renderExtra=()=>{ const val=sel.value; const extra=document.getElementById('st_extra'); if(val==='fechado'){ const v=o.venda||{}; extra.innerHTML=`<div style="background:var(--surface-alt);border:1px solid var(--border);border-radius:10px;padding:14px;margin-top:6px"><p style="font-size:12px;font-weight:700;color:var(--brand-blue);margin:0 0 10px;text-transform:uppercase;letter-spacing:.04em">✓ Checklist da venda efetivada</p><div class="field"><label>Data de fechamento</label><input id="st_dataFechamento" type="date" value="${v.dataFechamento||todayISO()}"></div><div class="field"><label>Fornecedor</label><input id="st_fornecedor" placeholder="Insira a operadora" value="${escapeHtml(v.fornecedor||'')}"></div><div class="field"><label>ID da reserva</label><input id="st_idReserva" placeholder="Localizador / código da reserva" value="${escapeHtml(v.idReserva||'')}"></div><div class="field"><label>Nome do passageiro titular</label><input id="st_titular" placeholder="Nome completo do titular" value="${escapeHtml(v.titular||'')}"></div><div class="field-row"><div class="field"><label>Comissão na agência (R$)</label><input id="st_comissao" type="number" step="0.01" placeholder="0,00" value="${v.comissaoAgencia||''}"></div><div class="field"><label>Comissão no fornecedor (R$)</label><input id="st_comFornecedor" type="number" step="0.01" placeholder="0,00" value="${v.comissaoFornecedor||''}"></div></div><p style="font-size:11px;color:var(--text-mute);margin:2px 0 0">A comissão registrada no histórico será a <strong>soma</strong> da comissão na agência + comissão no fornecedor. Estes dados aparecerão no relatório "Vendas do mês" para conferência com a operadora.</p></div>`; } else if(val==='perdido'){ extra.innerHTML=`<div class="field"><label>Motivo da perda</label><textarea id="st_motivo" placeholder="Descreva por que a venda foi perdida">${escapeHtml(o.motivoPerda||'')}</textarea></div>`; } else { extra.innerHTML=''; } }; sel.addEventListener('change',renderExtra); renderExtra(); }
-function saveStatus(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) return; const newStatus=document.getElementById('st_status').value; if(newStatus==='fechado'){ const fornecedor=document.getElementById('st_fornecedor').value.trim(); const idReserva=document.getElementById('st_idReserva').value.trim(); const titular=document.getElementById('st_titular').value.trim(); if(!fornecedor||!idReserva||!titular){ toast('Preencha Fornecedor, ID da reserva e Nome do titular para confirmar a venda','warning'); return; } o.status=newStatus; const dataFech=document.getElementById('st_dataFechamento').value||todayISO(); o.closedAt=dataFech; const comAg=parseFloat(document.getElementById('st_comissao').value)||0; const comForn=parseFloat(document.getElementById('st_comFornecedor').value)||0; o.comissao=comAg+comForn; o.venda={ dataFechamento:dataFech, fornecedor, idReserva, titular, comissaoAgencia:comAg, comissaoFornecedor:comForn }; (o.datas||[]).forEach(d=>{ if(!d.inicio&&d.trecho){ const p=parsePeriodo(d.trecho); if(p.inicio){ d.inicio=p.inicio; if(p.fim&&!d.fim) d.fim=p.fim; } } }); o.motivoPerda=''; } else if(newStatus==='perdido'){ o.status=newStatus; o.closedAt=localNowISO(); o.motivoPerda=document.getElementById('st_motivo').value||''; o.comissao=0; } else { o.status=newStatus; o.comissao=0; o.motivoPerda=''; o.closedAt=null; } persistAll(); cloudSaveOrcamento(o); closeModal(); renderQuoteList(); toast('Status atualizado','success'); }
+async function saveStatus(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) return; const newStatus=document.getElementById('st_status').value; if(newStatus==='fechado'){ const fornecedor=document.getElementById('st_fornecedor').value.trim(); const idReserva=document.getElementById('st_idReserva').value.trim(); const titular=document.getElementById('st_titular').value.trim(); if(!fornecedor||!idReserva||!titular){ toast('Preencha Fornecedor, ID da reserva e Nome do titular para confirmar a venda','warning'); return; } o.status=newStatus; const dataFech=document.getElementById('st_dataFechamento').value||todayISO(); o.closedAt=dataFech; const comAg=parseFloat(document.getElementById('st_comissao').value)||0; const comForn=parseFloat(document.getElementById('st_comFornecedor').value)||0; o.comissao=comAg+comForn; o.venda={ dataFechamento:dataFech, fornecedor, idReserva, titular, comissaoAgencia:comAg, comissaoFornecedor:comForn }; (o.datas||[]).forEach(d=>{ if(!d.inicio&&d.trecho){ const p=parsePeriodo(d.trecho); if(p.inicio){ d.inicio=p.inicio; if(p.fim&&!d.fim) d.fim=p.fim; } } }); o.motivoPerda=''; } else if(newStatus==='perdido'){ o.status=newStatus; o.closedAt=localNowISO(); o.motivoPerda=document.getElementById('st_motivo').value||''; o.comissao=0; } else { o.status=newStatus; o.comissao=0; o.motivoPerda=''; o.closedAt=null; } persistAll(); closeModal(); renderQuoteList(); const cloudOk=await cloudSaveOrcamento(o); toast(cloudOk?'Status atualizado na nuvem':'Status salvo neste navegador, mas falhou ao confirmar na nuvem. Tentaremos novamente automaticamente.',cloudOk?'success':'warning'); }
 
 function downloadFile(name,content,mime='application/octet-stream'){ const blob=new Blob([content],{type:mime}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); }
 function exportCurrentJSON(){ readFormIntoQuote(); const name=`orcamento-${(currentQuote.cliente.nome||'cliente').replace(/\s+/g,'_').toLowerCase()}-${todayISO()}.json`; downloadFile(name,JSON.stringify(currentQuote,null,2),'application/json'); toast('Arquivo JSON exportado','success'); }
@@ -1532,9 +1543,9 @@ function renderCtrlResult(){
   wrap.innerHTML=`<div class="card" style="margin-bottom:18px"><div class="card-header"><h3 class="card-title">Resumo por categoria</h3><span class="badge neutral">${escapeHtml(owner||(isGestao?'Todas as colaboradoras':label))}${owner?` · ${label}`:(isGestao?` · ${label}`:'')}</span></div><table class="tbl"><thead><tr><th>Categoria</th><th class="num">Meta</th><th class="num">Atual</th><th class="num">Diferença</th><th>Status</th></tr></thead><tbody>${cat.map(c=>{ const diff=(c.meta||0)-c.val; const ok=c.val>=(c.meta||0); const fmt=c.money?fmtBRL:fmtNum; return `<tr><td><strong>${c.label}</strong></td><td class="num">${fmt(c.meta||0)}</td><td class="num">${fmt(c.val)}</td><td class="num" style="color:${ok?'var(--success)':'var(--danger)'}">${fmt(diff)}</td><td>${ok?`<span class="badge success">Atingida</span>`:`<span class="badge warning">Em andamento</span>`}</td></tr>`; }).join('')}</tbody></table></div><div class="card"><div class="card-header"><h3 class="card-title">Transações diárias</h3><span class="badge neutral">${agg.days.length} dia(s)</span></div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Data</th><th class="num">Repiques</th><th class="num">Agendamento</th><th class="num">Atendimento</th><th class="num">Orçamento</th><th class="num">Vendas</th><th class="num">Comissão do dia</th>${editableOwner?'<th class="num">Editar</th>':''}</tr></thead><tbody>${agg.days.map(d=>`<tr><td>${fmtDateBR(d.data)}</td><td class="num">${fmtNum(d.repiques)}</td><td class="num">${fmtNum(d.agendamento)}</td><td class="num">${fmtNum(d.atendimento)}</td><td class="num">${fmtNum(d.orcamento)}</td><td class="num">${fmtNum(d.vendas)}</td><td class="num">${fmtBRL(d.comissao)}</td>${editableOwner?`<td class="num"><button class="btn-icon" onclick="openDayEditor('${d.data}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></td>`:''}</tr>`).join('')}<tr style="background:var(--surface-alt);font-weight:700"><td>Total</td><td class="num">${fmtNum(t.repiques)}</td><td class="num">${fmtNum(t.agendamento)}</td><td class="num">${fmtNum(t.atendimento)}</td><td class="num">${fmtNum(t.orcamento)}</td><td class="num">${fmtNum(t.vendas)}</td><td class="num">${fmtBRL(t.comissao)}</td>${editableOwner?'<td></td>':''}</tr></tbody></table></div>${(isGestao&&!owner)?`<p style="font-size:12px;color:var(--text-mute);padding:10px 0 0">Selecione uma colaboradora específica para poder editar os dias dela.</p>`:''}</div>`;
 }
 function openDayEditor(iso){ const extra=state.diaExtra[iso]||{}; openModal(`<div class="modal-head"><h3>Registrar atividades de ${fmtDateBR(iso)}</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><div class="field-row"><div class="field"><label>Repiques</label><input id="de_repiques" type="number" min="0" value="${extra.repiques||0}"></div><div class="field"><label>Agendamento</label><input id="de_agendamento" type="number" min="0" value="${extra.agendamento||0}"></div><div class="field"><label>Atendimento</label><input id="de_atendimento" type="number" min="0" value="${extra.atendimento||0}"></div></div><div class="field-row"><div class="field"><label>Ajuste manual Orçamentos</label><input id="de_orc" type="number" value="${extra.orcamentoAjuste||0}"></div><div class="field"><label>Ajuste manual Vendas</label><input id="de_vendas" type="number" value="${extra.vendasAjuste||0}"></div><div class="field"><label>Ajuste manual Comissão (R$)</label><input id="de_com" type="number" step="0.01" value="${extra.comissaoAjuste||0}"></div></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveDayEditor('${iso}')">Salvar</button></div>`); }
-function saveDayEditor(iso){ const e={repiques:parseFloat(document.getElementById('de_repiques').value)||0,agendamento:parseFloat(document.getElementById('de_agendamento').value)||0,atendimento:parseFloat(document.getElementById('de_atendimento').value)||0,orcamentoAjuste:parseFloat(document.getElementById('de_orc').value)||0,vendasAjuste:parseFloat(document.getElementById('de_vendas').value)||0,comissaoAjuste:parseFloat(document.getElementById('de_com').value)||0,owner:(state.user&&state.user.name)||'',ownerId:(state.user&&state.user.id)||''}; state.diaExtra[iso]=e; persistAll(); cloudSaveDia(iso,e); closeModal(); renderCtrlResult(); toast('Atividades registradas','success'); }
+async function saveDayEditor(iso){ const e={repiques:parseFloat(document.getElementById('de_repiques').value)||0,agendamento:parseFloat(document.getElementById('de_agendamento').value)||0,atendimento:parseFloat(document.getElementById('de_atendimento').value)||0,orcamentoAjuste:parseFloat(document.getElementById('de_orc').value)||0,vendasAjuste:parseFloat(document.getElementById('de_vendas').value)||0,comissaoAjuste:parseFloat(document.getElementById('de_com').value)||0,owner:(state.user&&state.user.name)||'',ownerId:(state.user&&state.user.id)||''}; state.diaExtra[iso]=e; persistAll(); closeModal(); renderCtrlResult(); const cloudOk=await cloudSaveDia(iso,e); toast(cloudOk?'Atividades registradas na nuvem':'Falhou ao confirmar na nuvem. Verifique a conexão e registre de novo.',cloudOk?'success':'warning'); }
 function openMetasModal(){ const m=state.metas; openModal(`<div class="modal-head"><h3>Editar metas mensais</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><div class="field-row"><div class="field"><label>Agendamento</label><input id="mt_a" type="number" value="${m.agendamento}"></div><div class="field"><label>Atendimento</label><input id="mt_at" type="number" value="${m.atendimento}"></div><div class="field"><label>Orçamento</label><input id="mt_o" type="number" value="${m.orcamento}"></div><div class="field"><label>Vendas</label><input id="mt_v" type="number" value="${m.vendas}"></div><div class="field"><label>Repiques</label><input id="mt_r" type="number" value="${m.repiques}"></div><div class="field"><label>Meta de vendas mín. (R$)</label><input id="mt_min" type="number" value="${m.vendaMin}"></div></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveMetas()">Salvar</button></div>`); }
-function saveMetas(){ state.metas={agendamento:parseFloat(document.getElementById('mt_a').value)||0,atendimento:parseFloat(document.getElementById('mt_at').value)||0,orcamento:parseFloat(document.getElementById('mt_o').value)||0,vendas:parseFloat(document.getElementById('mt_v').value)||0,repiques:parseFloat(document.getElementById('mt_r').value)||0,vendaMin:parseFloat(document.getElementById('mt_min').value)||0}; persistAll(); cloudSaveMetas(); closeModal(); renderCtrlResult(); toast('Metas atualizadas','success'); }
+async function saveMetas(){ state.metas={agendamento:parseFloat(document.getElementById('mt_a').value)||0,atendimento:parseFloat(document.getElementById('mt_at').value)||0,orcamento:parseFloat(document.getElementById('mt_o').value)||0,vendas:parseFloat(document.getElementById('mt_v').value)||0,repiques:parseFloat(document.getElementById('mt_r').value)||0,vendaMin:parseFloat(document.getElementById('mt_min').value)||0}; persistAll(); closeModal(); renderCtrlResult(); const cloudOk=await cloudSaveMetas(); toast(cloudOk?'Metas atualizadas na nuvem':'Falhou ao confirmar na nuvem. Verifique a conexão e salve de novo.',cloudOk?'success':'warning'); }
 
 /* ========= AGENDA ========= */
 let agendaCursor=(()=>{ const d=new Date(); return {y:d.getFullYear(),m:d.getMonth()}; })();
@@ -1560,7 +1571,7 @@ function openTripQuick(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) 
 
 /* ========= TAREFAS ========= */
 function addTarefaPrompt(presetIso){ const def=presetIso||todayISO(); openModal(`<div class="modal-head"><h3>Nova tarefa</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><div class="field"><label>Data da tarefa</label><input type="date" id="ta_data" value="${def}"></div><div class="field"><label>Descrição da tarefa</label><textarea id="ta_texto" placeholder="Ex.: Ligar para o cliente confirmando documentos"></textarea></div><p style="font-size:11px;color:var(--text-mute);margin:2px 0 0">A tarefa será lançada automaticamente no dia escolhido do calendário.</p></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveTarefa()">Adicionar</button></div>`); setTimeout(()=>{ const e=document.getElementById('ta_texto'); if(e) e.focus(); },50); }
-function saveTarefa(){ const iso=document.getElementById('ta_data').value; const t=document.getElementById('ta_texto').value.trim(); if(!iso){ toast('Selecione a data','warning'); return; } if(!t){ toast('Digite a tarefa','warning'); return; } const nt={id:'tk'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),data:iso,texto:t,done:false,owner:(state.user&&state.user.name)||'',ownerId:(state.user&&state.user.id)||''}; state.tarefas.push(nt); persistAll(); cloudSaveTarefa(nt); closeModal(); refreshTaskViews(); toast('Tarefa adicionada','success'); }
+async function saveTarefa(){ const iso=document.getElementById('ta_data').value; const t=document.getElementById('ta_texto').value.trim(); if(!iso){ toast('Selecione a data','warning'); return; } if(!t){ toast('Digite a tarefa','warning'); return; } const nt={id:'tk'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),data:iso,texto:t,done:false,owner:(state.user&&state.user.name)||'',ownerId:(state.user&&state.user.id)||''}; state.tarefas.push(nt); persistAll(); closeModal(); refreshTaskViews(); const cloudOk=await cloudSaveTarefa(nt); toast(cloudOk?'Tarefa adicionada na nuvem':'Falhou ao confirmar na nuvem. Verifique a conexão e adicione de novo.',cloudOk?'success':'warning'); }
 function toggleTarefa(id){ const t=state.tarefas.find(x=>x.id===id); if(!t) return; t.done=!t.done; persistAll(); cloudSaveTarefa(t); refreshTaskViews(); }
 function removeTarefa(id){ state.tarefas=state.tarefas.filter(x=>x.id!==id); persistAll(); cloudDeleteTarefa(id); refreshTaskViews(); }
 function refreshTaskViews(){ const active=document.querySelector('.nav-item.active'); if(active) setView(active.dataset.view); }
@@ -2047,7 +2058,7 @@ const VOA = (function(){
     }
     doExportHTML(data);
   }
-  function doExportHTML(data){
+  async function doExportHTML(data){
     const html=buildClientHTML(data);
     const blob=new Blob([html],{type:'text/html;charset=utf-8'});
     const a=document.createElement('a');
@@ -2061,7 +2072,9 @@ const VOA = (function(){
     close();
     setView('orcamentos');
     showToast('✓ Orçamento exportado!');
-    toast(wasEdit?('Nova versão salva: Orçamento '+(saved&&saved.versao||'')):'Orçamento salvo no AVV!','success');
+    const cloudOk=await cloudSaveOrcamento(saved);
+    const label=wasEdit?('Nova versão salva: Orçamento '+(saved&&saved.versao||'')):'Orçamento salvo';
+    toast(cloudOk?(label+' na nuvem'):(label+' neste navegador, mas falhou ao confirmar na nuvem. Tentaremos novamente automaticamente.'),cloudOk?'success':'warning');
   }
 
   function exportJSON(){
@@ -2329,7 +2342,6 @@ function avvSaveFromVOA(data,editId){
   q.voaData=data; // snapshot completo do gerador para edição fiel
   state.orcamentos.unshift(q);
   persistAll();
-  cloudSaveOrcamento(q);
   return q;
 }
 
@@ -2525,7 +2537,13 @@ function loadData(){
   try { const raw = localStorage.getItem(STORAGE_KEY); if(raw) return JSON.parse(raw); } catch(e){}
   return seed();
 }
-function saveData(d){ localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); try{ if(window.parent && window.parent.cloudSavePosvenda) window.parent.cloudSavePosvenda(d); }catch(e){} }
+function saveData(d){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+  try{
+    if(window.parent && window.parent.cloudSavePosvenda) return Promise.resolve(window.parent.cloudSavePosvenda(d));
+  }catch(e){}
+  return Promise.resolve(null); // null = sem ponte com a nuvem (não dá pra confirmar)
+}
 
 function seed(){
   const t = new Date();
@@ -3296,6 +3314,7 @@ function App(){
   const [view, setView] = useState({name:"dashboard"}); // dashboard | list | form | detail
   const [theme, setTheme] = useState(()=>localStorage.getItem(THEME_KEY)||"dark");
   const [cloudReady, setCloudReady] = useState(false);
+  const [syncStatus, setSyncStatus] = useState("idle"); // idle | saving | ok | error
 
   useEffect(()=>{
     let cancelado=false;
@@ -3312,7 +3331,28 @@ function App(){
     setCloudReady(true);
   }, []);
 
-  useEffect(()=>{ if(cloudReady) saveData(reservations); }, [reservations, cloudReady]);
+  useEffect(()=>{
+    if(!cloudReady) return;
+    let cancelado=false;
+    setSyncStatus("saving");
+    saveData(reservations).then(ok=>{
+      if(cancelado) return;
+      if(ok===null){ setSyncStatus("idle"); return; } // sem ponte com a nuvem (ex.: app aberto fora do AVV)
+      setSyncStatus(ok ? "ok" : "error");
+    });
+    return ()=>{ cancelado=true; };
+  }, [reservations, cloudReady]);
+
+  // Se uma gravação falhar (ex.: queda de conexão), tenta de novo automaticamente
+  // até confirmar — não existe botão "Salvar" aqui, o salvamento é contínuo.
+  useEffect(()=>{
+    if(syncStatus!=="error") return;
+    const t=setTimeout(()=>{
+      setSyncStatus("saving");
+      saveData(reservations).then(ok=>{ if(ok!==null) setSyncStatus(ok?"ok":"error"); });
+    }, 8000);
+    return ()=>clearTimeout(t);
+  }, [syncStatus, reservations]);
   useEffect(()=>{
     document.documentElement.classList.toggle("dark", theme==="dark");
     localStorage.setItem(THEME_KEY, theme);
@@ -3349,6 +3389,13 @@ function App(){
             <div className="text-lg font-bold flex items-center gap-2">🧳 Pós-Venda <span className="opacity-50 font-normal hidden sm:inline">| Painel Gerencial</span></div>
           </div>
           <nav className="flex items-center gap-1">
+            <span className={`hidden sm:inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full mr-1 ${
+              syncStatus==="error" ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300" :
+              syncStatus==="saving" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" :
+              "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+            }`} title={syncStatus==="error"?"Falha ao confirmar na nuvem. Tentando novamente automaticamente.":syncStatus==="saving"?"Salvando na nuvem...":"Dados confirmados na nuvem"}>
+              {syncStatus==="error" ? "⚠️ Falhou ao salvar — tentando de novo" : syncStatus==="saving" ? "⏳ Salvando..." : "✓ Salvo na nuvem"}
+            </span>
             {navBtn("dashboard","Dashboard")}
             {navBtn("list","Reservas")}
             <button onClick={()=>setTheme(theme==="dark"?"light":"dark")} className="ml-2 px-3 py-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800" title="Alternar tema">{theme==="dark"?"☀️":"🌙"}</button>
@@ -3365,7 +3412,7 @@ function App(){
       </main>
 
       <footer className="max-w-7xl mx-auto px-4 py-6 text-xs opacity-50 text-center">
-        Dados salvos na nuvem (e localmente como reserva). {reservations.length} reserva(s) · {totalAlerts} alerta(s) ativos.
+        {syncStatus==="error" ? "⚠️ Última gravação não foi confirmada na nuvem — tentando de novo automaticamente." : "Dados salvos na nuvem (e localmente como reserva)."} {reservations.length} reserva(s) · {totalAlerts} alerta(s) ativos.
       </footer>
     </div>
   );
