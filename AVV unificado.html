@@ -1061,7 +1061,7 @@ let adminFilter = { month: currentMonth(), owner:'' };
 function adminPodeVerValores(){ return currentRole()==='admin' || (currentRole()==='gerente' && GERENTE_VE_VALORES); }
 function ownerNameOf(o){ return o.owner || (o.ownerId? o.ownerId : 'Sem identificação'); }
 
-function renderAdmin(c){
+async function renderAdmin(c){
   const verR$ = adminPodeVerValores();
   const orcs = Backend.orcamentos();
   const owners = [...new Set(orcs.map(ownerNameOf))].sort((a,b)=>a.localeCompare(b));
@@ -1094,11 +1094,29 @@ function renderAdmin(c){
     m.repiques+=Number(e.repiques||0); m.agendamento+=Number(e.agendamento||0); m.atendimento+=Number(e.atendimento||0);
   });
 
-  // próximas viagens (todas as funcionárias) — 30 dias
+  // próximas viagens (todas as funcionárias + Pós-Venda da gerência) — 30 dias
   const today=new Date(); today.setHours(0,0,0,0); const in30=new Date(today); in30.setDate(in30.getDate()+30);
-  const embarques=[];
-  orcs.filter(o=>o.status==='fechado').forEach(o=>{ (o.datas||[]).forEach(t=>{ if(t.inicio){ const d=parseDate(t.inicio); if(d&&d>=today&&d<=in30){ embarques.push({nome:(o.venda&&o.venda.titular)||o.cliente?.nome||'Cliente',destino:o.destino?.titulo||t.trecho||'Destino',data:t.inicio,owner:ownerNameOf(o)}); } } }); });
+  const normName=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim().replace(/\s+/g,' ');
+  let embarques=[];
+  orcs.filter(o=>o.status==='fechado').forEach(o=>{ (o.datas||[]).forEach(t=>{ if(t.inicio){ const d=parseDate(t.inicio); if(d&&d>=today&&d<=in30){ const nome=(o.venda&&o.venda.titular)||o.cliente?.nome||'Cliente'; embarques.push({nome,dedupeKey:normName(nome),destino:o.destino?.titulo||t.trecho||'Destino',data:t.inicio,owner:ownerNameOf(o)}); } } }); });
+  // Mesma viagem pode ter sido lançada por uma consultora (orçamento) E pela
+  // gerência (Pós-Venda) separadamente — cada sistema continua aceitando
+  // normalmente, só não duplicamos o passageiro nesta lista consolidada.
+  if(currentRole()==='admin'||currentRole()==='gerente'){
+    try{
+      const posvendaList=await cloudLoadPosvenda();
+      (posvendaList||[]).forEach(r=>{
+        if(!r||r.tripStatus==='Cancelada'||!r.dataIda) return;
+        const d=parseDate(r.dataIda); if(!(d&&d>=today&&d<=in30)) return;
+        const principal=(r.passageiros&&r.passageiros[0]&&r.passageiros[0].nome)||'Viajante';
+        const extra=(r.passageiros&&r.passageiros.length>1)?` +${r.passageiros.length-1}`:'';
+        embarques.push({nome:principal+extra,dedupeKey:normName(principal),destino:r.destino||'Destino',data:r.dataIda,owner:'Pós-Venda (gerência)'});
+      });
+    }catch(e){ console.error('embarques pós-venda',e); }
+  }
   embarques.sort((a,b)=>a.data.localeCompare(b.data));
+  const vistos=new Set();
+  embarques=embarques.filter(e=>{ if(vistos.has(e.dedupeKey)) return false; vistos.add(e.dedupeKey); return true; });
 
   // vendas fechadas no mês (para acompanhamento / pós-venda)
   const vendasMes = orcs.filter(fechadaNoMes).sort((a,b)=>(b.closedAt||'').localeCompare(a.closedAt||''));
