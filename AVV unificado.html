@@ -1674,7 +1674,8 @@ async function renderAdmin(c){
   embarques=embarques.filter(e=>{ if(vistos.has(e.dedupeKey)) return false; vistos.add(e.dedupeKey); return true; });
 
   // vendas fechadas no mês (para acompanhamento / pós-venda)
-  const vendasMes = orcs.filter(fechadaNoMes).sort((a,b)=>(b.closedAt||'').localeCompare(a.closedAt||''));
+  // respeita o filtro por colaborador, igual ao restante do painel
+  const vendasMes = orcs.filter(fechadaNoMes).filter(o=> !adminFilter.owner || ownerNameOf(o)===adminFilter.owner).sort((a,b)=>(b.closedAt||'').localeCompare(a.closedAt||''));
 
   const cardsHTML = `
     <div class="stat-grid">
