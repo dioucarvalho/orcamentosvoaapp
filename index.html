@@ -789,8 +789,17 @@ function logoExportHTML(){ return `<img src="${logoSrcForExport()}" alt="TZ Viag
 function persistAll(){
   save(STORE.DIA,state.diaExtra); save(STORE.METAS,state.metas); save(STORE.TAREFAS,state.tarefas);
   if(_idbReady){
-    (async()=>{ try{ for(const q of state.orcamentos){ await idbPut(q); } for(const id of _deletedIds){ await idbDelete(id); } _deletedIds.clear(); }catch(e){ console.error('Falha ao persistir no IndexedDB:',e); toast('Erro ao salvar no banco do navegador: '+(e?.message||''),'danger'); } })();
-  } else { save(STORE.ORC,state.orcamentos); }
+    // Não grava objetos "lite" (sem fotos): isso apagaria a cópia completa que já
+    // está no cache. Só persiste os completos; os lite seguem intactos na nuvem.
+    (async()=>{ try{ for(const q of state.orcamentos){ if(q&&!q._lite) await idbPut(q); } for(const id of _deletedIds){ await idbDelete(id); } _deletedIds.clear(); }catch(e){ console.error('Falha ao persistir no IndexedDB:',e); toast('Erro ao salvar no banco do navegador: '+(e?.message||''),'danger'); } })();
+  } else {
+    // Fallback localStorage: preserva os completos já salvos para os ids que agora
+    // estão só como lite, em vez de sobrescrever com a versão sem fotos.
+    let prev=[]; try{ prev=load(STORE.ORC)||[]; }catch(e){}
+    const byId={}; prev.forEach(q=>{ if(q&&q.id) byId[q.id]=q; });
+    state.orcamentos.forEach(q=>{ if(q&&q.id){ if(q._lite){ if(!byId[q.id]) byId[q.id]=q; } else byId[q.id]=q; } });
+    save(STORE.ORC,Object.values(byId));
+  }
 }
 
 const uid=()=>'q'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -850,6 +859,9 @@ async function loadProfileAndShow(authUser){
 function toISO(v){ try{ const d=new Date(v); return isNaN(d)?null:d.toISOString(); }catch(e){ return null; } }
 function cloudErr(e){ if(e){ console.error('cloud',e); toast('Falha ao salvar na nuvem. Verifique a conexão.','danger'); } }
 
+// Campos LEVES do orçamento (tudo o que listas/relatórios/admin usam), SEM as
+// fotos nem o snapshot voaData — buscados via projeção JSON direto no Postgres.
+const LITE_ORC_SELECT='id,user_id,owner_nome,status:data->>status,versao:data->versao,comissao:data->comissao,motivoPerda:data->>motivoPerda,baseId:data->>baseId,baseNome:data->>baseNome,dOwner:data->>owner,dOwnerId:data->>ownerId,createdAt:data->>createdAt,closedAt:data->>closedAt,cliente:data->cliente,destinoTitulo:data->destino->>titulo,destinoDescricao:data->destino->>descricao,datas:data->datas,investimento:data->investimento,venda:data->venda';
 async function cloudLoadAll(){
   if(!sb||!state.user) return;
   try{
@@ -859,7 +871,7 @@ async function cloudLoadAll(){
       sb.from('profiles').select('id,nome,role'),
       sb.from('metas').select('*').eq('id',1).maybeSingle(),
       sb.from('agencia').select('logo,nome').eq('id',1).maybeSingle(),
-      sb.from('orcamentos').select('data,user_id,owner_nome,created_at').order('created_at',{ascending:false}),
+      sb.from('orcamentos').select(LITE_ORC_SELECT).order('created_at',{ascending:false}),
       sb.from('tarefas').select('*'),
       sb.from('dia_extra').select('*'),
       sb.from('orcamentos_excluidos').select('id')
@@ -873,7 +885,34 @@ async function cloudLoadAll(){
 
     const ag=agR.data; if(ag&&ag.logo){ state.logo=ag.logo; try{ localStorage.setItem(STORE.LOGO,ag.logo); localStorage.setItem('voa_agency_logo',ag.logo); }catch(e){} }
 
-    let cloudOrcamentos=(orcsR.data||[]).filter(r=>r.data).map(r=>{ const q=r.data; q.ownerId=r.user_id||q.ownerId||''; q.owner=(r.user_id&&state.profilesById[r.user_id])||r.owner_nome||q.owner||''; return q; });
+    let cloudOrcamentos;
+    // Confere se a projeção leve veio no formato esperado (chave 'createdAt' presente).
+    const liteShapeOk = !(orcsR.data&&orcsR.data.length) || ('createdAt' in orcsR.data[0]);
+    if(orcsR.error || !liteShapeOk){
+      // Se a busca leve falhar ou vier malformada, cai para a carga completa
+      // (mais pesada, mas garante que o login NUNCA quebre nem mostre listas vazias).
+      console.error('busca leve de orçamentos indisponível; usando carga completa',orcsR.error||'formato inesperado');
+      const full=await sb.from('orcamentos').select('data,user_id,owner_nome,created_at').order('created_at',{ascending:false});
+      cloudOrcamentos=(full.data||[]).filter(r=>r.data).map(r=>{ const q=r.data; q.ownerId=r.user_id||q.ownerId||''; q.owner=(r.user_id&&state.profilesById[r.user_id])||r.owner_nome||q.owner||''; return q; });
+    } else {
+      // Carga LEVE: monta o orçamento só com os campos de lista/relatório. As fotos
+      // e o snapshot voaData ficam vazios e são baixados sob demanda (ensureFullOrcamento)
+      // somente ao ABRIR/EDITAR/EXPORTAR o orçamento. _lite=true marca que está incompleto.
+      cloudOrcamentos=(orcsR.data||[]).map(r=>({
+        id:r.id, _lite:true,
+        ownerId:r.user_id||r.dOwnerId||'',
+        owner:(r.user_id&&state.profilesById[r.user_id])||r.owner_nome||r.dOwner||'',
+        status:r.status||'aberto', versao:r.versao||1, comissao:r.comissao||0,
+        motivoPerda:r.motivoPerda||'', baseId:r.baseId||null, baseNome:r.baseNome||'',
+        createdAt:r.createdAt||'', closedAt:r.closedAt||null,
+        cliente:r.cliente||{nome:'',telefone:'',email:''},
+        destino:{titulo:r.destinoTitulo||'',descricao:r.destinoDescricao||'',imagens:['','','','']},
+        datas:Array.isArray(r.datas)?r.datas:[{inicio:'',fim:'',trecho:''}],
+        investimento:r.investimento||{valor:'',parcelas:'',observacoes:''},
+        venda:r.venda||{fornecedor:'',idReserva:'',titular:'',comissaoAgencia:'',comissaoFornecedor:''},
+        hospedagem:[], voos:[], passeios:'', traslados:'', seguro:{resumo:'',apolice:''}, diferenciais:'', documentacao:'', infoImportantes:''
+      }));
+    }
     // Lista de exclusões (tombstones): orçamentos apagados pela gestão. Garante
     // que a exclusão se propague para todos os navegadores e que a reconciliação
     // abaixo NÃO ressuscite um orçamento que foi apagado de propósito.
@@ -946,8 +985,37 @@ async function maybeRefreshFromCloud(){
   finally{ _refreshing=false; }
 }
 
+// Baixa o orçamento COMPLETO (com fotos e voaData) sob demanda e substitui a
+// versão "lite" em memória. Usado antes de abrir/editar/exportar/limpar fotos.
+// Se já estiver completo, devolve na hora. Nunca falha "para o lado errado":
+// em caso de erro, devolve o que tiver (lite) para não travar a ação.
+async function ensureFullOrcamento(id){
+  const i=(state.orcamentos||[]).findIndex(o=>o.id===id);
+  if(i<0) return null;
+  const cur=state.orcamentos[i];
+  if(cur && !cur._lite) return cur; // já está completo
+  if(!sb){ return cur; } // offline: devolve o que houver
+  try{
+    const { data, error } = await sb.from('orcamentos').select('data,user_id,owner_nome').eq('id',id).maybeSingle();
+    if(error||!data||!data.data){
+      // tenta o cache local como último recurso
+      if(_idbReady){ try{ const all=await idbGetAll(); const hit=all.find(x=>x&&x.id===id&&!x._lite); if(hit){ state.orcamentos[i]=hit; return hit; } }catch(e){} }
+      console.error('ensureFullOrcamento: não foi possível baixar o orçamento completo',error);
+      return cur;
+    }
+    const full=data.data;
+    delete full._lite;
+    full.ownerId=data.user_id||full.ownerId||'';
+    full.owner=(data.user_id&&state.profilesById[data.user_id])||data.owner_nome||full.owner||'';
+    state.orcamentos[i]=full;
+    try{ if(_idbReady) await idbPut(full); }catch(e){}
+    return full;
+  }catch(e){ console.error('ensureFullOrcamento',e); return cur; }
+}
+
 function cloudSaveOrcamento(q){
   if(!sb||!state.user) return Promise.resolve(false);
+  if(q && q._lite){ console.error('cloudSaveOrcamento BLOQUEADO: tentativa de salvar um orçamento "lite" (sem fotos) — isso apagaria as fotos na nuvem. Carregue o completo antes (ensureFullOrcamento).'); return Promise.resolve(false); }
   return sb.from('orcamentos').upsert({ id:q.id, user_id:state.user.id, owner_nome:q.owner||state.user.name||null, status:q.status||null, versao:q.versao||1, created_at:q.createdAt?toISO(q.createdAt):new Date().toISOString(), closed_at:q.closedAt?toISO(q.closedAt):null, data:q }).select().then(({data,error})=>{
     if(error){ cloudErr(error); return false; }
     if(!data||!data.length){ console.error('cloudSaveOrcamento: 0 linhas afetadas — verifique a permissão deste usuário.'); cloudErr({message:'Não foi possível confirmar o salvamento na nuvem.'}); return false; }
@@ -1231,13 +1299,19 @@ function _renderLiberarTools(c){
   document.getElementById('libPvPrev').addEventListener('click',_libPreviewPv);
 }
 
-function _libPreviewOrc(){
+async function _libPreviewOrc(){
   const ini=document.getElementById('libOrcIni').value, fim=document.getElementById('libOrcFim').value;
   const out=document.getElementById('libOrcOut'); _libOrcSel=null;
   if(!ini||!fim){ out.innerHTML='<p style="color:var(--danger);font-size:13px">Informe as duas datas.</p>'; return; }
   if(ini>fim){ out.innerHTML='<p style="color:var(--danger);font-size:13px">A data inicial não pode ser maior que a final.</p>'; return; }
+  const prev=document.getElementById('libOrcPrev'); if(prev){ prev.disabled=true; }
+  out.innerHTML='<p style="font-size:13px;color:var(--text-mute)">Analisando os orçamentos do período (baixando as fotos para conferência)…</p>';
+  // Filtra por data (campo leve) e baixa o conteúdo completo de cada candidato
+  // para contar as fotos reais — só os do período escolhido são baixados.
+  const candidatos=(state.orcamentos||[]).filter(q=>{ const d=(q.createdAt||'').slice(0,10); return d>=ini&&d<=fim; });
   let ids=[], count=0, bytes=0, comFoto=0;
-  (state.orcamentos||[]).forEach(q=>{ const d=(q.createdAt||'').slice(0,10); if(d>=ini&&d<=fim){ const st=_orcPhotoStats(q); if(st.count>0){ ids.push(q.id); count+=st.count; bytes+=st.bytes; comFoto++; } } });
+  for(const cand of candidatos){ const full=await ensureFullOrcamento(cand.id); if(!full) continue; const st=_orcPhotoStats(full); if(st.count>0){ ids.push(full.id); count+=st.count; bytes+=st.bytes; comFoto++; } }
+  if(prev){ prev.disabled=false; }
   if(!ids.length){ out.innerHTML='<p style="font-size:13px;color:var(--text-mute)">Nenhum orçamento com fotos encontrado nesse período.</p>'; return; }
   _libOrcSel={ids,count,bytes};
   out.innerHTML=`<div style="background:var(--surface-2,rgba(0,0,0,.04));border-radius:10px;padding:14px;font-size:13px;line-height:1.7">
@@ -1256,7 +1330,7 @@ async function _libExecOrc(){
   const btn=document.getElementById('libOrcExec'); if(btn){ btn.disabled=true; btn.textContent='Apagando...'; }
   let ok=0, fail=0;
   for(const id of ids){
-    const q=(state.orcamentos||[]).find(x=>x.id===id); if(!q) continue;
+    const q=await ensureFullOrcamento(id); if(!q) { fail++; continue; } // garante o completo (com fotos) antes de limpar
     _orcStripPhotos(q);
     const cloudOk=await cloudSaveOrcamento(q);
     if(cloudOk) ok++; else fail++;
@@ -1698,8 +1772,9 @@ function renderQuoteList(){
 
 /* Abre o gerador novo (VOA) preenchido com o orçamento existente.
    Usa o snapshot completo (voaData) quando houver; senão, monta um parcial. */
-function editQuote(id){
-  const o=state.orcamentos.find(x=>x.id===id); if(!o) return;
+async function editQuote(id){
+  let o=state.orcamentos.find(x=>x.id===id); if(!o) return;
+  if(o._lite){ toast('Carregando orçamento…'); o=await ensureFullOrcamento(id); if(!o) return; }
   const data=o.voaData?JSON.parse(JSON.stringify(o.voaData)):buildVoaDataFromQuote(o);
   VOA.openForEdit(data,id);
 }
@@ -1710,8 +1785,8 @@ function buildVoaDataFromQuote(o){
   const valor=o.investimento&&o.investimento.valor?Number(o.investimento.valor).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}):'';
   return { agentName:(state.user&&state.user.name)||'', agentPhone:'', clientName:(o.cliente&&o.cliente.nome)||'', adults:'2', children:'0', childAges:[], destName:(o.destino&&o.destino.titulo)||'', destPeriod:destPeriod, destText:(o.destino&&o.destino.descricao)||'', gallery:[], flights:flights, hotelName:hotelName, hotelImgs:[], hotelsExtra:[], passeios:[], traslados:[], docs:[], priceTotal:valor, priceInstall:(o.investimento&&o.investimento.parcelas)||'', priceNote:'' };
 }
-function openQuoteForm(id){
-  if(id){ const existing=state.orcamentos.find(o=>o.id===id); if(!existing) return; currentQuote=JSON.parse(JSON.stringify(existing)); } else { currentQuote=blankQuote(); }
+async function openQuoteForm(id){
+  if(id){ let existing=state.orcamentos.find(o=>o.id===id); if(!existing) return; if(existing._lite){ toast('Carregando orçamento…'); existing=await ensureFullOrcamento(id); } if(!existing) return; currentQuote=JSON.parse(JSON.stringify(existing)); } else { currentQuote=blankQuote(); }
   renderQuoteForm();
 }
 
@@ -1756,15 +1831,15 @@ function deleteQuote(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) re
 
 function openStatusModal(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) return; if(o.status==='fechado'){ requireAdmin('Esta venda já foi efetivada e está bloqueada. Informe a senha de administrador para visualizar ou editar os dados da venda.', ()=>_openStatusModal(id)); return; } _openStatusModal(id); }
 function _openStatusModal(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) return; openModal(`<div class="modal-head"><h3>Atualizar status do orçamento</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><p style="font-size:13px;color:var(--text-soft);margin:0 0 14px"><strong>${escapeHtml(o.cliente?.nome||'')}</strong> · ${escapeHtml(o.destino?.titulo||'')}</p><div class="field"><label>Status</label><select id="st_status"><option value="aberto" ${o.status==='aberto'?'selected':''}>Em aberto</option><option value="fechado" ${o.status==='fechado'?'selected':''}>Fechada</option><option value="perdido" ${o.status==='perdido'?'selected':''}>Perdida</option></select></div><div id="st_extra"></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveStatus('${id}')">Salvar</button></div>`); const sel=document.getElementById('st_status'); const renderExtra=()=>{ const val=sel.value; const extra=document.getElementById('st_extra'); if(val==='fechado'){ const v=o.venda||{}; extra.innerHTML=`<div style="background:var(--surface-alt);border:1px solid var(--border);border-radius:10px;padding:14px;margin-top:6px"><p style="font-size:12px;font-weight:700;color:var(--brand-blue);margin:0 0 10px;text-transform:uppercase;letter-spacing:.04em">✓ Checklist da venda efetivada</p><div class="field"><label>Data de fechamento</label><input id="st_dataFechamento" type="date" value="${v.dataFechamento||todayISO()}"></div><div class="field"><label>Fornecedor</label><input id="st_fornecedor" placeholder="Insira a operadora" value="${escapeHtml(v.fornecedor||'')}"></div><div class="field"><label>ID da reserva</label><input id="st_idReserva" placeholder="Localizador / código da reserva" value="${escapeHtml(v.idReserva||'')}"></div><div class="field"><label>Nome do passageiro titular</label><input id="st_titular" placeholder="Nome completo do titular" value="${escapeHtml(v.titular||'')}"></div><div class="field-row"><div class="field"><label>Comissão na agência (R$)</label><input id="st_comissao" type="number" step="0.01" placeholder="0,00" value="${v.comissaoAgencia||''}"></div><div class="field"><label>Comissão no fornecedor (R$)</label><input id="st_comFornecedor" type="number" step="0.01" placeholder="0,00" value="${v.comissaoFornecedor||''}"></div></div><p style="font-size:11px;color:var(--text-mute);margin:2px 0 0">A comissão registrada no histórico será a <strong>soma</strong> da comissão na agência + comissão no fornecedor. Estes dados aparecerão no relatório "Vendas do mês" para conferência com a operadora.</p></div>`; } else if(val==='perdido'){ extra.innerHTML=`<div class="field"><label>Motivo da perda</label><textarea id="st_motivo" placeholder="Descreva por que a venda foi perdida">${escapeHtml(o.motivoPerda||'')}</textarea></div>`; } else { extra.innerHTML=''; } }; sel.addEventListener('change',renderExtra); renderExtra(); }
-async function saveStatus(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) return; const newStatus=document.getElementById('st_status').value; if(newStatus==='fechado'){ const fornecedor=document.getElementById('st_fornecedor').value.trim(); const idReserva=document.getElementById('st_idReserva').value.trim(); const titular=document.getElementById('st_titular').value.trim(); if(!fornecedor||!idReserva||!titular){ toast('Preencha Fornecedor, ID da reserva e Nome do titular para confirmar a venda','warning'); return; } o.status=newStatus; const dataFech=document.getElementById('st_dataFechamento').value||todayISO(); o.closedAt=dataFech; const comAg=parseFloat(document.getElementById('st_comissao').value)||0; const comForn=parseFloat(document.getElementById('st_comFornecedor').value)||0; o.comissao=comAg+comForn; o.venda={ dataFechamento:dataFech, fornecedor, idReserva, titular, comissaoAgencia:comAg, comissaoFornecedor:comForn }; (o.datas||[]).forEach(d=>{ if(!d.inicio&&d.trecho){ const p=parsePeriodo(d.trecho); if(p.inicio){ d.inicio=p.inicio; if(p.fim&&!d.fim) d.fim=p.fim; } } }); o.motivoPerda=''; } else if(newStatus==='perdido'){ o.status=newStatus; o.closedAt=localNowISO(); o.motivoPerda=document.getElementById('st_motivo').value||''; o.comissao=0; } else { o.status=newStatus; o.comissao=0; o.motivoPerda=''; o.closedAt=null; } persistAll(); closeModal(); renderQuoteList(); const cloudOk=await cloudSaveOrcamento(o); toast(cloudOk?'Status atualizado na nuvem':'Status salvo neste navegador, mas falhou ao confirmar na nuvem. Tentaremos novamente automaticamente.',cloudOk?'success':'warning'); }
+async function saveStatus(id){ let o=state.orcamentos.find(x=>x.id===id); if(!o) return; o=await ensureFullOrcamento(id); if(!o) return; const newStatus=document.getElementById('st_status').value; if(newStatus==='fechado'){ const fornecedor=document.getElementById('st_fornecedor').value.trim(); const idReserva=document.getElementById('st_idReserva').value.trim(); const titular=document.getElementById('st_titular').value.trim(); if(!fornecedor||!idReserva||!titular){ toast('Preencha Fornecedor, ID da reserva e Nome do titular para confirmar a venda','warning'); return; } o.status=newStatus; const dataFech=document.getElementById('st_dataFechamento').value||todayISO(); o.closedAt=dataFech; const comAg=parseFloat(document.getElementById('st_comissao').value)||0; const comForn=parseFloat(document.getElementById('st_comFornecedor').value)||0; o.comissao=comAg+comForn; o.venda={ dataFechamento:dataFech, fornecedor, idReserva, titular, comissaoAgencia:comAg, comissaoFornecedor:comForn }; (o.datas||[]).forEach(d=>{ if(!d.inicio&&d.trecho){ const p=parsePeriodo(d.trecho); if(p.inicio){ d.inicio=p.inicio; if(p.fim&&!d.fim) d.fim=p.fim; } } }); o.motivoPerda=''; } else if(newStatus==='perdido'){ o.status=newStatus; o.closedAt=localNowISO(); o.motivoPerda=document.getElementById('st_motivo').value||''; o.comissao=0; } else { o.status=newStatus; o.comissao=0; o.motivoPerda=''; o.closedAt=null; } persistAll(); closeModal(); renderQuoteList(); const cloudOk=await cloudSaveOrcamento(o); toast(cloudOk?'Status atualizado na nuvem':'Status salvo neste navegador, mas falhou ao confirmar na nuvem. Tentaremos novamente automaticamente.',cloudOk?'success':'warning'); }
 
 function downloadFile(name,content,mime='application/octet-stream'){ const blob=new Blob([content],{type:mime}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); }
 function exportCurrentJSON(){ readFormIntoQuote(); const name=`orcamento-${(currentQuote.cliente.nome||'cliente').replace(/\s+/g,'_').toLowerCase()}-${todayISO()}.json`; downloadFile(name,JSON.stringify(currentQuote,null,2),'application/json'); toast('Arquivo JSON exportado','success'); }
-function exportQuoteJSON(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) return; const name=`orcamento-${(o.cliente.nome||'cliente').replace(/\s+/g,'_').toLowerCase()}-${o.createdAt.slice(0,10)}.json`; downloadFile(name,JSON.stringify(o,null,2),'application/json'); }
+async function exportQuoteJSON(id){ let o=state.orcamentos.find(x=>x.id===id); if(!o) return; if(o._lite){ toast('Carregando orçamento…'); o=await ensureFullOrcamento(id); if(!o) return; } const name=`orcamento-${(o.cliente.nome||'cliente').replace(/\s+/g,'_').toLowerCase()}-${o.createdAt.slice(0,10)}.json`; downloadFile(name,JSON.stringify(o,null,2),'application/json'); }
 function handleImportJSON(ev){ const file=ev.target.files?.[0]; if(!file) return; const reader=new FileReader(); reader.onload=()=>{ try{ const obj=JSON.parse(reader.result); if(!obj.cliente||!obj.destino){ throw new Error('Formato inválido'); } obj.id=uid(); obj.createdAt=obj.createdAt||localNowISO(); currentQuote=obj; renderQuoteForm(); toast('Orçamento importado para edição','success'); }catch(e){ toast('Falha ao importar: '+e.message,'danger'); } }; reader.readAsText(file); ev.target.value=''; }
 
 function generateAndExportHTML(){ readFormIntoQuote(); if(!currentQuote.cliente.nome){ toast('Informe o nome do cliente','warning'); return; } const idx=state.orcamentos.findIndex(o=>o.id===currentQuote.id); if(idx>=0) state.orcamentos[idx]=currentQuote; else state.orcamentos.push(currentQuote); persistAll(); const html=buildInteractiveQuote(currentQuote); const name=`proposta-${(currentQuote.cliente.nome||'cliente').replace(/\s+/g,'_').toLowerCase()}-${todayISO()}.html`; downloadFile(name,html,'text/html;charset=utf-8'); toast('Orçamento HTML gerado','success'); renderQuoteList(); }
-function exportQuoteHTML(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) return; const html=buildInteractiveQuote(o); const name=`proposta-${(o.cliente.nome||'cliente').replace(/\s+/g,'_').toLowerCase()}-${o.createdAt.slice(0,10)}.html`; downloadFile(name,html,'text/html;charset=utf-8'); }
+async function exportQuoteHTML(id){ let o=state.orcamentos.find(x=>x.id===id); if(!o) return; if(o._lite){ toast('Carregando orçamento…'); o=await ensureFullOrcamento(id); if(!o) return; } const html=buildInteractiveQuote(o); const name=`proposta-${(o.cliente.nome||'cliente').replace(/\s+/g,'_').toLowerCase()}-${o.createdAt.slice(0,10)}.html`; downloadFile(name,html,'text/html;charset=utf-8'); }
 
 function compileServicosInclusos(q){ const list=[]; if(q.hospedagem.some(h=>h.nome)) list.push('Hospedagem'); if(q.voos.some(v=>v.cia)) list.push('Passagens aéreas'); if(q.passeios.trim()) list.push('Passeios contratados'); if(q.traslados.trim()) list.push('Traslados / locomoção'); if((q.seguro.resumo||'').trim()) list.push('Seguro viagem'); if(q.datas.some(d=>d.inicio)) list.push('Roteiro estruturado por datas'); return list; }
 
