@@ -976,10 +976,21 @@ async function cloudLoadAll(){
     }
     state.orcamentos=cloudOrcamentos;
 
+    // PRIVACIDADE DO ADMINISTRADOR: gerente e consultora não enxergam NADA que seja
+    // de um administrador (orçamentos e atividades diárias). Filtramos na origem, então
+    // some de todas as telas de uma vez (Orçamentos, Dashboard, Relatórios, Controle,
+    // Administração). Para o próprio admin, nada muda.
+    const _hideAdmin = currentRole()!=='admin';
+    const _admIds = new Set((state.roster||[]).filter(p=>p.role==='admin').map(p=>p.id));
+    const _admNomes = new Set((state.roster||[]).filter(p=>p.role==='admin').map(p=>p.nome));
+    if(_hideAdmin && (_admIds.size||_admNomes.size)){
+      state.orcamentos = state.orcamentos.filter(o=>!(_admIds.has(o.ownerId)||_admNomes.has(o.owner)));
+    }
+
     state.tarefas=(tarsR.data||[]).map(r=>({ id:r.id, data:r.data, texto:r.texto, done:!!r.done, ownerId:r.user_id, owner:(state.profilesById[r.user_id])||'' }));
 
     state.diaExtra={};
-    (diasR.data||[]).forEach(r=>{ const key=r.user_id===state.user.id?r.data:(r.user_id+'|'+r.data); state.diaExtra[key]={ repiques:Number(r.repiques)||0, agendamento:Number(r.agendamento)||0, atendimento:Number(r.atendimento)||0, orcamentoAjuste:Number(r.orcamento_ajuste)||0, vendasAjuste:Number(r.vendas_ajuste)||0, comissaoAjuste:Number(r.comissao_ajuste)||0, ownerId:r.user_id, owner:(state.profilesById[r.user_id])||'' }; });
+    (diasR.data||[]).forEach(r=>{ if(_hideAdmin && _admIds.has(r.user_id)) return; const key=r.user_id===state.user.id?r.data:(r.user_id+'|'+r.data); state.diaExtra[key]={ repiques:Number(r.repiques)||0, agendamento:Number(r.agendamento)||0, atendimento:Number(r.atendimento)||0, orcamentoAjuste:Number(r.orcamento_ajuste)||0, vendasAjuste:Number(r.vendas_ajuste)||0, comissaoAjuste:Number(r.comissao_ajuste)||0, ownerId:r.user_id, owner:(state.profilesById[r.user_id])||'' }; });
   }catch(e){ console.error('cloudLoadAll',e); toast('Não foi possível carregar os dados da nuvem.','danger'); }
 }
 
