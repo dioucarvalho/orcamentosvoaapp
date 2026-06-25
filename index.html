@@ -2895,6 +2895,10 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   initAuth();
   VOA.buildIataDatalist();
 });
+// Auto-atualização: se o navegador devolver a página guardada em cache (ex.: ao
+// retomar o app no celular ou usar voltar/avançar), recarrega para pegar sempre
+// a versão mais nova do sistema — evita ficar vendo telas antigas.
+window.addEventListener('pageshow', function(e){ if(e.persisted){ location.reload(); } });
 </script>
 
 <script type="text/html" id="posvendaSrc">
