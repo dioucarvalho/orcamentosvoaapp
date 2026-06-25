@@ -123,13 +123,11 @@ a{color:var(--brand-blue);text-decoration:none}
 .rec-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--brand-red);margin-right:5px;vertical-align:middle}
 .rec-busca{margin-bottom:8px;padding:9px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;width:100%;outline:none}
 .rec-busca:focus{border-color:var(--brand-blue)}
-.rec-people{display:flex;flex-direction:column;gap:2px;max-height:230px;overflow-y:auto;overflow-x:hidden;border:1.5px solid var(--border);border-radius:12px;padding:6px;margin-bottom:6px}
-.rec-person{display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:9px;cursor:pointer;transition:background .12s}
-.rec-person:hover{background:var(--surface-alt)}
-.rec-person input{width:19px;height:19px;flex:none;accent-color:var(--brand-blue);cursor:pointer}
-.rec-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
-.rec-person .nm{font-size:14.5px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.25}
-.rec-person .rl{font-size:11.5px;color:var(--text-mute);line-height:1.2}
+.rec-people{display:flex;flex-wrap:wrap;align-content:flex-start;gap:8px;max-height:240px;overflow-y:auto;overflow-x:hidden;border:1.5px solid var(--border);border-radius:12px;padding:10px;margin-bottom:6px}
+.rec-chip{display:inline-flex;align-items:center;gap:6px;padding:9px 15px;border:1.5px solid var(--border);border-radius:999px;background:var(--surface-alt);color:var(--text);font-size:14px;font-weight:500;cursor:pointer;transition:background .12s,border-color .12s,color .12s;user-select:none;white-space:nowrap}
+.rec-chip:hover{border-color:var(--brand-blue)}
+.rec-chip.selected{background:#dcfce7;border-color:#16a34a;color:#15803d}
+.rec-chip.selected::before{content:'✓';font-weight:700}
 .rec-empty{text-align:center;color:var(--text-mute);font-size:13px;padding:30px 10px}
 
 .content{padding:24px 28px 60px;flex:1}
@@ -1166,7 +1164,7 @@ function renderRecadosPanel(){
   }
 }
 function setRecTab(t){ _recTab=t; renderRecadosPanel(); }
-function recFiltraPessoas(q){ q=(q||'').trim().toLowerCase(); document.querySelectorAll('.rec-people .rec-person').forEach(el=>{ const nm=((el.querySelector('.nm')||{}).textContent||'').toLowerCase(); el.style.display=(!q||nm.indexOf(q)>=0)?'':'none'; }); }
+function recFiltraPessoas(q){ q=(q||'').trim().toLowerCase(); document.querySelectorAll('.rec-people .rec-chip').forEach(el=>{ const nm=(el.textContent||'').toLowerCase(); el.style.display=(!q||nm.indexOf(q)>=0)?'':'none'; }); }
 // Devolve um nome legível. Se o cadastro estiver sem nome (ou só com o código
 // interno do usuário), mostra um aviso em vez de aparecer em branco.
 function recNomeBonito(p){ let n=((p&&p.nome)||'').trim(); if(!n) return '(sem nome — preencher no cadastro)'; if(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-/i.test(n)) return '(sem nome — preencher no cadastro)'; return n; }
@@ -1178,7 +1176,7 @@ async function openNovoRecado(){
     try{ const { data } = await sb.from('profiles').select('id,nome,role'); if(data&&data.length){ state.roster=data.map(p=>({id:p.id,nome:(p.nome||'').trim(),role:p.role||'consultora'})); } }catch(e){ console.error('roster',e); }
   }
   const people=(state.roster||[]).filter(p=>p.id!==me).slice().sort((a,b)=>String(recNomeBonito(a)).localeCompare(String(recNomeBonito(b))));
-  const list = people.length ? people.map(p=>`<label class="rec-person"><input type="checkbox" value="${p.id}"><span class="rec-info"><span class="nm">${escapeHtml(recNomeBonito(p))}</span><span class="rl">${ROLE_LABELS[p.role]||'Consultor(a)'}</span></span></label>`).join('') : `<div class="rec-empty">Nenhum outro colaborador encontrado.</div>`;
+  const list = people.length ? people.map(p=>`<button type="button" class="rec-chip" data-id="${p.id}" onclick="this.classList.toggle('selected')">${escapeHtml(recNomeBonito(p))}</button>`).join('') : `<div class="rec-empty">Nenhum outro colaborador encontrado.</div>`;
   const busca = people.length>5 ? `<input class="rec-busca" id="recBusca" placeholder="Buscar pessoa pelo nome…" oninput="recFiltraPessoas(this.value)">` : '';
   openModal(`<div class="modal-head"><h3>✏️ Novo recado</h3><button class="btn-icon" onclick="openRecadosPanel()">×</button></div><div class="modal-body"><div class="field"><label>Para quem? (pode escolher mais de uma pessoa)</label>${busca}<div class="rec-people">${list}</div></div><div class="field"><label>Recado / tarefa</label><textarea id="recTexto" rows="4" placeholder="Ex.: Confirmar o voucher do hotel do cliente João até amanhã."></textarea></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="openRecadosPanel()">Voltar</button><button class="btn btn-primary" id="recEnviarBtn" onclick="enviarRecado()">Enviar recado</button></div>`);
   setTimeout(()=>{ const t=document.getElementById('recTexto'); if(t) t.focus(); },60);
@@ -1187,7 +1185,7 @@ async function openNovoRecado(){
 async function enviarRecado(){
   const texto=(document.getElementById('recTexto').value||'').trim();
   if(!texto){ toast('Escreva o recado.','warning'); return; }
-  const ids=[...document.querySelectorAll('.rec-people input:checked')].map(c=>c.value);
+  const ids=[...document.querySelectorAll('.rec-chip.selected')].map(c=>c.dataset.id);
   if(!ids.length){ toast('Selecione pelo menos uma pessoa.','warning'); return; }
   const me=_recMe(), meNome=(state.user&&state.user.name)||'';
   const rows=ids.map(pid=>({ id:uid(), de_id:me, de_nome:meNome, para_id:pid, para_nome:(state.profilesById[pid]||''), texto:texto, status:'pendente' }));
