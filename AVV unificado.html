@@ -101,6 +101,34 @@ a{color:var(--brand-blue);text-decoration:none}
 .greeting{font-size:13px;color:var(--text-soft)}
 .greeting strong{color:var(--brand-blue)}
 
+/* ---------- RECADOS (mural da equipe) ---------- */
+.recados-btn{position:relative;width:42px;height:42px;border-radius:12px;background:var(--surface-alt);border:1.5px solid var(--border);color:var(--brand-blue);display:flex;align-items:center;justify-content:center;transition:all .15s}
+.recados-btn:hover{background:#fff;border-color:var(--brand-blue);box-shadow:var(--shadow-sm)}
+.recados-btn svg{width:20px;height:20px}
+.recados-badge{position:absolute;top:-6px;right:-6px;min-width:19px;height:19px;padding:0 5px;border-radius:999px;background:var(--brand-red);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--surface);animation:recPop .25s ease}
+@keyframes recPop{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}
+.rec-tabs{display:flex;gap:6px;margin-bottom:14px}
+.rec-tab{flex:1;padding:9px 10px;border-radius:10px;background:var(--surface-alt);border:1.5px solid var(--border);font-size:13px;font-weight:600;color:var(--text-soft);display:flex;align-items:center;justify-content:center;gap:7px}
+.rec-tab.active{background:var(--brand-blue);border-color:var(--brand-blue);color:#fff}
+.rec-tab .pill{min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--brand-red);color:#fff;font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+.rec-tab.active .pill{background:rgba(255,255,255,.25)}
+.rec-item{display:flex;gap:11px;padding:13px 0;border-bottom:1px solid var(--border)}
+.rec-item:last-child{border-bottom:none}
+.rec-check{width:20px;height:20px;flex-shrink:0;margin-top:1px;cursor:pointer;accent-color:var(--brand-blue)}
+.rec-body{flex:1;min-width:0}
+.rec-texto{font-size:14px;color:var(--text);line-height:1.45;word-break:break-word}
+.rec-meta{font-size:11.5px;color:var(--text-mute);margin-top:4px}
+.rec-item.feito .rec-texto{text-decoration:line-through;color:var(--text-mute)}
+.rec-item.novo{background:rgba(13,42,85,.04);border-radius:10px;padding-left:10px;padding-right:10px}
+.rec-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--brand-red);margin-right:5px;vertical-align:middle}
+.rec-people{display:flex;flex-direction:column;gap:8px;max-height:230px;overflow-y:auto;border:1.5px solid var(--border);border-radius:12px;padding:10px;margin-bottom:6px}
+.rec-person{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;cursor:pointer;transition:background .12s}
+.rec-person:hover{background:var(--surface-alt)}
+.rec-person input{width:18px;height:18px;accent-color:var(--brand-blue);cursor:pointer}
+.rec-person .nm{font-size:14px;font-weight:500;color:var(--text)}
+.rec-person .rl{font-size:11px;color:var(--text-mute)}
+.rec-empty{text-align:center;color:var(--text-mute);font-size:13px;padding:30px 10px}
+
 .content{padding:24px 28px 60px;flex:1}
 .view{display:none;animation:fadeIn .25s ease}
 .view.is-active{display:block}
@@ -445,6 +473,10 @@ table.tbl th.num{text-align:right}
         </div>
       </div>
       <div class="topbar-actions">
+        <button id="recadosBtn" class="recados-btn" title="Recados e tarefas da equipe">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span id="recadosBadge" class="recados-badge" style="display:none">0</span>
+        </button>
         <div class="greeting">Olá, <strong id="topUserName">Atendente</strong></div>
       </div>
     </header>
@@ -851,6 +883,7 @@ async function loadProfileAndShow(authUser){
   showApp();
   const reRender=()=>{ _cloudLoading=false; const active=document.querySelector('.nav-item.active'); if(active) setView(active.dataset.view); };
   cloudLoadAll().then(reRender).catch(e=>{ console.error('cloudLoadAll(bg)',e); reRender(); });
+  initRecados(); // mural de recados da equipe (tempo real)
 }
 
 /* ============================================================================
@@ -877,8 +910,8 @@ async function cloudLoadAll(){
       sb.from('orcamentos_excluidos').select('id')
     ]);
 
-    state.profilesById={};
-    (profsR.data||[]).forEach(p=>{ state.profilesById[p.id]=p.nome||''; });
+    state.profilesById={}; state.roster=[];
+    (profsR.data||[]).forEach(p=>{ state.profilesById[p.id]=p.nome||''; state.roster.push({id:p.id,nome:p.nome||p.email||p.id,role:p.role||'consultora'}); });
 
     const m=mR.data;
     if(m){ state.metas={ agendamento:Number(m.agendamento)||0, atendimento:Number(m.atendimento)||0, orcamento:Number(m.orcamento)||0, vendas:Number(m.vendas)||0, repiques:Number(m.repiques)||0, vendaMin:Number(m.venda_min)||0 }; }
@@ -1015,6 +1048,169 @@ async function ensureFullOrcamento(id){
     try{ if(_idbReady) await idbPut(full); }catch(e){}
     return full;
   }catch(e){ console.error('ensureFullOrcamento',e); return cur; }
+}
+
+/* ============================================================================
+   RECADOS / TAREFAS INTERNAS DA EQUIPE (mural online, em tempo real)
+   Qualquer pessoa deixa um recado/tarefa para uma ou mais pessoas. Quem recebe
+   marca como concluído (checklist) e quem enviou é avisado. Tudo isolado — não
+   toca em nenhuma outra parte do sistema. Usa a tabela "recados" + Realtime.
+   ============================================================================ */
+let _recPrev=null, _recInit=false, _recSub=null, _recTimer=null, _recTab='recebidos', _recBusy=false;
+function _recMe(){ return (state.user&&state.user.id)||''; }
+function _recCut(t){ t=t||''; return t.length>50?t.slice(0,50)+'…':t; }
+function recWhen(iso){ if(!iso) return ''; try{ const d=new Date(iso); const p=n=>String(n).padStart(2,'0'); return `${p(d.getDate())}/${p(d.getMonth()+1)} ${p(d.getHours())}:${p(d.getMinutes())}`; }catch(e){ return ''; } }
+function recPanelVisible(){ const ov=document.getElementById('modalOverlay'); return !!(ov&&ov.classList.contains('is-open')&&document.getElementById('recPanelRoot')); }
+
+function initRecados(){
+  if(!sb||!state.user) return;
+  refreshRecados();
+  // Tempo real: qualquer mudança na tabela dispara uma re-leitura (com RLS, então
+  // só enxergo o que é meu). Ignoramos o conteúdo do evento de propósito — apenas
+  // usamos como gatilho para rebuscar os MEUS recados.
+  try{
+    if(_recSub){ sb.removeChannel(_recSub); _recSub=null; }
+    _recSub=sb.channel('recados-rt-'+_recMe())
+      .on('postgres_changes',{event:'*',schema:'public',table:'recados'},()=>{ refreshRecados(); })
+      .subscribe();
+  }catch(e){ console.error('recados realtime',e); }
+  // Rede de segurança: se o tempo real falhar, ainda atualiza a cada 25s.
+  if(_recTimer) clearInterval(_recTimer);
+  _recTimer=setInterval(()=>{ if(!document.hidden) refreshRecados(); }, 25000);
+}
+
+async function refreshRecados(){
+  if(!sb||!state.user||_recBusy) return; _recBusy=true;
+  try{
+    const { data, error } = await sb.from('recados').select('*').order('criado_em',{ascending:false});
+    if(error){ console.error('refreshRecados',error); return; }
+    const rows=data||[]; const me=_recMe();
+    // Notificações (só depois da 1ª carga, para não "tocar" tudo ao logar):
+    if(_recInit && _recPrev){
+      rows.forEach(r=>{
+        const prev=_recPrev.get(r.id);
+        if(r.para_id===me && prev===undefined && r.status==='pendente'){ toast('📋 Nova tarefa de '+(r.de_nome||'colega')+': '+_recCut(r.texto),'info'); }
+        if(r.de_id===me && r.status==='concluida' && !r.concluido_visto && prev!==undefined && prev!=='concluida'){ toast('✅ '+(r.para_nome||'A pessoa')+' concluiu: '+_recCut(r.texto),'success'); }
+      });
+    }
+    _recPrev=new Map(rows.map(r=>[r.id,r.status]));
+    _recInit=true;
+    state.recados=rows;
+    updateRecadosBadge();
+    if(recPanelVisible()) renderRecadosPanel();
+  }catch(e){ console.error('refreshRecados',e); }
+  finally{ _recBusy=false; }
+}
+
+function updateRecadosBadge(){
+  const me=_recMe(); const rows=state.recados||[];
+  const pend=rows.filter(r=>r.para_id===me && r.status==='pendente').length;       // tarefas que devo fazer
+  const done=rows.filter(r=>r.de_id===me && r.status==='concluida' && !r.concluido_visto).length; // concluídas que ainda não vi
+  const n=pend+done;
+  const b=document.getElementById('recadosBadge'); if(!b) return;
+  if(n>0){ b.textContent=n>99?'99+':String(n); b.style.display='flex'; } else { b.style.display='none'; }
+}
+
+function _recShellHTML(){
+  return `<div class="modal-head"><h3>💬 Recados da equipe</h3><button class="btn-icon" onclick="closeModal()">×</button></div>
+  <div class="modal-body" id="recPanelRoot">
+    <button class="btn btn-primary btn-sm" style="margin-bottom:14px" onclick="openNovoRecado()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Novo recado</button>
+    <div class="rec-tabs" id="recTabs"></div>
+    <div id="recPanelBody"></div>
+  </div>`;
+}
+
+async function openRecadosPanel(tab){
+  if(tab) _recTab=tab;
+  openModal(_recShellHTML());
+  await refreshRecados();
+  if(recPanelVisible()) renderRecadosPanel();
+  // Ao abrir, marca os recebidos como "lidos" (tira o destaque de novo) e as
+  // tarefas que enviei e foram concluídas como "vistas" (limpa o aviso).
+  const me=_recMe();
+  const toLer=(state.recados||[]).filter(r=>r.para_id===me && !r.lida).map(r=>r.id);
+  const toVisto=(state.recados||[]).filter(r=>r.de_id===me && r.status==='concluida' && !r.concluido_visto).map(r=>r.id);
+  (state.recados||[]).forEach(r=>{ if(toLer.indexOf(r.id)>=0) r.lida=true; if(toVisto.indexOf(r.id)>=0) r.concluido_visto=true; });
+  updateRecadosBadge();
+  try{
+    if(toLer.length) await sb.from('recados').update({lida:true}).in('id',toLer);
+    if(toVisto.length) await sb.from('recados').update({concluido_visto:true}).in('id',toVisto);
+  }catch(e){ console.error('marcar recados vistos',e); }
+}
+
+function renderRecadosPanel(){
+  const tabsEl=document.getElementById('recTabs'), bodyEl=document.getElementById('recPanelBody');
+  if(!tabsEl||!bodyEl) return;
+  const me=_recMe(); const rows=state.recados||[];
+  const receb=rows.filter(r=>r.para_id===me), env=rows.filter(r=>r.de_id===me);
+  const pendReceb=receb.filter(r=>r.status==='pendente').length;
+  const doneEnv=env.filter(r=>r.status==='concluida'&&!r.concluido_visto).length;
+  tabsEl.innerHTML=`<button class="rec-tab ${_recTab==='recebidos'?'active':''}" onclick="setRecTab('recebidos')">Recebidos ${pendReceb?`<span class="pill">${pendReceb}</span>`:''}</button>`+
+    `<button class="rec-tab ${_recTab==='enviados'?'active':''}" onclick="setRecTab('enviados')">Enviados ${doneEnv?`<span class="pill">${doneEnv}</span>`:''}</button>`;
+  if(_recTab==='recebidos'){
+    const sorted=receb.slice().sort((a,b)=>{ if((a.status==='pendente')!==(b.status==='pendente')) return a.status==='pendente'?-1:1; return new Date(b.criado_em)-new Date(a.criado_em); });
+    bodyEl.innerHTML = sorted.length ? sorted.map(r=>{
+      const feito=r.status==='concluida';
+      return `<div class="rec-item ${feito?'feito':''} ${(!feito&&!r.lida)?'novo':''}"><input type="checkbox" class="rec-check" ${feito?'checked disabled':`onclick="concluirRecado('${r.id}')"`}><div class="rec-body"><div class="rec-texto">${(!feito&&!r.lida)?'<span class="rec-dot"></span>':''}${escapeHtml(r.texto)}</div><div class="rec-meta">De <strong>${escapeHtml(r.de_nome||'—')}</strong> · ${recWhen(r.criado_em)}${feito?` · concluída ${recWhen(r.concluido_em)}`:''}</div></div></div>`;
+    }).join('') : `<div class="rec-empty">Nenhum recado recebido. 🎉</div>`;
+  } else {
+    const sorted=env.slice().sort((a,b)=>new Date(b.criado_em)-new Date(a.criado_em));
+    bodyEl.innerHTML = sorted.length ? sorted.map(r=>{
+      const feito=r.status==='concluida';
+      const st=feito?`<span class="badge success">✔ Concluída ${recWhen(r.concluido_em)}</span>`:`<span class="badge warning">Aguardando</span>`;
+      return `<div class="rec-item ${feito?'feito':''}"><div class="rec-body"><div class="rec-texto">${escapeHtml(r.texto)}</div><div class="rec-meta">Para <strong>${escapeHtml(r.para_nome||'—')}</strong> · ${recWhen(r.criado_em)} · ${st}</div></div><button class="btn-icon" title="Apagar" onclick="excluirRecado('${r.id}')" style="color:var(--danger);align-self:flex-start"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></div>`;
+    }).join('') : `<div class="rec-empty">Você ainda não enviou recados.</div>`;
+  }
+}
+function setRecTab(t){ _recTab=t; renderRecadosPanel(); }
+
+async function openNovoRecado(){
+  const me=_recMe();
+  // Se a lista da equipe ainda não chegou (login recém-feito), busca na hora.
+  if(!(state.roster&&state.roster.length) && sb){
+    try{ const { data } = await sb.from('profiles').select('id,nome,role'); if(data){ state.roster=data.map(p=>({id:p.id,nome:p.nome||p.id,role:p.role||'consultora'})); } }catch(e){ console.error('roster',e); }
+  }
+  const people=(state.roster||[]).filter(p=>p.id!==me).slice().sort((a,b)=>String(a.nome).localeCompare(String(b.nome)));
+  const list = people.length ? people.map(p=>`<label class="rec-person"><input type="checkbox" value="${p.id}"><span class="nm">${escapeHtml(p.nome)}</span><span class="rl">${ROLE_LABELS[p.role]||''}</span></label>`).join('') : `<div class="rec-empty">Nenhum outro colaborador encontrado.</div>`;
+  openModal(`<div class="modal-head"><h3>✏️ Novo recado</h3><button class="btn-icon" onclick="openRecadosPanel()">×</button></div><div class="modal-body"><div class="field"><label>Para quem? (pode escolher mais de uma pessoa)</label><div class="rec-people">${list}</div></div><div class="field"><label>Recado / tarefa</label><textarea id="recTexto" rows="4" placeholder="Ex.: Confirmar o voucher do hotel do cliente João até amanhã."></textarea></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="openRecadosPanel()">Voltar</button><button class="btn btn-primary" id="recEnviarBtn" onclick="enviarRecado()">Enviar recado</button></div>`);
+  setTimeout(()=>{ const t=document.getElementById('recTexto'); if(t) t.focus(); },60);
+}
+
+async function enviarRecado(){
+  const texto=(document.getElementById('recTexto').value||'').trim();
+  if(!texto){ toast('Escreva o recado.','warning'); return; }
+  const ids=[...document.querySelectorAll('.rec-people input:checked')].map(c=>c.value);
+  if(!ids.length){ toast('Selecione pelo menos uma pessoa.','warning'); return; }
+  const me=_recMe(), meNome=(state.user&&state.user.name)||'';
+  const rows=ids.map(pid=>({ id:uid(), de_id:me, de_nome:meNome, para_id:pid, para_nome:(state.profilesById[pid]||''), texto:texto, status:'pendente' }));
+  const btn=document.getElementById('recEnviarBtn'); if(btn){ btn.disabled=true; btn.textContent='Enviando…'; }
+  try{
+    const { error } = await sb.from('recados').insert(rows);
+    if(error){ console.error('enviarRecado',error); toast('Não foi possível enviar. Verifique a conexão.','danger'); if(btn){ btn.disabled=false; btn.textContent='Enviar recado'; } return; }
+    toast(`Recado enviado para ${ids.length} pessoa(s).`,'success');
+    await refreshRecados();
+    openRecadosPanel('enviados');
+  }catch(e){ console.error('enviarRecado',e); toast('Não foi possível enviar.','danger'); if(btn){ btn.disabled=false; btn.textContent='Enviar recado'; } }
+}
+
+async function concluirRecado(id){
+  const r=(state.recados||[]).find(x=>x.id===id); if(!r) return;
+  r.status='concluida'; r.concluido_em=new Date().toISOString(); // atualização otimista
+  renderRecadosPanel(); updateRecadosBadge();
+  try{
+    const { data, error } = await sb.from('recados').update({status:'concluida',concluido_em:new Date().toISOString()}).eq('id',id).select();
+    if(error||!data||!data.length){ console.error('concluirRecado',error||'0 linhas'); toast('Não foi possível concluir. Tente de novo.','danger'); await refreshRecados(); renderRecadosPanel(); return; }
+    toast('Tarefa concluída! Quem enviou será avisado.','success');
+  }catch(e){ console.error('concluirRecado',e); await refreshRecados(); renderRecadosPanel(); }
+}
+
+async function excluirRecado(id){
+  if(!confirm('Apagar este recado que você enviou?')) return;
+  try{
+    const { error } = await sb.from('recados').delete().eq('id',id);
+    if(error){ console.error('excluirRecado',error); toast('Não foi possível apagar.','danger'); return; }
+    await refreshRecados(); renderRecadosPanel(); toast('Recado apagado.','info');
+  }catch(e){ console.error('excluirRecado',e); }
 }
 
 function cloudSaveOrcamento(q){
@@ -1193,6 +1389,7 @@ function bindNav(){
   document.querySelectorAll('.nav-item').forEach(el=>{ el.addEventListener('click',()=>setView(el.dataset.view)); });
   document.getElementById('menuToggle').addEventListener('click',()=>{ document.getElementById('sidebar').classList.toggle('is-open'); });
   document.getElementById('changeNameBtn').addEventListener('click',requestNameChange);
+  const recBtn=document.getElementById('recadosBtn'); if(recBtn) recBtn.addEventListener('click',()=>openRecadosPanel());
   document.getElementById('logoutBtn').addEventListener('click',()=>{ if(confirm('Sair e voltar para a tela de acesso?')) logout(); });
   document.getElementById('changeLogoBtn').addEventListener('click',()=>{ requireAdmin('Para trocar a logo da agência, informe a senha de administrador.',()=>{ document.getElementById('logoFileInput').click(); }); });
   document.getElementById('logoFileInput').addEventListener('change',(e)=>handleLogoUpload(e,()=>{ document.getElementById('sidebarLogo').innerHTML=logoHTML(); const active=document.querySelector('.nav-item.active'); if(active) setView(active.dataset.view); }));
