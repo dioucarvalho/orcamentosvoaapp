@@ -914,7 +914,7 @@ async function cloudLoadAll(){
     ]);
 
     state.profilesById={}; state.roster=[];
-    (profsR.data||[]).forEach(p=>{ state.profilesById[p.id]=p.nome||''; state.roster.push({id:p.id,nome:p.nome||p.email||p.id,role:p.role||'consultora'}); });
+    (profsR.data||[]).forEach(p=>{ state.profilesById[p.id]=p.nome||''; state.roster.push({id:p.id,nome:(p.nome||'').trim(),role:p.role||'consultora'}); });
 
     const m=mR.data;
     if(m){ state.metas={ agendamento:Number(m.agendamento)||0, atendimento:Number(m.atendimento)||0, orcamento:Number(m.orcamento)||0, vendas:Number(m.vendas)||0, repiques:Number(m.repiques)||0, vendaMin:Number(m.venda_min)||0 }; }
@@ -1167,15 +1167,18 @@ function renderRecadosPanel(){
 }
 function setRecTab(t){ _recTab=t; renderRecadosPanel(); }
 function recFiltraPessoas(q){ q=(q||'').trim().toLowerCase(); document.querySelectorAll('.rec-people .rec-person').forEach(el=>{ const nm=((el.querySelector('.nm')||{}).textContent||'').toLowerCase(); el.style.display=(!q||nm.indexOf(q)>=0)?'':'none'; }); }
+// Devolve um nome legível. Se o cadastro estiver sem nome (ou só com o código
+// interno do usuário), mostra um aviso em vez de aparecer em branco.
+function recNomeBonito(p){ let n=((p&&p.nome)||'').trim(); if(!n) return '(sem nome — preencher no cadastro)'; if(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-/i.test(n)) return '(sem nome — preencher no cadastro)'; return n; }
 
 async function openNovoRecado(){
   const me=_recMe();
-  // Se a lista da equipe ainda não chegou (login recém-feito), busca na hora.
-  if(!(state.roster&&state.roster.length) && sb){
-    try{ const { data } = await sb.from('profiles').select('id,nome,role'); if(data){ state.roster=data.map(p=>({id:p.id,nome:p.nome||p.id,role:p.role||'consultora'})); } }catch(e){ console.error('roster',e); }
+  // Busca a lista da equipe SEMPRE atualizada ao abrir (evita lista velha em cache).
+  if(sb){
+    try{ const { data } = await sb.from('profiles').select('id,nome,role'); if(data&&data.length){ state.roster=data.map(p=>({id:p.id,nome:(p.nome||'').trim(),role:p.role||'consultora'})); } }catch(e){ console.error('roster',e); }
   }
-  const people=(state.roster||[]).filter(p=>p.id!==me).slice().sort((a,b)=>String(a.nome).localeCompare(String(b.nome)));
-  const list = people.length ? people.map(p=>`<label class="rec-person"><input type="checkbox" value="${p.id}"><span class="rec-info"><span class="nm">${escapeHtml(p.nome)}</span><span class="rl">${ROLE_LABELS[p.role]||''}</span></span></label>`).join('') : `<div class="rec-empty">Nenhum outro colaborador encontrado.</div>`;
+  const people=(state.roster||[]).filter(p=>p.id!==me).slice().sort((a,b)=>String(recNomeBonito(a)).localeCompare(String(recNomeBonito(b))));
+  const list = people.length ? people.map(p=>`<label class="rec-person"><input type="checkbox" value="${p.id}"><span class="rec-info"><span class="nm">${escapeHtml(recNomeBonito(p))}</span><span class="rl">${ROLE_LABELS[p.role]||'Consultor(a)'}</span></span></label>`).join('') : `<div class="rec-empty">Nenhum outro colaborador encontrado.</div>`;
   const busca = people.length>5 ? `<input class="rec-busca" id="recBusca" placeholder="Buscar pessoa pelo nome…" oninput="recFiltraPessoas(this.value)">` : '';
   openModal(`<div class="modal-head"><h3>✏️ Novo recado</h3><button class="btn-icon" onclick="openRecadosPanel()">×</button></div><div class="modal-body"><div class="field"><label>Para quem? (pode escolher mais de uma pessoa)</label>${busca}<div class="rec-people">${list}</div></div><div class="field"><label>Recado / tarefa</label><textarea id="recTexto" rows="4" placeholder="Ex.: Confirmar o voucher do hotel do cliente João até amanhã."></textarea></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="openRecadosPanel()">Voltar</button><button class="btn btn-primary" id="recEnviarBtn" onclick="enviarRecado()">Enviar recado</button></div>`);
   setTimeout(()=>{ const t=document.getElementById('recTexto'); if(t) t.focus(); },60);
