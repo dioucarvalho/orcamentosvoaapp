@@ -1618,7 +1618,15 @@ function ownerNameOf(o){ return o.owner || (o.ownerId? o.ownerId : 'Sem identifi
 
 async function renderAdmin(c){
   const verR$ = adminPodeVerValores();
-  const orcs = Backend.orcamentos();
+  // Privacidade do administrador: só quem é ADMIN vê os dados de um administrador
+  // como colaborador. Para os demais (ex.: gerente), os orçamentos de admins são
+  // ocultados do painel (ranking, vendas do mês, seletor de colaborador, etc.).
+  const _adminIds = new Set((state.roster||[]).filter(p=>p.role==='admin').map(p=>p.id));
+  const _adminNomes = new Set((state.roster||[]).filter(p=>p.role==='admin').map(p=>p.nome));
+  const _ocultarAdmin = currentRole()!=='admin';
+  const _ehDeAdmin = o => _adminIds.has(o.ownerId) || _adminNomes.has(ownerNameOf(o));
+  let orcs = Backend.orcamentos();
+  if(_ocultarAdmin) orcs = orcs.filter(o=>!_ehDeAdmin(o));
   const owners = [...new Set(orcs.map(ownerNameOf))].sort((a,b)=>a.localeCompare(b));
   const mo = adminFilter.month || currentMonth();
   const inMonth = o => monthOf(o.createdAt)===mo;
@@ -1644,6 +1652,7 @@ async function renderAdmin(c){
   Object.keys(Backend.diaExtra()).forEach(key=>{
     const e=state.diaExtra[key]||{}; const iso=key.indexOf('|')>=0?key.split('|')[1]:key; if(monthOf(iso)!==mo) return;
     const oid=e.ownerId||''; const nome=oid?(idToName[oid]||e.owner||oid):(e.owner||(state.user&&state.user.name)||'Sem identificação');
+    if(_ocultarAdmin && (_adminIds.has(oid) || _adminNomes.has(nome))) return; // esconde admin de quem não é admin
     if(adminFilter.owner && nome!==adminFilter.owner) return;
     const m=manualByName[nome]||(manualByName[nome]={repiques:0,agendamento:0,atendimento:0});
     m.repiques+=Number(e.repiques||0); m.agendamento+=Number(e.agendamento||0); m.atendimento+=Number(e.atendimento||0);
