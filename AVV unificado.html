@@ -928,7 +928,11 @@ async function cloudLoadAll(){
         const localList=await idbGetAll();
         for(const q of localList){ if(q&&q.id&&tombstones.has(q.id)){ try{ await idbDelete(q.id); }catch(e){} } }
         const cloudIds=new Set(cloudOrcamentos.map(q=>q.id));
-        const missing=localList.filter(q=>q&&q.id&&!cloudIds.has(q.id)&&!_deletedIds.has(q.id)&&!tombstones.has(q.id));
+        // IMPORTANTE: o IndexedDB é compartilhado pelo NAVEGADOR (não por usuário) —
+        // se mais de uma pessoa já logou neste navegador, o cache local pode ter
+        // orçamentos de outra pessoa. Só reconciliamos (mostramos/reenviamos) os que
+        // pertencem ao usuário atualmente logado, para nunca misturar dados entre contas.
+        const missing=localList.filter(q=>q&&q.id&&q.ownerId===state.user.id&&!cloudIds.has(q.id)&&!_deletedIds.has(q.id)&&!tombstones.has(q.id));
         if(missing.length){
           missing.forEach(q=>cloudSaveOrcamento(q));
           cloudOrcamentos=cloudOrcamentos.concat(missing);
