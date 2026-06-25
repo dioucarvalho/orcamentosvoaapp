@@ -121,12 +121,14 @@ a{color:var(--brand-blue);text-decoration:none}
 .rec-item.feito .rec-texto{text-decoration:line-through;color:var(--text-mute)}
 .rec-item.novo{background:rgba(13,42,85,.04);border-radius:10px;padding-left:10px;padding-right:10px}
 .rec-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--brand-red);margin-right:5px;vertical-align:middle}
-.rec-people{display:flex;flex-direction:column;gap:8px;max-height:230px;overflow-y:auto;border:1.5px solid var(--border);border-radius:12px;padding:10px;margin-bottom:6px}
-.rec-person{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;cursor:pointer;transition:background .12s}
+.rec-busca{margin-bottom:8px;padding:9px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;width:100%;outline:none}
+.rec-busca:focus{border-color:var(--brand-blue)}
+.rec-people{display:flex;flex-direction:column;gap:3px;max-height:200px;overflow-y:auto;border:1.5px solid var(--border);border-radius:12px;padding:7px;margin-bottom:6px}
+.rec-person{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;cursor:pointer;transition:background .12s}
 .rec-person:hover{background:var(--surface-alt)}
-.rec-person input{width:18px;height:18px;accent-color:var(--brand-blue);cursor:pointer}
-.rec-person .nm{font-size:14px;font-weight:500;color:var(--text)}
-.rec-person .rl{font-size:11px;color:var(--text-mute)}
+.rec-person input{width:18px;height:18px;flex:none;accent-color:var(--brand-blue);cursor:pointer}
+.rec-person .nm{flex:1;min-width:0;font-size:14px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rec-person .rl{flex:none;font-size:11px;color:var(--text-mute);white-space:nowrap}
 .rec-empty{text-align:center;color:var(--text-mute);font-size:13px;padding:30px 10px}
 
 .content{padding:24px 28px 60px;flex:1}
@@ -1163,6 +1165,7 @@ function renderRecadosPanel(){
   }
 }
 function setRecTab(t){ _recTab=t; renderRecadosPanel(); }
+function recFiltraPessoas(q){ q=(q||'').trim().toLowerCase(); document.querySelectorAll('.rec-people .rec-person').forEach(el=>{ const nm=((el.querySelector('.nm')||{}).textContent||'').toLowerCase(); el.style.display=(!q||nm.indexOf(q)>=0)?'':'none'; }); }
 
 async function openNovoRecado(){
   const me=_recMe();
@@ -1172,7 +1175,8 @@ async function openNovoRecado(){
   }
   const people=(state.roster||[]).filter(p=>p.id!==me).slice().sort((a,b)=>String(a.nome).localeCompare(String(b.nome)));
   const list = people.length ? people.map(p=>`<label class="rec-person"><input type="checkbox" value="${p.id}"><span class="nm">${escapeHtml(p.nome)}</span><span class="rl">${ROLE_LABELS[p.role]||''}</span></label>`).join('') : `<div class="rec-empty">Nenhum outro colaborador encontrado.</div>`;
-  openModal(`<div class="modal-head"><h3>✏️ Novo recado</h3><button class="btn-icon" onclick="openRecadosPanel()">×</button></div><div class="modal-body"><div class="field"><label>Para quem? (pode escolher mais de uma pessoa)</label><div class="rec-people">${list}</div></div><div class="field"><label>Recado / tarefa</label><textarea id="recTexto" rows="4" placeholder="Ex.: Confirmar o voucher do hotel do cliente João até amanhã."></textarea></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="openRecadosPanel()">Voltar</button><button class="btn btn-primary" id="recEnviarBtn" onclick="enviarRecado()">Enviar recado</button></div>`);
+  const busca = people.length>5 ? `<input class="rec-busca" id="recBusca" placeholder="Buscar pessoa pelo nome…" oninput="recFiltraPessoas(this.value)">` : '';
+  openModal(`<div class="modal-head"><h3>✏️ Novo recado</h3><button class="btn-icon" onclick="openRecadosPanel()">×</button></div><div class="modal-body"><div class="field"><label>Para quem? (pode escolher mais de uma pessoa)</label>${busca}<div class="rec-people">${list}</div></div><div class="field"><label>Recado / tarefa</label><textarea id="recTexto" rows="4" placeholder="Ex.: Confirmar o voucher do hotel do cliente João até amanhã."></textarea></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="openRecadosPanel()">Voltar</button><button class="btn btn-primary" id="recEnviarBtn" onclick="enviarRecado()">Enviar recado</button></div>`);
   setTimeout(()=>{ const t=document.getElementById('recTexto'); if(t) t.focus(); },60);
 }
 
