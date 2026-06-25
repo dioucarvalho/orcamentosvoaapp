@@ -3527,6 +3527,41 @@ function ReservationsTable({reservations, onOpen, onNew, onDelete, onUpdate, onI
 }
 
 /* ============================================================
+   CAMPOS DE DATA/HORA EM TEXTO (com máscara automática)
+   Mostram e recebem texto (dd/mm/aaaa e hh:mm) para colar rápido, mas GUARDAM
+   o valor no mesmo formato de antes (data: aaaa-mm-dd; hora: hh:mm) — assim nada
+   no resto do sistema (ex.: "Próximos embarques") muda.
+   ============================================================ */
+function isoToBR(iso){ if(!iso) return ""; const m=String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/); return m? (m[3]+"/"+m[2]+"/"+m[1]) : String(iso); }
+function DateText({value, onChange, className}){
+  const [txt,setTxt]=useState(isoToBR(value));
+  useEffect(()=>{ setTxt(isoToBR(value)); },[value]);
+  function handle(e){
+    const v=e.target.value.replace(/[^\d]/g,"").slice(0,8);
+    let out=v.slice(0,2);
+    if(v.length>=3) out=v.slice(0,2)+"/"+v.slice(2,4);
+    if(v.length>=5) out=v.slice(0,2)+"/"+v.slice(2,4)+"/"+v.slice(4,8);
+    setTxt(out);
+    if(v.length===8){ onChange(v.slice(4,8)+"-"+v.slice(2,4)+"-"+v.slice(0,2)); }
+    else if(v.length===0){ onChange(""); }
+  }
+  return <input type="text" inputMode="numeric" placeholder="dd/mm/aaaa" maxLength={10} className={className} value={txt} onChange={handle}/>;
+}
+function TimeText({value, onChange, className}){
+  const [txt,setTxt]=useState(value||"");
+  useEffect(()=>{ setTxt(value||""); },[value]);
+  function handle(e){
+    const v=e.target.value.replace(/[^\d]/g,"").slice(0,4);
+    let out=v.slice(0,2);
+    if(v.length>=3) out=v.slice(0,2)+":"+v.slice(2,4);
+    setTxt(out);
+    if(v.length===4){ onChange(v.slice(0,2)+":"+v.slice(2,4)); }
+    else if(v.length===0){ onChange(""); }
+  }
+  return <input type="text" inputMode="numeric" placeholder="hh:mm" maxLength={5} className={className} value={txt} onChange={handle}/>;
+}
+
+/* ============================================================
    FORMULÁRIO DE RESERVA (Cadastro/Edição)
    ============================================================ */
 function ReservationForm({initial, onSave, onCancel, existingIds}){
@@ -3612,7 +3647,7 @@ function ReservationForm({initial, onSave, onCancel, existingIds}){
             </div>
             <div className="grid md:grid-cols-2 gap-3">
               <div><label className={labelCls}>Nome completo</label><input className={inputCls} value={p.nome} onChange={e=>setPax(i,"nome",e.target.value)}/></div>
-              <div><label className={labelCls}>Data de nascimento</label><input type="date" className={inputCls} value={p.nascimento} onChange={e=>setPax(i,"nascimento",e.target.value)}/></div>
+              <div><label className={labelCls}>Data de nascimento</label><DateText className={inputCls} value={p.nascimento} onChange={v=>setPax(i,"nascimento",v)}/></div>
               <div><label className={labelCls}>E-mail</label><input type="email" className={inputCls} value={p.email} onChange={e=>setPax(i,"email",e.target.value)}/></div>
               <div><label className={labelCls}>Telefone</label><input className={inputCls} value={p.telefone} onChange={e=>setPax(i,"telefone",e.target.value)}/></div>
             </div>
@@ -3634,10 +3669,10 @@ function ReservationForm({initial, onSave, onCancel, existingIds}){
       <Card className="p-4 space-y-4">
         <h3 className="font-semibold">Voo & logística</h3>
         <div className="grid md:grid-cols-4 gap-3">
-          <div><label className={labelCls}>Data de ida</label><input type="date" className={inputCls} value={f.dataIda} onChange={e=>set("dataIda",e.target.value)}/></div>
-          <div><label className={labelCls}>Hora de ida</label><input type="time" className={inputCls} value={f.horaIda} onChange={e=>set("horaIda",e.target.value)}/></div>
-          <div><label className={labelCls}>Data de volta</label><input type="date" className={inputCls} value={f.dataVolta} onChange={e=>set("dataVolta",e.target.value)}/></div>
-          <div><label className={labelCls}>Hora de volta</label><input type="time" className={inputCls} value={f.horaVolta} onChange={e=>set("horaVolta",e.target.value)}/></div>
+          <div><label className={labelCls}>Data de ida</label><DateText className={inputCls} value={f.dataIda} onChange={v=>set("dataIda",v)}/></div>
+          <div><label className={labelCls}>Hora de ida</label><TimeText className={inputCls} value={f.horaIda} onChange={v=>set("horaIda",v)}/></div>
+          <div><label className={labelCls}>Data de volta</label><DateText className={inputCls} value={f.dataVolta} onChange={v=>set("dataVolta",v)}/></div>
+          <div><label className={labelCls}>Hora de volta</label><TimeText className={inputCls} value={f.horaVolta} onChange={v=>set("horaVolta",v)}/></div>
         </div>
         <div><label className={labelCls}>Dados dos voos (Cia aérea, localizador, horários)</label><textarea className={inputCls} rows="3" value={f.voos} onChange={e=>set("voos",e.target.value)} placeholder="Cia: LATAM | Localizador: ABC123 | GRU 08:30 -> MCO 16:40"/></div>
       </Card>
@@ -3645,8 +3680,8 @@ function ReservationForm({initial, onSave, onCancel, existingIds}){
       <Card className="p-4 space-y-4">
         <h3 className="font-semibold">Pré-embarque & destino</h3>
         <div className="grid md:grid-cols-3 gap-3">
-          <div><label className={labelCls}>Data reunião pré-embarque</label><input type="date" className={inputCls} value={f.preEmbarqueData} onChange={e=>set("preEmbarqueData",e.target.value)}/></div>
-          <div><label className={labelCls}>Hora reunião</label><input type="time" className={inputCls} value={f.preEmbarqueHora} onChange={e=>set("preEmbarqueHora",e.target.value)}/></div>
+          <div><label className={labelCls}>Data reunião pré-embarque</label><DateText className={inputCls} value={f.preEmbarqueData} onChange={v=>set("preEmbarqueData",v)}/></div>
+          <div><label className={labelCls}>Hora reunião</label><TimeText className={inputCls} value={f.preEmbarqueHora} onChange={v=>set("preEmbarqueHora",v)}/></div>
           <div><label className={labelCls}>Destino final</label><input className={inputCls} value={f.destino} onChange={e=>set("destino",e.target.value)} placeholder="Orlando, Estados Unidos"/></div>
         </div>
         <div>
