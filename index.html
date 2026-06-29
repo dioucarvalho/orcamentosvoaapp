@@ -2017,7 +2017,7 @@ const VENDA_CATS = [
 ];
 function vendaCat(id){ return VENDA_CATS.find(c=>c.id===id)||VENDA_CATS[VENDA_CATS.length-1]; }
 let currentVenda=null;
-let vendaSearch='', vendaDateFrom='', vendaDateTo='', vendaMesFiltro='';
+let vendaSearch='', vendaDateFrom='', vendaDateTo='';
 
 // Datas em texto com máscara (dd/mm/aaaa) e conversão para o formato interno.
 function vendaDateMask(el){ const v=el.value.replace(/[^\d]/g,'').slice(0,8); let out=v.slice(0,2); if(v.length>=3) out=v.slice(0,2)+'/'+v.slice(2,4); if(v.length>=5) out=v.slice(0,2)+'/'+v.slice(2,4)+'/'+v.slice(4,8); el.value=out; }
@@ -2070,35 +2070,33 @@ function renderVendasMain(){
   const isGestao=(currentRole()==='admin'||currentRole()==='gerente');
   const vendas=(state.vendas||[]).slice().sort((a,b)=>(b.dataVenda||'').localeCompare(a.dataVenda||''));
   const mo=currentMonth();
-  const escopo=vendaMesFiltro; // '' = todos os meses
-  const base=escopo?vendas.filter(v=>monthOf(v.dataVenda)===escopo):vendas;
+  const temP=!!(vendaDateFrom||vendaDateTo);
+  const base=temP?vendas.filter(v=>{ const d=v.dataVenda||''; if(!d) return false; if(vendaDateFrom&&d<vendaDateFrom) return false; if(vendaDateTo&&d>vendaDateTo) return false; return true; }):vendas;
   const totalBase=base.reduce((s,v)=>s+(Number(v.valorTotal)||0),0);
   const comissaoBase=base.reduce((s,v)=>s+(Number(v.comissaoTotal)||0),0);
   const noMes=vendas.filter(v=>monthOf(v.dataVenda)===mo);
   const comissaoMes=noMes.reduce((s,v)=>s+(Number(v.comissaoTotal)||0),0);
-  const mesesDisp=[...new Set(vendas.map(v=>monthOf(v.dataVenda)).filter(Boolean))].sort().reverse();
-  const mesSel=`<select id="vendaMesSel" onchange="vendaMesFiltro=this.value;renderVendasMain()" style="padding:9px 12px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;outline:none;cursor:pointer"><option value="">Todos os meses</option>${mesesDisp.map(ym=>`<option value="${ym}" ${escopo===ym?'selected':''}>${monthLabelBR(ym)}</option>`).join('')}</select>`;
+  const periodoLabel=(vendaDateFrom&&vendaDateTo)?(fmtDateBR(vendaDateFrom)+' a '+fmtDateBR(vendaDateTo)):vendaDateFrom?('a partir de '+fmtDateBR(vendaDateFrom)):vendaDateTo?('até '+fmtDateBR(vendaDateTo)):'';
   const porCat={}; base.forEach(v=>{ const cat=v.categoria||'outros'; porCat[cat]=(porCat[cat]||0)+(Number(v.valorTotal)||0); });
   const catsComValor=VENDA_CATS.filter(c=>porCat[c.id]>0);
   const legenda=catsComValor.map(c=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0"><span style="width:12px;height:12px;border-radius:3px;background:${c.cor};flex-shrink:0"></span><span style="flex:1;font-size:13px;color:var(--text-soft)">${c.nome}</span><strong style="font-size:13px;color:var(--text)">${fmtBRL(porCat[c.id])}</strong></div>`).join('');
   const graficoHTML = catsComValor.length
     ? `<div style="display:grid;grid-template-columns:minmax(0,260px) 1fr;gap:18px;align-items:center" class="vendas-graf"><div style="position:relative;height:240px"><canvas id="vendasChart"></canvas></div><div>${legenda}</div></div>`
-    : `<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 21H3V3"/><path d="M7 14l4-4 3 3 5-6"/></svg>${escopo?'Nenhuma venda nesse mês.':'Ainda não há vendas lançadas. Clique em "Nova venda" para começar.'}</div>`;
+    : `<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 21H3V3"/><path d="M7 14l4-4 3 3 5-6"/></svg>${temP?'Nenhuma venda no período.':'Ainda não há vendas lançadas. Clique em "Nova venda" para começar.'}</div>`;
   const _dcss="padding:9px 10px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;outline:none;width:118px";
   wrap.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:13px;color:var(--text-mute)">${isGestao?'Visão de todas as consultoras':'Suas vendas'}</span><span style="font-size:13px;font-weight:600;color:var(--text-soft);margin-left:6px">Ver mês:</span>${mesSel}</div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:13px;color:var(--text-mute);margin-right:4px">${isGestao?'Visão de todas as consultoras':'Suas vendas'}</span><span style="font-size:13px;font-weight:600;color:var(--text-soft)">Período — De</span><input inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="${_isoToBR(vendaDateFrom)}" oninput="vendaDateMask(this)" onchange="vendaDateFrom=_brToISO(this.value);renderVendasMain()" style="${_dcss}"><span style="font-size:13px;font-weight:600;color:var(--text-soft)">Até</span><input inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="${_isoToBR(vendaDateTo)}" oninput="vendaDateMask(this)" onchange="vendaDateTo=_brToISO(this.value);renderVendasMain()" style="${_dcss}">${temP?`<button title="Limpar período" onclick="vendaDateFrom='';vendaDateTo='';renderVendasMain()" style="background:none;border:none;color:var(--text-mute);font-size:18px;cursor:pointer;line-height:1">×</button>`:''}</div>
       <button class="btn btn-primary" onclick="openVendaForm()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nova venda</button>
     </div>
     <div class="stat-grid" style="margin-bottom:18px">
-      <div class="stat-card green"><div class="stat-label">${escopo?('Total vendido em '+monthLabelBR(escopo)):'Total vendido pela agência'}</div><div class="stat-value" style="font-size:22px">${fmtBRL(totalBase)}</div><div class="stat-sub">${escopo?(base.length+' venda(s) no mês'):(vendas.length+' venda(s) no total')}</div></div>
-      <div class="stat-card blue"><div class="stat-label">Vendas ${escopo?'no mês':'fechadas no mês'}</div><div class="stat-value">${fmtNum(escopo?base.length:noMes.length)}</div><div class="stat-sub">${monthLabelBR(escopo||mo)}</div></div>
-      <div class="stat-card amber"><div class="stat-label">Comissão no mês</div><div class="stat-value" style="font-size:22px">${fmtBRL(escopo?comissaoBase:comissaoMes)}</div><div class="stat-sub">${escopo?monthLabelBR(escopo):'soma das comissões'}</div></div>
+      <div class="stat-card green"><div class="stat-label">${temP?'Total vendido no período':'Total vendido pela agência'}</div><div class="stat-value" style="font-size:22px">${fmtBRL(totalBase)}</div><div class="stat-sub">${temP?(base.length+' venda(s) no período'):(vendas.length+' venda(s) no total')}</div></div>
+      <div class="stat-card blue"><div class="stat-label">Vendas ${temP?'no período':'fechadas no mês'}</div><div class="stat-value">${fmtNum(temP?base.length:noMes.length)}</div><div class="stat-sub">${temP?periodoLabel:monthLabelBR(mo)}</div></div>
+      <div class="stat-card amber"><div class="stat-label">Comissão ${temP?'no período':'no mês'}</div><div class="stat-value" style="font-size:22px">${fmtBRL(temP?comissaoBase:comissaoMes)}</div><div class="stat-sub">${temP?periodoLabel:'soma das comissões'}</div></div>
     </div>
-    <div class="card" style="margin-bottom:18px"><div class="card-header"><h3 class="card-title">Quanto a agência vendeu por categoria</h3><span class="badge neutral">${escopo?monthLabelBR(escopo):'total geral'}</span></div>${graficoHTML}</div>
+    <div class="card" style="margin-bottom:18px"><div class="card-header"><h3 class="card-title">Quanto a agência vendeu por categoria</h3><span class="badge neutral">${temP?'no período':'total geral'}</span></div>${graficoHTML}</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center">
-      <div style="position:relative;flex:1;min-width:220px;max-width:380px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-mute)"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="vendaSearchInput" placeholder="Buscar por nome do passageiro ou nº da reserva..." value="${escapeHtml(vendaSearch)}" oninput="vendaSearch=this.value;renderVendaTable()" style="width:100%;padding:10px 12px 10px 36px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;outline:none"></div>
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:12px;font-weight:600;color:var(--text-soft)">Buscar vendas por data de lançamento:</span><span style="font-size:12px;font-weight:600;color:var(--text-soft)">De</span><input inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="${_isoToBR(vendaDateFrom)}" oninput="vendaDateFilter(this,'from')" style="${_dcss}"><span style="font-size:12px;font-weight:600;color:var(--text-soft)">Até</span><input inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="${_isoToBR(vendaDateTo)}" oninput="vendaDateFilter(this,'to')" style="${_dcss}"><button title="Limpar período" onclick="vendaDateFrom='';vendaDateTo='';renderVendasMain()" style="background:none;border:none;color:var(--text-mute);font-size:18px;cursor:pointer;line-height:1">×</button></div>
+      <div style="position:relative;flex:1;min-width:220px;max-width:420px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-mute)"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="vendaSearchInput" placeholder="Buscar por nome do passageiro ou nº da reserva..." value="${escapeHtml(vendaSearch)}" oninput="vendaSearch=this.value;renderVendaTable()" style="width:100%;padding:10px 12px 10px 36px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;outline:none"></div>
     </div>
     <div id="vendaTableWrap"></div>`;
   if(catsComValor.length && window.Chart){
@@ -2114,7 +2112,6 @@ function renderVendaTable(){
   const wrap=document.getElementById('vendaTableWrap'); if(!wrap) return;
   const isGestao=(currentRole()==='admin'||currentRole()==='gerente');
   let list=(state.vendas||[]).slice().sort((a,b)=>(b.dataVenda||'').localeCompare(a.dataVenda||''));
-  if(vendaMesFiltro){ list=list.filter(v=>monthOf(v.dataVenda)===vendaMesFiltro); }
   if(vendaDateFrom||vendaDateTo){ list=list.filter(v=>{ const d=(v.dataVenda||''); if(!d) return false; if(vendaDateFrom&&d<vendaDateFrom) return false; if(vendaDateTo&&d>vendaDateTo) return false; return true; }); }
   const q=(vendaSearch||'').trim().toLowerCase();
   if(q){ list=list.filter(v=> ((v.numReserva||'').toLowerCase().includes(q)) || ((v.id||'').toLowerCase().includes(q)) || ((v.fornecedor||'').toLowerCase().includes(q)) || ((v.destino||'').toLowerCase().includes(q)) || ((v.passageiros||[]).some(p=>(p.nome||'').toLowerCase().includes(q))) ); }
