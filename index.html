@@ -1159,11 +1159,16 @@ async function openRecadosPanel(tab){
   }catch(e){ console.error('marcar recados vistos',e); }
 }
 
+// Auto-limpeza visual: recados CONCLUÍDOS somem da lista alguns dias depois de
+// marcados como realizados (os pendentes nunca somem). Só esconde da tela — o
+// dado continua guardado. Ajuste o número de dias aqui se quiser.
+const RECADO_OCULTAR_DIAS = 7;
+function _recOculto(r){ if(!r||r.status!=='concluida'||!r.concluido_em) return false; const t=new Date(r.concluido_em).getTime(); if(isNaN(t)) return false; return (Date.now()-t) > RECADO_OCULTAR_DIAS*86400000; }
 function renderRecadosPanel(){
   const tabsEl=document.getElementById('recTabs'), bodyEl=document.getElementById('recPanelBody');
   if(!tabsEl||!bodyEl) return;
   const me=_recMe(); const rows=state.recados||[];
-  const receb=rows.filter(r=>r.para_id===me), env=rows.filter(r=>r.de_id===me);
+  const receb=rows.filter(r=>r.para_id===me && !_recOculto(r)), env=rows.filter(r=>r.de_id===me && !_recOculto(r));
   const pendReceb=receb.filter(r=>r.status==='pendente').length;
   const doneEnv=env.filter(r=>r.status==='concluida'&&!r.concluido_visto).length;
   tabsEl.innerHTML=`<button class="rec-tab ${_recTab==='recebidos'?'active':''}" onclick="setRecTab('recebidos')">Recebidos ${pendReceb?`<span class="pill">${pendReceb}</span>`:''}</button>`+
