@@ -2210,7 +2210,7 @@ async function saveVendaForm(){
 }
 function closeVendaForm(){ const fw=document.getElementById('vendaFormWrap'); if(fw) fw.innerHTML=''; currentVenda=null; renderVendasMain(); }
 function editVenda(id){ const v=(state.vendas||[]).find(x=>x.id===id); if(v && !v.preLancada){ requireAdmin('Esta venda já está salva e bloqueada. Para visualizar ou editar, informe a senha do gestor.', ()=>openVendaForm(id)); } else { openVendaForm(id); } }
-function deleteVenda(id){ const v=(state.vendas||[]).find(x=>x.id===id); if(!v) return; const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'esta venda'; if(!confirm('Excluir a venda de "'+tit+'"? Esta ação não pode ser desfeita.')) return; state.vendas=(state.vendas||[]).filter(x=>x.id!==id); renderVendasMain(); cloudDeleteVenda(id).then(ok=>{ toast(ok?'Venda excluída':'Removida deste navegador, mas a nuvem não confirmou.',ok?'success':'warning'); }); }
+function deleteVenda(id){ const v=(state.vendas||[]).find(x=>x.id===id); if(!v) return; const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'esta venda'; requireAdmin('Excluir a venda de "'+tit+'" é uma ação que não pode ser desfeita. Informe a senha do gestor para confirmar.', ()=>{ state.vendas=(state.vendas||[]).filter(x=>x.id!==id); renderVendasMain(); cloudDeleteVenda(id).then(ok=>{ toast(ok?'Venda excluída':'Removida deste navegador, mas a nuvem não confirmou.',ok?'success':'warning'); }); }); }
 
 // INTEGRAÇÃO: quando um orçamento vira "venda fechada", pré-lança a venda aqui
 // (sem duplicar e sem sobrescrever uma venda que já exista para aquele orçamento).
