@@ -2408,7 +2408,7 @@ function renderAgendaEmbarques(){
   if(!agendaEmbFrom && !agendaEmbTo){ wrap.innerHTML=`<div class="empty" style="padding:24px 10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Informe um período (De / Até) para ver os passageiros que estarão viajando.</div>`; return; }
   const from=agendaEmbFrom||'0000-00-00', to=agendaEmbTo||'9999-12-31';
   const isGestao=(currentRole()==='admin'||currentRole()==='gerente');
-  const list=(state.vendas||[]).filter(v=>{ const ini=v.dataInicio||v.dataFim, fim=v.dataFim||v.dataInicio; if(!ini&&!fim) return false; const s=ini||fim, e=fim||ini; return s<=to && e>=from; }).sort((a,b)=>(a.dataInicio||a.dataFim||'').localeCompare(b.dataInicio||b.dataFim||''));
+  const list=(state.vendas||[]).filter(v=>{ const emb=v.dataInicio||v.dataFim; if(!emb) return false; return emb>=from && emb<=to; }).sort((a,b)=>(a.dataInicio||a.dataFim||'').localeCompare(b.dataInicio||b.dataFim||''));
   if(!list.length){ wrap.innerHTML=`<div class="empty" style="padding:24px 10px">Nenhum viajante encontrado para esse período.</div>`; return; }
   const linhas=list.map(v=>{
     const pax=(v.passageiros||[]).map(p=>escapeHtml(p.nome||'')).filter(Boolean);
@@ -2417,7 +2417,7 @@ function renderAgendaEmbarques(){
     const periodo=(ini?fmtDateBR(ini):'—')+(fim&&fim!==ini?(' → '+fmtDateBR(fim)):'');
     return `<tr><td><strong>${paxHTML}</strong></td><td>${escapeHtml(v.numReserva||'—')}</td><td>${escapeHtml(v.fornecedor||'—')}</td><td>${escapeHtml(v.destino||'—')}</td><td>${periodo}</td>${isGestao?`<td>${escapeHtml(v.owner||'—')}</td>`:''}</tr>`;
   }).join('');
-  wrap.innerHTML=`<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Passageiro(s)</th><th>Reserva</th><th>Fornecedor</th><th>Destino</th><th>Embarque → Retorno</th>${isGestao?'<th>Consultor(a)</th>':''}</tr></thead><tbody>${linhas}</tbody></table></div><p style="font-size:12px;color:var(--text-mute);margin:10px 0 0">${list.length} reserva(s) com viagem no período. Origem: vendas lançadas no menu Vendas.</p>`;
+  wrap.innerHTML=`<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Passageiro(s)</th><th>Reserva</th><th>Fornecedor</th><th>Destino</th><th>Embarque → Retorno</th>${isGestao?'<th>Consultor(a)</th>':''}</tr></thead><tbody>${linhas}</tbody></table></div><p style="font-size:12px;color:var(--text-mute);margin:10px 0 0">${list.length} reserva(s) embarcando no período. Origem: vendas lançadas no menu Vendas.</p>`;
 }
 function agendaShift(delta){ agendaCursor.m+=delta; if(agendaCursor.m<0){ agendaCursor.m=11; agendaCursor.y--; } if(agendaCursor.m>11){ agendaCursor.m=0; agendaCursor.y++; } drawAgenda(); }
 function agendaToday(){ const d=new Date(); agendaCursor={y:d.getFullYear(),m:d.getMonth()}; drawAgenda(); }
