@@ -418,6 +418,10 @@ table.tbl th.num{text-align:right}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
         Orçamentos
       </div>
+      <div class="nav-item" data-view="vendas" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        Vendas
+      </div>
       <div class="nav-item" data-view="controle">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
         Controle Diário
@@ -901,14 +905,15 @@ async function cloudLoadAll(){
   try{
     // Busca tudo EM PARALELO (em vez de uma consulta de cada vez) — corta bastante
     // o tempo de carregamento, pois as idas ao servidor acontecem ao mesmo tempo.
-    const [profsR, mR, agR, orcsR, tarsR, diasR, tombR] = await Promise.all([
+    const [profsR, mR, agR, orcsR, tarsR, diasR, tombR, vendasR] = await Promise.all([
       sb.from('profiles').select('id,nome,role'),
       sb.from('metas').select('*').eq('id',1).maybeSingle(),
       sb.from('agencia').select('logo,nome').eq('id',1).maybeSingle(),
       sb.from('orcamentos').select(LITE_ORC_SELECT).order('created_at',{ascending:false}),
       sb.from('tarefas').select('*'),
       sb.from('dia_extra').select('*'),
-      sb.from('orcamentos_excluidos').select('id')
+      sb.from('orcamentos_excluidos').select('id'),
+      sb.from('vendas').select('id,user_id,owner_nome,orcamento_id,data').order('created_at',{ascending:false})
     ]);
 
     state.profilesById={}; state.roster=[];
@@ -991,6 +996,10 @@ async function cloudLoadAll(){
 
     state.diaExtra={};
     (diasR.data||[]).forEach(r=>{ if(_hideAdmin && _admIds.has(r.user_id)) return; const key=r.user_id===state.user.id?r.data:(r.user_id+'|'+r.data); state.diaExtra[key]={ repiques:Number(r.repiques)||0, agendamento:Number(r.agendamento)||0, atendimento:Number(r.atendimento)||0, orcamentoAjuste:Number(r.orcamento_ajuste)||0, vendasAjuste:Number(r.vendas_ajuste)||0, comissaoAjuste:Number(r.comissao_ajuste)||0, ownerId:r.user_id, owner:(state.profilesById[r.user_id])||'' }; });
+
+    // VENDAS — monta a lista (com a mesma privacidade do admin para quem não é admin).
+    state.vendas=((vendasR&&vendasR.data)||[]).map(r=>{ const v=Object.assign({},r.data||{}); v.id=r.id; v.ownerId=r.user_id||v.ownerId||''; v.owner=(r.user_id&&state.profilesById[r.user_id])||r.owner_nome||v.owner||''; v.orcamentoId=r.orcamento_id||v.orcamentoId||''; return v; });
+    if(_hideAdmin && (_admIds.size||_admNomes.size)){ state.vendas=state.vendas.filter(v=>!(_admIds.has(v.ownerId)||_admNomes.has(v.owner))); }
   }catch(e){ console.error('cloudLoadAll',e); toast('Não foi possível carregar os dados da nuvem.','danger'); }
 }
 
@@ -1358,9 +1367,9 @@ async function handleLogoUpload(ev,onDone){
 /* ===== PAPÉIS DE ACESSO (espelham os roles do Supabase: admin/gerente/consultora) ===== */
 const ROLE_LABELS = { consultora:'Consultor(a)', gerente:'Gerente', admin:'Administrador' };
 const ROLE_MENUS = {
-  consultora: ['dashboard','orcamentos','controle','agenda','relatorios'],
-  gerente:    ['administracao','posvenda','voaapp'],
-  admin:      ['dashboard','administracao','orcamentos','controle','agenda','relatorios','posvenda','voaapp','liberarespaco']
+  consultora: ['dashboard','orcamentos','vendas','controle','agenda','relatorios'],
+  gerente:    ['administracao','vendas','posvenda','voaapp'],
+  admin:      ['dashboard','administracao','orcamentos','vendas','controle','agenda','relatorios','posvenda','voaapp','liberarespaco']
 };
 function userSlug(name){ return String(name||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'user'; }
 function currentRole(){ return (state.user&&state.user.role)||'consultora'; }
@@ -1401,7 +1410,7 @@ function requestNameChange(){
 }
 async function confirmNameChange(){ const pass=document.getElementById('adminPass').value; const newName=document.getElementById('newName').value.trim(); if(pass!==ADMIN_PASS){ toast('Senha incorreta','danger'); return; } if(!newName){ toast('Informe um novo nome','warning'); return; } state.user.name=newName; save(STORE.USER,state.user); document.getElementById('userName').textContent=newName; document.getElementById('topUserName').textContent=newName.split(' ')[0]; document.getElementById('userInitial').textContent=newName[0].toUpperCase(); closeModal(); const cloudOk=await cloudSaveNome(newName); toast(cloudOk?'Nome atualizado na nuvem':'Falhou ao confirmar na nuvem. Verifique a conexão e salve de novo.',cloudOk?'success':'warning'); }
 
-const VIEW_META = { administracao:{title:'Administração',sub:'Visão consolidada da equipe e da operação'}, dashboard:{title:'Dashboard',sub:'Visão geral do desempenho'}, orcamentos:{title:'Orçamentos',sub:'Gere, gerencie e acompanhe propostas de viagem'}, controle:{title:'Controle Diário',sub:'Rotina, metas e métricas do mês'}, agenda:{title:'Agenda de Viajantes',sub:'Calendário de embarques e oportunidades de upsell'}, relatorios:{title:'Relatórios',sub:'Exportação consolidada de desempenho em PDF'}, posvenda:{title:'Pós-Venda TZ Viagens',sub:'Painel gerencial de controle de viajantes'}, voaapp:{title:'VOA',sub:'Itinerário de viagem · TZ Viagens'}, liberarespaco:{title:'Liberar espaço',sub:'Apaga apenas fotos e PDFs antigos para liberar espaço na nuvem'} };
+const VIEW_META = { administracao:{title:'Administração',sub:'Visão consolidada da equipe e da operação'}, dashboard:{title:'Dashboard',sub:'Visão geral do desempenho'}, orcamentos:{title:'Orçamentos',sub:'Gere, gerencie e acompanhe propostas de viagem'}, vendas:{title:'Vendas',sub:'Registro financeiro das vendas da agência'}, controle:{title:'Controle Diário',sub:'Rotina, metas e métricas do mês'}, agenda:{title:'Agenda de Viajantes',sub:'Calendário de embarques e oportunidades de upsell'}, relatorios:{title:'Relatórios',sub:'Exportação consolidada de desempenho em PDF'}, posvenda:{title:'Pós-Venda TZ Viagens',sub:'Painel gerencial de controle de viajantes'}, voaapp:{title:'VOA',sub:'Itinerário de viagem · TZ Viagens'}, liberarespaco:{title:'Liberar espaço',sub:'Apaga apenas fotos e PDFs antigos para liberar espaço na nuvem'} };
 function bindNav(){
   document.querySelectorAll('.nav-item').forEach(el=>{ el.addEventListener('click',()=>setView(el.dataset.view)); });
   document.getElementById('menuToggle').addEventListener('click',()=>{ document.getElementById('sidebar').classList.toggle('is-open'); });
@@ -1422,6 +1431,7 @@ function setView(view){
   if(_cloudLoading){ c.innerHTML='<div class="card" style="text-align:center;padding:56px 24px"><div class="empty">Carregando seus dados…</div></div>'; return; } // dados ainda chegando da nuvem
   if(view==='dashboard') renderDashboard(c);
   if(view==='orcamentos') renderOrcamentos(c);
+  if(view==='vendas') renderVendas(c);
   if(view==='controle') renderControle(c);
   if(view==='agenda') renderAgenda(c);
   if(view==='relatorios') renderRelatorios(c);
@@ -1984,6 +1994,228 @@ function parsePeriodo(text){
   return {inicio,fim};
 }
 
+/* ============================================================================
+   MENU VENDAS — registro financeiro das vendas da agência.
+   Infográfico interativo (rosca) por categoria + lista + formulário "Nova venda".
+   Escopo de acesso garantido pela RLS (consultor: só as próprias; gestão: todas).
+   ============================================================================ */
+const VENDA_CATS = [
+  {id:'cruzeiro',    nome:'Cruzeiro',            cor:'#0ea5e9'},
+  {id:'aereo',       nome:'Passagens / Aéreo',   cor:'#6366f1'},
+  {id:'pacote',      nome:'Pacote',              cor:'#e22b2b'},
+  {id:'hotel',       nome:'Hotel / Hospedagem',  cor:'#f59e0b'},
+  {id:'seguro',      nome:'Seguro viagem',       cor:'#16a34a'},
+  {id:'intercambio', nome:'Intercâmbio',         cor:'#8b5cf6'},
+  {id:'passeios',    nome:'Passeios',            cor:'#ec4899'},
+  {id:'traslado',    nome:'Traslado',            cor:'#14b8a6'},
+  {id:'outros',      nome:'Outros',              cor:'#64748b'}
+];
+function vendaCat(id){ return VENDA_CATS.find(c=>c.id===id)||VENDA_CATS[VENDA_CATS.length-1]; }
+let currentVenda=null;
+
+// Datas em texto com máscara (dd/mm/aaaa) e conversão para o formato interno.
+function vendaDateMask(el){ const v=el.value.replace(/[^\d]/g,'').slice(0,8); let out=v.slice(0,2); if(v.length>=3) out=v.slice(0,2)+'/'+v.slice(2,4); if(v.length>=5) out=v.slice(0,2)+'/'+v.slice(2,4)+'/'+v.slice(4,8); el.value=out; }
+function _brToISO(s){ const v=String(s||'').replace(/[^\d]/g,''); if(v.length!==8) return ''; return v.slice(4,8)+'-'+v.slice(2,4)+'-'+v.slice(0,2); }
+
+// ---- Vouchers (PDFs) no Storage (não entram no JSON) ----
+const VENDAS_BUCKET='vendas-docs';
+async function cloudUploadVendaDoc(file){
+  if(!sb||!state.user||!file) return null;
+  try{
+    const safe=String(file.name||'arquivo').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-zA-Z0-9._-]+/g,'_');
+    const path=state.user.id+'/'+Date.now()+'-'+Math.random().toString(36).slice(2,8)+'-'+safe;
+    const { error } = await sb.storage.from(VENDAS_BUCKET).upload(path, file, { contentType:file.type||'application/octet-stream', upsert:false });
+    if(error){ console.error('cloudUploadVendaDoc',error); return null; }
+    return { name:file.name, size:file.size, path:path };
+  }catch(e){ console.error('cloudUploadVendaDoc',e); return null; }
+}
+async function cloudGetVendaDocUrl(path){
+  if(!sb||!path) return null;
+  try{ const { data, error } = await sb.storage.from(VENDAS_BUCKET).createSignedUrl(path, 300); if(error){ console.error(error); return null; } return (data&&data.signedUrl)||null; }catch(e){ console.error(e); return null; }
+}
+async function cloudDeleteVendaDoc(path){
+  if(!sb||!path) return false;
+  try{ const { error } = await sb.storage.from(VENDAS_BUCKET).remove([path]); if(error){ console.error(error); return false; } return true; }catch(e){ console.error(e); return false; }
+}
+
+// ---- Persistência da venda ----
+async function cloudSaveVenda(v){
+  if(!sb||!state.user) return false;
+  try{
+    const payload={ id:v.id, user_id:v.ownerId||state.user.id, owner_nome:v.owner||state.user.name, orcamento_id:v.orcamentoId||null, data:v };
+    const { data, error } = await sb.from('vendas').upsert(payload).select();
+    if(error){ console.error('cloudSaveVenda',error); return false; }
+    return !!(data&&data.length);
+  }catch(e){ console.error('cloudSaveVenda',e); return false; }
+}
+async function cloudDeleteVenda(id){
+  if(!sb) return false;
+  try{ const { data, error } = await sb.from('vendas').delete().eq('id',id).select(); if(error){ console.error(error); return false; } return !!(data&&data.length); }catch(e){ console.error(e); return false; }
+}
+
+function blankVenda(){ return { id:'v'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), ownerId:(state.user&&state.user.id)||'', owner:(state.user&&state.user.name)||'', orcamentoId:'', dataVenda:todayISO(), categoria:'', fornecedor:'', ambito:'nacional', dataInicio:'', dataFim:'', origem:'', destino:'', numReserva:'', valorTotal:'', passageiros:[{nome:'',nascimento:''}], titularContato:'', vouchers:[], comissaoAgencia:'', comissaoFornecedor:'', comissaoTotal:'', dataRecebFornecedor:'', observacoes:'', preLancada:false, createdAt:localNowISO() }; }
+
+function renderVendas(c){ c.innerHTML=`<div id="vendaFormWrap"></div><div id="vendaMainWrap"></div>`; renderVendasMain(); }
+
+function renderVendasMain(){
+  const wrap=document.getElementById('vendaMainWrap'); if(!wrap) return;
+  const fw=document.getElementById('vendaFormWrap'); if(fw) fw.innerHTML='';
+  wrap.style.display='';
+  const isGestao=(currentRole()==='admin'||currentRole()==='gerente');
+  const vendas=(state.vendas||[]).slice().sort((a,b)=>(b.dataVenda||'').localeCompare(a.dataVenda||''));
+  const mo=currentMonth();
+  const totalGeral=vendas.reduce((s,v)=>s+(Number(v.valorTotal)||0),0);
+  const noMes=vendas.filter(v=>monthOf(v.dataVenda)===mo);
+  const comissaoMes=noMes.reduce((s,v)=>s+(Number(v.comissaoTotal)||0),0);
+  const porCat={}; vendas.forEach(v=>{ const cat=v.categoria||'outros'; porCat[cat]=(porCat[cat]||0)+(Number(v.valorTotal)||0); });
+  const catsComValor=VENDA_CATS.filter(c=>porCat[c.id]>0);
+  const legenda=catsComValor.map(c=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0"><span style="width:12px;height:12px;border-radius:3px;background:${c.cor};flex-shrink:0"></span><span style="flex:1;font-size:13px;color:var(--text-soft)">${c.nome}</span><strong style="font-size:13px;color:var(--text)">${fmtBRL(porCat[c.id])}</strong></div>`).join('');
+  const graficoHTML = catsComValor.length
+    ? `<div style="display:grid;grid-template-columns:minmax(0,260px) 1fr;gap:18px;align-items:center" class="vendas-graf"><div style="position:relative;height:240px"><canvas id="vendasChart"></canvas></div><div>${legenda}</div></div>`
+    : `<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 21H3V3"/><path d="M7 14l4-4 3 3 5-6"/></svg>Ainda não há vendas lançadas. Clique em "Nova venda" para começar.</div>`;
+  const linhas = vendas.map(v=>{
+    const cat=vendaCat(v.categoria); const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'—';
+    const status=v.preLancada?`<span class="badge warning">Pré-lançada</span>`:`<span class="badge success">Lançada</span>`;
+    return `<tr><td>${v.dataVenda?fmtDateBR(v.dataVenda):'—'}</td><td><strong>${escapeHtml(tit)}</strong></td><td><span class="badge neutral" style="background:${cat.cor}22;color:${cat.cor};border:none">${cat.nome}</span></td><td>${escapeHtml(v.fornecedor||'—')}</td>${isGestao?`<td>${escapeHtml(v.owner||'—')}</td>`:''}<td>${escapeHtml(v.destino||'—')}</td><td class="num">${v.valorTotal?fmtBRL(v.valorTotal):'—'}</td><td class="num">${v.comissaoTotal?fmtBRL(v.comissaoTotal):'—'}</td><td>${status}</td><td class="num"><button class="btn-icon" title="Editar/completar" onclick="editVenda('${v.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="btn-icon" title="Excluir" onclick="deleteVenda('${v.id}')" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></td></tr>`;
+  }).join('');
+  wrap.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px">
+      <div style="font-size:13px;color:var(--text-mute)">${isGestao?'Visão de todas as consultoras':'Suas vendas'}</div>
+      <button class="btn btn-primary" onclick="openVendaForm()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nova venda</button>
+    </div>
+    <div class="stat-grid" style="margin-bottom:18px">
+      <div class="stat-card green"><div class="stat-label">Total vendido pela agência</div><div class="stat-value" style="font-size:22px">${fmtBRL(totalGeral)}</div><div class="stat-sub">${vendas.length} venda(s) no total</div></div>
+      <div class="stat-card blue"><div class="stat-label">Vendas fechadas no mês</div><div class="stat-value">${fmtNum(noMes.length)}</div><div class="stat-sub">${monthLabelBR(mo)}</div></div>
+      <div class="stat-card amber"><div class="stat-label">Comissão no mês</div><div class="stat-value" style="font-size:22px">${fmtBRL(comissaoMes)}</div><div class="stat-sub">soma das comissões</div></div>
+    </div>
+    <div class="card" style="margin-bottom:18px"><div class="card-header"><h3 class="card-title">Quanto a agência vendeu por categoria</h3><span class="badge neutral">total geral</span></div>${graficoHTML}</div>
+    <div class="card"><div class="card-header"><h3 class="card-title">Vendas registradas</h3><span class="badge neutral">${vendas.length}</span></div>${vendas.length===0?`<div class="empty">Nenhuma venda ainda.</div>`:`<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Data</th><th>Titular</th><th>Categoria</th><th>Fornecedor</th>${isGestao?'<th>Consultor(a)</th>':''}<th>Destino</th><th class="num">Valor total</th><th class="num">Comissão</th><th>Status</th><th class="num">Ações</th></tr></thead><tbody>${linhas}</tbody></table></div>`}</div>`;
+  if(catsComValor.length && window.Chart){
+    const ctx=document.getElementById('vendasChart');
+    if(ctx){ if(window._vendasChart&&typeof window._vendasChart.destroy==='function') window._vendasChart.destroy();
+      window._vendasChart=new Chart(ctx,{type:'doughnut',data:{labels:catsComValor.map(c=>c.nome),datasets:[{data:catsComValor.map(c=>porCat[c.id]),backgroundColor:catsComValor.map(c=>c.cor),borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{display:false},tooltip:{callbacks:{label:(ctx)=>' '+ctx.label+': '+fmtBRL(ctx.parsed)}}}}});
+    }
+  }
+}
+function monthLabelBR(ym){ const _m=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro']; const p=String(ym).split('-'); return (_m[Number(p[1])-1]||p[1])+' de '+p[0]; }
+
+function openVendaForm(id){
+  currentVenda = id ? JSON.parse(JSON.stringify((state.vendas||[]).find(v=>v.id===id)||blankVenda())) : blankVenda();
+  if(!currentVenda.passageiros||!currentVenda.passageiros.length) currentVenda.passageiros=[{nome:'',nascimento:''}];
+  const main=document.getElementById('vendaMainWrap'); if(main) main.style.display='none';
+  const fw=document.getElementById('vendaFormWrap'); if(!fw) return;
+  const v=currentVenda;
+  const catOpts=`<option value="">Selecione…</option>`+VENDA_CATS.map(c=>`<option value="${c.id}" ${v.categoria===c.id?'selected':''}>${c.nome}</option>`).join('');
+  fw.innerHTML=`<div class="card">
+    <div class="card-header"><h3 class="card-title">${id?'Editar venda':'Nova venda'}${v.preLancada?' <span class="badge warning" style="vertical-align:middle">pré-lançada do orçamento</span>':''}</h3><div style="display:flex;gap:8px"><button class="btn btn-success btn-sm" onclick="saveVendaForm()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Salvar</button><button class="btn btn-ghost btn-sm" onclick="closeVendaForm()">Cancelar</button></div></div>
+    <h4 style="margin:14px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Dados da venda</h4>
+    <div class="field-row"><div class="field"><label>Data da venda</label><input id="vd_dataVenda" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataVenda)}"></div><div class="field"><label>Categoria</label><select id="vd_categoria">${catOpts}</select></div><div class="field"><label>Fornecedor</label><input id="vd_fornecedor" value="${escapeHtml(v.fornecedor)}"></div></div>
+    <div class="field-row"><div class="field"><label>Âmbito</label><select id="vd_ambito"><option value="nacional" ${v.ambito==='nacional'?'selected':''}>Nacional</option><option value="internacional" ${v.ambito==='internacional'?'selected':''}>Internacional</option></select></div><div class="field"><label>Valor total da venda (R$)</label><input id="vd_valorTotal" type="number" step="0.01" placeholder="0,00" value="${v.valorTotal||''}"></div><div class="field"><label>Número da reserva</label><input id="vd_numReserva" value="${escapeHtml(v.numReserva)}"></div></div>
+    <h4 style="margin:18px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Viagem</h4>
+    <div class="field-row"><div class="field"><label>Início da viagem</label><input id="vd_dataInicio" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataInicio)}"></div><div class="field"><label>Fim da viagem</label><input id="vd_dataFim" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataFim)}"></div></div>
+    <div class="field-row"><div class="field"><label>Origem</label><input id="vd_origem" value="${escapeHtml(v.origem)}"></div><div class="field"><label>Destino</label><input id="vd_destino" value="${escapeHtml(v.destino)}"></div></div>
+    <h4 style="margin:18px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Passageiros</h4>
+    <div id="vd_paxWrap"></div>
+    <button class="btn btn-ghost btn-sm" onclick="vendaAddPax()">+ Adicionar passageiro</button>
+    <div class="field" style="margin-top:14px;max-width:340px"><label>Contato do passageiro titular</label><input id="vd_titularContato" placeholder="Telefone / WhatsApp" value="${escapeHtml(v.titularContato)}"></div>
+    <h4 style="margin:18px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Vouchers da reserva (PDF)</h4>
+    <input type="file" id="vd_voucherInput" multiple accept=".pdf,image/*" onchange="vendaPickVouchers(this)" style="font-size:13px">
+    <span id="vd_voucherStatus" style="font-size:12px;color:var(--warning);margin-left:8px"></span>
+    <div id="vd_vouchersWrap" style="margin-top:8px"></div>
+    <h4 style="margin:18px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Comissões</h4>
+    <div class="field-row"><div class="field"><label>Comissão recebida na agência (R$)</label><input id="vd_comAgencia" type="number" step="0.01" placeholder="0,00" value="${v.comissaoAgencia||''}" oninput="vendaUpdateComissaoTotal()"></div><div class="field"><label>Comissão a receber no fornecedor (R$)</label><input id="vd_comForn" type="number" step="0.01" placeholder="0,00" value="${v.comissaoFornecedor||''}" oninput="vendaUpdateComissaoTotal()"></div></div>
+    <div class="field-row"><div class="field"><label>Data prevista de recebimento (fornecedor)</label><input id="vd_dataRecebForn" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataRecebFornecedor)}"></div><div class="field"><label>Comissão total da venda (R$)</label><input id="vd_comTotal" type="number" step="0.01" placeholder="0,00" value="${v.comissaoTotal||''}" readonly style="background:var(--surface-alt)"></div></div>
+    <h4 style="margin:18px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Observações</h4>
+    <div class="field"><textarea id="vd_observacoes" placeholder="Informações relevantes desta reserva">${escapeHtml(v.observacoes)}</textarea></div>
+  </div>`;
+  renderVendaPax(); renderVendaVouchers(); vendaUpdateComissaoTotal();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function renderVendaPax(){
+  const wrap=document.getElementById('vd_paxWrap'); if(!wrap) return;
+  wrap.innerHTML=(currentVenda.passageiros||[]).map((p,i)=>`<div class="vd-pax-row field-row" style="align-items:flex-end"><div class="field"><label>Nome completo do passageiro ${i+1}</label><input class="vd-pax-nome" value="${escapeHtml(p.nome||'')}"></div><div class="field" style="max-width:160px"><label>Nascimento</label><input class="vd-pax-nasc" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(p.nascimento)}"></div>${(currentVenda.passageiros.length>1)?`<button class="btn-icon" title="Remover" onclick="vendaRemovePax(${i})" style="color:var(--danger);margin-bottom:14px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`:''}</div>`).join('');
+}
+function _vendaReadPax(){ currentVenda.passageiros=[...document.querySelectorAll('#vd_paxWrap .vd-pax-row')].map(row=>({ nome:(row.querySelector('.vd-pax-nome').value||'').trim(), nascimento:_brToISO(row.querySelector('.vd-pax-nasc').value) })); if(!currentVenda.passageiros.length) currentVenda.passageiros=[{nome:'',nascimento:''}]; }
+function vendaAddPax(){ _vendaReadPax(); currentVenda.passageiros.push({nome:'',nascimento:''}); renderVendaPax(); }
+function vendaRemovePax(i){ _vendaReadPax(); currentVenda.passageiros.splice(i,1); if(!currentVenda.passageiros.length) currentVenda.passageiros=[{nome:'',nascimento:''}]; renderVendaPax(); }
+
+async function vendaPickVouchers(input){
+  const files=[...(input.files||[])]; if(!files.length) return;
+  const st=document.getElementById('vd_voucherStatus'); if(st) st.textContent='⏳ Enviando…';
+  for(const f of files){ const doc=await cloudUploadVendaDoc(f); if(doc){ currentVenda.vouchers=currentVenda.vouchers||[]; currentVenda.vouchers.push(doc); } else { toast('Falha ao enviar '+(f.name||'arquivo'),'danger'); } }
+  if(st) st.textContent=''; input.value=''; renderVendaVouchers();
+}
+function renderVendaVouchers(){
+  const wrap=document.getElementById('vd_vouchersWrap'); if(!wrap) return;
+  const docs=currentVenda.vouchers||[];
+  wrap.innerHTML=docs.length?`<div style="display:flex;flex-wrap:wrap;gap:8px">${docs.map((d,i)=>`<span style="display:inline-flex;align-items:center;gap:8px;font-size:12px;padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--surface-alt)"><button type="button" onclick="openVendaVoucher(${i})" style="background:none;border:none;color:var(--brand-blue);cursor:pointer">📎 ${escapeHtml(d.name||'arquivo')}</button><button type="button" onclick="vendaRemoveVoucher(${i})" title="Remover" style="background:none;border:none;color:var(--text-mute);cursor:pointer">×</button></span>`).join('')}</div>`:`<span style="font-size:12px;color:var(--text-mute)">Nenhum voucher anexado.</span>`;
+}
+async function openVendaVoucher(i){ const d=(currentVenda.vouchers||[])[i]; if(!d||!d.path) return; const url=await cloudGetVendaDocUrl(d.path); if(url) window.open(url,'_blank'); else toast('Não foi possível abrir o voucher.','danger'); }
+async function vendaRemoveVoucher(i){ const d=(currentVenda.vouchers||[])[i]; if(!d) return; if(d.path) cloudDeleteVendaDoc(d.path); currentVenda.vouchers.splice(i,1); renderVendaVouchers(); }
+function vendaUpdateComissaoTotal(){ const a=parseFloat((document.getElementById('vd_comAgencia')||{}).value)||0; const b=parseFloat((document.getElementById('vd_comForn')||{}).value)||0; const t=document.getElementById('vd_comTotal'); if(t) t.value=(a+b)?(a+b).toFixed(2):''; }
+
+function _vendaReadForm(){
+  const g=id=>{ const e=document.getElementById(id); return e?e.value:''; };
+  _vendaReadPax();
+  currentVenda.dataVenda=_brToISO(g('vd_dataVenda'));
+  currentVenda.categoria=g('vd_categoria');
+  currentVenda.fornecedor=g('vd_fornecedor').trim();
+  currentVenda.ambito=g('vd_ambito');
+  currentVenda.valorTotal=parseFloat(g('vd_valorTotal'))||'';
+  currentVenda.numReserva=g('vd_numReserva').trim();
+  currentVenda.dataInicio=_brToISO(g('vd_dataInicio'));
+  currentVenda.dataFim=_brToISO(g('vd_dataFim'));
+  currentVenda.origem=g('vd_origem').trim();
+  currentVenda.destino=g('vd_destino').trim();
+  currentVenda.titularContato=g('vd_titularContato').trim();
+  currentVenda.comissaoAgencia=parseFloat(g('vd_comAgencia'))||'';
+  currentVenda.comissaoFornecedor=parseFloat(g('vd_comForn'))||'';
+  currentVenda.comissaoTotal=parseFloat(g('vd_comTotal'))||'';
+  currentVenda.dataRecebFornecedor=_brToISO(g('vd_dataRecebForn'));
+  currentVenda.observacoes=g('vd_observacoes');
+}
+async function saveVendaForm(){
+  _vendaReadForm();
+  const v=currentVenda;
+  if(!v.categoria && !v.valorTotal && !(v.passageiros[0]&&v.passageiros[0].nome)){ toast('Preencha ao menos a categoria, o valor ou um passageiro.','warning'); return; }
+  v.preLancada=false; // ao salvar manualmente, deixa de ser "pré-lançada"
+  const idx=(state.vendas||[]).findIndex(x=>x.id===v.id);
+  if(idx>=0) state.vendas[idx]=v; else { state.vendas=state.vendas||[]; state.vendas.unshift(v); }
+  closeVendaForm();
+  const ok=await cloudSaveVenda(v);
+  toast(ok?'Venda salva na nuvem':'Venda salva neste navegador, mas a nuvem não confirmou. Verifique a conexão.',ok?'success':'warning');
+}
+function closeVendaForm(){ const fw=document.getElementById('vendaFormWrap'); if(fw) fw.innerHTML=''; currentVenda=null; renderVendasMain(); }
+function editVenda(id){ openVendaForm(id); }
+function deleteVenda(id){ const v=(state.vendas||[]).find(x=>x.id===id); if(!v) return; const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'esta venda'; if(!confirm('Excluir a venda de "'+tit+'"? Esta ação não pode ser desfeita.')) return; state.vendas=(state.vendas||[]).filter(x=>x.id!==id); renderVendasMain(); cloudDeleteVenda(id).then(ok=>{ toast(ok?'Venda excluída':'Removida deste navegador, mas a nuvem não confirmou.',ok?'success':'warning'); }); }
+
+// INTEGRAÇÃO: quando um orçamento vira "venda fechada", pré-lança a venda aqui
+// (sem duplicar e sem sobrescrever uma venda que já exista para aquele orçamento).
+async function prelancarVendaDeOrcamento(o){
+  if(!sb||!o||!o.id) return;
+  try{
+    const { data:exist } = await sb.from('vendas').select('id').eq('orcamento_id',o.id).limit(1);
+    if(exist&&exist.length) return; // já existe — não mexe
+    const v=blankVenda();
+    v.id='v-'+o.id; v.orcamentoId=o.id; v.preLancada=true;
+    v.ownerId=o.ownerId||(state.user&&state.user.id)||''; v.owner=ownerNameOf(o)||'';
+    v.dataVenda=(o.closedAt||'').slice(0,10)||todayISO();
+    v.fornecedor=(o.venda&&o.venda.fornecedor)||'';
+    v.numReserva=(o.venda&&o.venda.idReserva)||'';
+    v.destino=(o.destino&&o.destino.titulo)||'';
+    const d0=(o.datas&&o.datas[0])||{}; v.dataInicio=d0.inicio||''; v.dataFim=d0.fim||'';
+    v.valorTotal=(o.investimento&&o.investimento.valor)||'';
+    v.comissaoAgencia=(o.venda&&o.venda.comissaoAgencia)||'';
+    v.comissaoFornecedor=(o.venda&&o.venda.comissaoFornecedor)||'';
+    v.comissaoTotal=o.comissao||'';
+    const tit=(o.venda&&o.venda.titular)||(o.cliente&&o.cliente.nome)||'';
+    v.passageiros=[{nome:tit,nascimento:''}];
+    v.titularContato=(o.cliente&&o.cliente.telefone)||'';
+    await cloudSaveVenda(v);
+    if(Array.isArray(state.vendas)){ const i=state.vendas.findIndex(x=>x.id===v.id); if(i>=0) state.vendas[i]=v; else state.vendas.unshift(v); }
+  }catch(e){ console.error('prelancarVendaDeOrcamento',e); }
+}
+
 // Converte data interna (aaaa-mm-dd) para exibição em texto (dd/mm/aaaa).
 function _isoToBR(iso){ if(!iso) return ''; const m=String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/); return m?(m[3]+'/'+m[2]+'/'+m[1]):''; }
 // Máscara dos campos De/Até: digita/cola números e o "/" entra sozinho. Guarda o
@@ -2081,7 +2313,7 @@ function deleteQuote(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) re
 
 function openStatusModal(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) return; if(o.status==='fechado'){ requireAdmin('Esta venda já foi efetivada e está bloqueada. Informe a senha de administrador para visualizar ou editar os dados da venda.', ()=>_openStatusModal(id)); return; } _openStatusModal(id); }
 function _openStatusModal(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) return; openModal(`<div class="modal-head"><h3>Atualizar status do orçamento</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><p style="font-size:13px;color:var(--text-soft);margin:0 0 14px"><strong>${escapeHtml(o.cliente?.nome||'')}</strong> · ${escapeHtml(o.destino?.titulo||'')}</p><div class="field"><label>Status</label><select id="st_status"><option value="aberto" ${o.status==='aberto'?'selected':''}>Em aberto</option><option value="fechado" ${o.status==='fechado'?'selected':''}>Fechada</option><option value="perdido" ${o.status==='perdido'?'selected':''}>Perdida</option></select></div><div id="st_extra"></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveStatus('${id}')">Salvar</button></div>`); const sel=document.getElementById('st_status'); const renderExtra=()=>{ const val=sel.value; const extra=document.getElementById('st_extra'); if(val==='fechado'){ const v=o.venda||{}; extra.innerHTML=`<div style="background:var(--surface-alt);border:1px solid var(--border);border-radius:10px;padding:14px;margin-top:6px"><p style="font-size:12px;font-weight:700;color:var(--brand-blue);margin:0 0 10px;text-transform:uppercase;letter-spacing:.04em">✓ Checklist da venda efetivada</p><div class="field"><label>Data de fechamento</label><input id="st_dataFechamento" type="date" value="${v.dataFechamento||todayISO()}"></div><div class="field"><label>Fornecedor</label><input id="st_fornecedor" placeholder="Insira a operadora" value="${escapeHtml(v.fornecedor||'')}"></div><div class="field"><label>ID da reserva</label><input id="st_idReserva" placeholder="Localizador / código da reserva" value="${escapeHtml(v.idReserva||'')}"></div><div class="field"><label>Nome do passageiro titular</label><input id="st_titular" placeholder="Nome completo do titular" value="${escapeHtml(v.titular||'')}"></div><div class="field-row"><div class="field"><label>Comissão na agência (R$)</label><input id="st_comissao" type="number" step="0.01" placeholder="0,00" value="${v.comissaoAgencia||''}"></div><div class="field"><label>Comissão no fornecedor (R$)</label><input id="st_comFornecedor" type="number" step="0.01" placeholder="0,00" value="${v.comissaoFornecedor||''}"></div></div><p style="font-size:11px;color:var(--text-mute);margin:2px 0 0">A comissão registrada no histórico será a <strong>soma</strong> da comissão na agência + comissão no fornecedor. Estes dados aparecerão no relatório "Vendas do mês" para conferência com a operadora.</p></div>`; } else if(val==='perdido'){ extra.innerHTML=`<div class="field"><label>Motivo da perda</label><textarea id="st_motivo" placeholder="Descreva por que a venda foi perdida">${escapeHtml(o.motivoPerda||'')}</textarea></div>`; } else { extra.innerHTML=''; } }; sel.addEventListener('change',renderExtra); renderExtra(); }
-async function saveStatus(id){ let o=state.orcamentos.find(x=>x.id===id); if(!o) return; o=await ensureFullOrcamento(id); if(!o) return; const newStatus=document.getElementById('st_status').value; if(newStatus==='fechado'){ const fornecedor=document.getElementById('st_fornecedor').value.trim(); const idReserva=document.getElementById('st_idReserva').value.trim(); const titular=document.getElementById('st_titular').value.trim(); if(!fornecedor||!idReserva||!titular){ toast('Preencha Fornecedor, ID da reserva e Nome do titular para confirmar a venda','warning'); return; } o.status=newStatus; const dataFech=document.getElementById('st_dataFechamento').value||todayISO(); o.closedAt=dataFech; const comAg=parseFloat(document.getElementById('st_comissao').value)||0; const comForn=parseFloat(document.getElementById('st_comFornecedor').value)||0; o.comissao=comAg+comForn; o.venda={ dataFechamento:dataFech, fornecedor, idReserva, titular, comissaoAgencia:comAg, comissaoFornecedor:comForn }; (o.datas||[]).forEach(d=>{ if(!d.inicio&&d.trecho){ const p=parsePeriodo(d.trecho); if(p.inicio){ d.inicio=p.inicio; if(p.fim&&!d.fim) d.fim=p.fim; } } }); o.motivoPerda=''; } else if(newStatus==='perdido'){ o.status=newStatus; o.closedAt=localNowISO(); o.motivoPerda=document.getElementById('st_motivo').value||''; o.comissao=0; } else { o.status=newStatus; o.comissao=0; o.motivoPerda=''; o.closedAt=null; } persistAll(); closeModal(); renderQuoteList(); const cloudOk=await cloudSaveOrcamento(o); toast(cloudOk?'Status atualizado na nuvem':'Status salvo neste navegador, mas falhou ao confirmar na nuvem. Tentaremos novamente automaticamente.',cloudOk?'success':'warning'); }
+async function saveStatus(id){ let o=state.orcamentos.find(x=>x.id===id); if(!o) return; o=await ensureFullOrcamento(id); if(!o) return; const newStatus=document.getElementById('st_status').value; if(newStatus==='fechado'){ const fornecedor=document.getElementById('st_fornecedor').value.trim(); const idReserva=document.getElementById('st_idReserva').value.trim(); const titular=document.getElementById('st_titular').value.trim(); if(!fornecedor||!idReserva||!titular){ toast('Preencha Fornecedor, ID da reserva e Nome do titular para confirmar a venda','warning'); return; } o.status=newStatus; const dataFech=document.getElementById('st_dataFechamento').value||todayISO(); o.closedAt=dataFech; const comAg=parseFloat(document.getElementById('st_comissao').value)||0; const comForn=parseFloat(document.getElementById('st_comFornecedor').value)||0; o.comissao=comAg+comForn; o.venda={ dataFechamento:dataFech, fornecedor, idReserva, titular, comissaoAgencia:comAg, comissaoFornecedor:comForn }; (o.datas||[]).forEach(d=>{ if(!d.inicio&&d.trecho){ const p=parsePeriodo(d.trecho); if(p.inicio){ d.inicio=p.inicio; if(p.fim&&!d.fim) d.fim=p.fim; } } }); o.motivoPerda=''; } else if(newStatus==='perdido'){ o.status=newStatus; o.closedAt=localNowISO(); o.motivoPerda=document.getElementById('st_motivo').value||''; o.comissao=0; } else { o.status=newStatus; o.comissao=0; o.motivoPerda=''; o.closedAt=null; } persistAll(); closeModal(); renderQuoteList(); const cloudOk=await cloudSaveOrcamento(o); toast(cloudOk?'Status atualizado na nuvem':'Status salvo neste navegador, mas falhou ao confirmar na nuvem. Tentaremos novamente automaticamente.',cloudOk?'success':'warning'); if(o.status==='fechado'){ prelancarVendaDeOrcamento(o).then(()=>{ if(document.querySelector('.nav-item.active')?.dataset.view==='vendas') renderVendasMain(); }); } }
 
 function downloadFile(name,content,mime='application/octet-stream'){ const blob=new Blob([content],{type:mime}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); }
 function exportCurrentJSON(){ readFormIntoQuote(); const name=`orcamento-${(currentQuote.cliente.nome||'cliente').replace(/\s+/g,'_').toLowerCase()}-${todayISO()}.json`; downloadFile(name,JSON.stringify(currentQuote,null,2),'application/json'); toast('Arquivo JSON exportado','success'); }
