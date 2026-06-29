@@ -2209,7 +2209,7 @@ async function saveVendaForm(){
   toast(ok?'Venda salva na nuvem':'Venda salva neste navegador, mas a nuvem não confirmou. Verifique a conexão.',ok?'success':'warning');
 }
 function closeVendaForm(){ const fw=document.getElementById('vendaFormWrap'); if(fw) fw.innerHTML=''; currentVenda=null; renderVendasMain(); }
-function editVenda(id){ openVendaForm(id); }
+function editVenda(id){ const v=(state.vendas||[]).find(x=>x.id===id); if(v && !v.preLancada){ requireAdmin('Esta venda já está salva e bloqueada. Para visualizar ou editar, informe a senha do gestor.', ()=>openVendaForm(id)); } else { openVendaForm(id); } }
 function deleteVenda(id){ const v=(state.vendas||[]).find(x=>x.id===id); if(!v) return; const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'esta venda'; if(!confirm('Excluir a venda de "'+tit+'"? Esta ação não pode ser desfeita.')) return; state.vendas=(state.vendas||[]).filter(x=>x.id!==id); renderVendasMain(); cloudDeleteVenda(id).then(ok=>{ toast(ok?'Venda excluída':'Removida deste navegador, mas a nuvem não confirmou.',ok?'success':'warning'); }); }
 
 // INTEGRAÇÃO: quando um orçamento vira "venda fechada", pré-lança a venda aqui
@@ -2411,7 +2411,7 @@ function renderAgenda(c){
 }
 function agendaEmbDateFilter(el,which){ vendaDateMask(el); const iso=_brToISO(el.value); if(which==='from') agendaEmbFrom=iso; else agendaEmbTo=iso; renderAgendaEmbarques(); }
 // Clicar no nome do viajante na Agenda abre a reserva dele na aba Vendas.
-function irParaVenda(id){ if(!canSee('vendas')){ toast('Você não tem acesso à aba Vendas.','warning'); return; } setView('vendas'); setTimeout(()=>{ if(typeof openVendaForm==='function') openVendaForm(id); }, 120); }
+function irParaVenda(id){ if(!canSee('vendas')){ toast('Você não tem acesso à aba Vendas.','warning'); return; } setView('vendas'); setTimeout(()=>{ if(typeof editVenda==='function') editVenda(id); }, 120); }
 function renderAgendaEmbarques(){
   const wrap=document.getElementById('agendaEmbResult'); if(!wrap) return;
   if(!agendaEmbFrom && !agendaEmbTo){ wrap.innerHTML=`<div class="empty" style="padding:24px 10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Informe um período (De / Até) para ver os passageiros que estarão viajando.</div>`; return; }
