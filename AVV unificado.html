@@ -2017,7 +2017,7 @@ const VENDA_CATS = [
 ];
 function vendaCat(id){ return VENDA_CATS.find(c=>c.id===id)||VENDA_CATS[VENDA_CATS.length-1]; }
 let currentVenda=null;
-let vendaSearch='', vendaDateFrom='', vendaDateTo='';
+let vendaSearch='', vendaDateFrom='', vendaDateTo='', vendaOwnerFiltro='';
 
 // Datas em texto com máscara (dd/mm/aaaa) e conversão para o formato interno.
 function vendaDateMask(el){ const v=el.value.replace(/[^\d]/g,'').slice(0,8); let out=v.slice(0,2); if(v.length>=3) out=v.slice(0,2)+'/'+v.slice(2,4); if(v.length>=5) out=v.slice(0,2)+'/'+v.slice(2,4)+'/'+v.slice(4,8); el.value=out; }
@@ -2068,7 +2068,10 @@ function renderVendasMain(){
   const fw=document.getElementById('vendaFormWrap'); if(fw) fw.innerHTML='';
   wrap.style.display='';
   const isGestao=(currentRole()==='admin'||currentRole()==='gerente');
-  const vendas=(state.vendas||[]).slice().sort((a,b)=>(b.dataVenda||'').localeCompare(a.dataVenda||''));
+  const vendasAll=(state.vendas||[]).slice().sort((a,b)=>(b.dataVenda||'').localeCompare(a.dataVenda||''));
+  const _vOwners=[...new Set(vendasAll.map(v=>v.owner).filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b)));
+  const ownerFiltroHTML = isGestao ? `<span style="font-size:13px;font-weight:600;color:var(--text-soft)">Consultora:</span><select id="vendaOwnerSel" onchange="vendaOwnerFiltro=this.value;renderVendasMain()" style="padding:9px 12px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;outline:none;cursor:pointer"><option value="">Todas</option>${_vOwners.map(n=>`<option value="${escapeHtml(n)}" ${vendaOwnerFiltro===n?'selected':''}>${escapeHtml(n)}</option>`).join('')}</select>` : `<span style="font-size:13px;color:var(--text-mute)">Suas vendas</span>`;
+  const vendas=vendaOwnerFiltro?vendasAll.filter(v=>v.owner===vendaOwnerFiltro):vendasAll;
   const mo=currentMonth();
   const temP=!!(vendaDateFrom||vendaDateTo);
   const base=temP?vendas.filter(v=>{ const d=v.dataVenda||''; if(!d) return false; if(vendaDateFrom&&d<vendaDateFrom) return false; if(vendaDateTo&&d>vendaDateTo) return false; return true; }):vendas;
@@ -2086,7 +2089,7 @@ function renderVendasMain(){
   const _dcss="padding:9px 10px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;outline:none;width:118px";
   wrap.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:13px;color:var(--text-mute);margin-right:4px">${isGestao?'Visão de todas as consultoras':'Suas vendas'}</span><span style="font-size:13px;font-weight:600;color:var(--text-soft)">Período — De</span><input inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="${_isoToBR(vendaDateFrom)}" oninput="vendaDateMask(this)" onchange="vendaDateFrom=_brToISO(this.value);renderVendasMain()" style="${_dcss}"><span style="font-size:13px;font-weight:600;color:var(--text-soft)">Até</span><input inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="${_isoToBR(vendaDateTo)}" oninput="vendaDateMask(this)" onchange="vendaDateTo=_brToISO(this.value);renderVendasMain()" style="${_dcss}">${temP?`<button title="Limpar período" onclick="vendaDateFrom='';vendaDateTo='';renderVendasMain()" style="background:none;border:none;color:var(--text-mute);font-size:18px;cursor:pointer;line-height:1">×</button>`:''}</div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${ownerFiltroHTML}<span style="font-size:13px;font-weight:600;color:var(--text-soft);margin-left:4px">Período — De</span><input inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="${_isoToBR(vendaDateFrom)}" oninput="vendaDateMask(this)" onchange="vendaDateFrom=_brToISO(this.value);renderVendasMain()" style="${_dcss}"><span style="font-size:13px;font-weight:600;color:var(--text-soft)">Até</span><input inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="${_isoToBR(vendaDateTo)}" oninput="vendaDateMask(this)" onchange="vendaDateTo=_brToISO(this.value);renderVendasMain()" style="${_dcss}">${temP?`<button title="Limpar período" onclick="vendaDateFrom='';vendaDateTo='';renderVendasMain()" style="background:none;border:none;color:var(--text-mute);font-size:18px;cursor:pointer;line-height:1">×</button>`:''}</div>
       <button class="btn btn-primary" onclick="openVendaForm()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nova venda</button>
     </div>
     <div class="stat-grid" style="margin-bottom:18px">
@@ -2112,6 +2115,7 @@ function renderVendaTable(){
   const wrap=document.getElementById('vendaTableWrap'); if(!wrap) return;
   const isGestao=(currentRole()==='admin'||currentRole()==='gerente');
   let list=(state.vendas||[]).slice().sort((a,b)=>(b.dataVenda||'').localeCompare(a.dataVenda||''));
+  if(vendaOwnerFiltro){ list=list.filter(v=>v.owner===vendaOwnerFiltro); }
   if(vendaDateFrom||vendaDateTo){ list=list.filter(v=>{ const d=(v.dataVenda||''); if(!d) return false; if(vendaDateFrom&&d<vendaDateFrom) return false; if(vendaDateTo&&d>vendaDateTo) return false; return true; }); }
   const q=(vendaSearch||'').trim().toLowerCase();
   if(q){ list=list.filter(v=> ((v.numReserva||'').toLowerCase().includes(q)) || ((v.id||'').toLowerCase().includes(q)) || ((v.fornecedor||'').toLowerCase().includes(q)) || ((v.destino||'').toLowerCase().includes(q)) || ((v.passageiros||[]).some(p=>(p.nome||'').toLowerCase().includes(q))) ); }
