@@ -2392,7 +2392,33 @@ async function saveMetas(){ state.metas={agendamento:parseFloat(document.getElem
 
 /* ========= AGENDA ========= */
 let agendaCursor=(()=>{ const d=new Date(); return {y:d.getFullYear(),m:d.getMonth()}; })();
-function renderAgenda(c){ c.innerHTML=`<div class="card"><div class="card-header"><div style="display:flex;align-items:center;gap:10px"><button class="btn-icon" onclick="agendaShift(-1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button><h3 class="card-title" id="agendaTitle"></h3><button class="btn-icon" onclick="agendaShift(1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button></div><div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" onclick="addTarefaPrompt()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Adicionar tarefa</button><button class="btn btn-ghost btn-sm" onclick="agendaToday()">Hoje</button></div></div><div id="agendaWrap"></div></div>`; drawAgenda(); }
+let agendaEmbFrom='', agendaEmbTo='';
+function renderAgenda(c){
+  const _ec="padding:9px 10px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;outline:none;width:118px";
+  c.innerHTML=`<div class="card"><div class="card-header"><div style="display:flex;align-items:center;gap:10px"><button class="btn-icon" onclick="agendaShift(-1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button><h3 class="card-title" id="agendaTitle"></h3><button class="btn-icon" onclick="agendaShift(1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button></div><div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" onclick="addTarefaPrompt()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Adicionar tarefa</button><button class="btn btn-ghost btn-sm" onclick="agendaToday()">Hoje</button></div></div><div id="agendaWrap"></div></div>
+  <div class="card" style="margin-top:18px"><div class="card-header"><h3 class="card-title">Quem estará viajando no período</h3><span class="badge neutral">a partir das vendas lançadas</span></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px"><span style="font-size:12px;font-weight:600;color:var(--text-soft)">Embarques de</span><input inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="${_isoToBR(agendaEmbFrom)}" oninput="agendaEmbDateFilter(this,'from')" style="${_ec}"><span style="font-size:12px;font-weight:600;color:var(--text-soft)">até</span><input inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="${_isoToBR(agendaEmbTo)}" oninput="agendaEmbDateFilter(this,'to')" style="${_ec}"><button title="Limpar período" onclick="agendaEmbFrom='';agendaEmbTo='';renderAgenda(document.getElementById('content'))" style="background:none;border:none;color:var(--text-mute);font-size:18px;cursor:pointer;line-height:1">×</button></div>
+    <div id="agendaEmbResult"></div>
+  </div>`;
+  drawAgenda(); renderAgendaEmbarques();
+}
+function agendaEmbDateFilter(el,which){ vendaDateMask(el); const iso=_brToISO(el.value); if(which==='from') agendaEmbFrom=iso; else agendaEmbTo=iso; renderAgendaEmbarques(); }
+function renderAgendaEmbarques(){
+  const wrap=document.getElementById('agendaEmbResult'); if(!wrap) return;
+  if(!agendaEmbFrom && !agendaEmbTo){ wrap.innerHTML=`<div class="empty" style="padding:24px 10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Informe um período (De / Até) para ver os passageiros que estarão viajando.</div>`; return; }
+  const from=agendaEmbFrom||'0000-00-00', to=agendaEmbTo||'9999-12-31';
+  const isGestao=(currentRole()==='admin'||currentRole()==='gerente');
+  const list=(state.vendas||[]).filter(v=>{ const ini=v.dataInicio||v.dataFim, fim=v.dataFim||v.dataInicio; if(!ini&&!fim) return false; const s=ini||fim, e=fim||ini; return s<=to && e>=from; }).sort((a,b)=>(a.dataInicio||a.dataFim||'').localeCompare(b.dataInicio||b.dataFim||''));
+  if(!list.length){ wrap.innerHTML=`<div class="empty" style="padding:24px 10px">Nenhum viajante encontrado para esse período.</div>`; return; }
+  const linhas=list.map(v=>{
+    const pax=(v.passageiros||[]).map(p=>escapeHtml(p.nome||'')).filter(Boolean);
+    const paxHTML=pax.length?pax.join('<br>'):'—';
+    const ini=v.dataInicio||v.dataFim, fim=v.dataFim||v.dataInicio;
+    const periodo=(ini?fmtDateBR(ini):'—')+(fim&&fim!==ini?(' → '+fmtDateBR(fim)):'');
+    return `<tr><td><strong>${paxHTML}</strong></td><td>${escapeHtml(v.numReserva||'—')}</td><td>${escapeHtml(v.fornecedor||'—')}</td><td>${escapeHtml(v.destino||'—')}</td><td>${periodo}</td>${isGestao?`<td>${escapeHtml(v.owner||'—')}</td>`:''}</tr>`;
+  }).join('');
+  wrap.innerHTML=`<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Passageiro(s)</th><th>Reserva</th><th>Fornecedor</th><th>Destino</th><th>Embarque → Retorno</th>${isGestao?'<th>Consultor(a)</th>':''}</tr></thead><tbody>${linhas}</tbody></table></div><p style="font-size:12px;color:var(--text-mute);margin:10px 0 0">${list.length} reserva(s) com viagem no período. Origem: vendas lançadas no menu Vendas.</p>`;
+}
 function agendaShift(delta){ agendaCursor.m+=delta; if(agendaCursor.m<0){ agendaCursor.m=11; agendaCursor.y--; } if(agendaCursor.m>11){ agendaCursor.m=0; agendaCursor.y++; } drawAgenda(); }
 function agendaToday(){ const d=new Date(); agendaCursor={y:d.getFullYear(),m:d.getMonth()}; drawAgenda(); }
 function drawAgenda(){
