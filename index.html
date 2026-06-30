@@ -422,6 +422,10 @@ table.tbl th.num{text-align:right}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         Vendas
       </div>
+      <div class="nav-item" data-view="financeiro" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg>
+        Financeiro
+      </div>
       <div class="nav-item" data-view="controle">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
         Controle Diário
@@ -1374,7 +1378,7 @@ const ROLE_LABELS = { consultora:'Consultor(a)', gerente:'Gerente', admin:'Admin
 const ROLE_MENUS = {
   consultora: ['dashboard','orcamentos','vendas','controle','agenda','relatorios'],
   gerente:    ['administracao','vendas','posvenda','voaapp'],
-  admin:      ['dashboard','administracao','orcamentos','vendas','controle','agenda','relatorios','posvenda','voaapp','liberarespaco']
+  admin:      ['dashboard','administracao','orcamentos','vendas','financeiro','controle','agenda','relatorios','posvenda','voaapp','liberarespaco']
 };
 function userSlug(name){ return String(name||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'user'; }
 function currentRole(){ return (state.user&&state.user.role)||'consultora'; }
@@ -1415,7 +1419,7 @@ function requestNameChange(){
 }
 async function confirmNameChange(){ const pass=document.getElementById('adminPass').value; const newName=document.getElementById('newName').value.trim(); if(pass!==ADMIN_PASS){ toast('Senha incorreta','danger'); return; } if(!newName){ toast('Informe um novo nome','warning'); return; } state.user.name=newName; save(STORE.USER,state.user); document.getElementById('userName').textContent=newName; document.getElementById('topUserName').textContent=newName.split(' ')[0]; document.getElementById('userInitial').textContent=newName[0].toUpperCase(); closeModal(); const cloudOk=await cloudSaveNome(newName); toast(cloudOk?'Nome atualizado na nuvem':'Falhou ao confirmar na nuvem. Verifique a conexão e salve de novo.',cloudOk?'success':'warning'); }
 
-const VIEW_META = { administracao:{title:'Administração',sub:'Visão consolidada da equipe e da operação'}, dashboard:{title:'Dashboard',sub:'Visão geral do desempenho'}, orcamentos:{title:'Orçamentos',sub:'Gere, gerencie e acompanhe propostas de viagem'}, vendas:{title:'Vendas',sub:'Registro financeiro das vendas da agência'}, controle:{title:'Controle Diário',sub:'Rotina, metas e métricas do mês'}, agenda:{title:'Agenda de Viajantes',sub:'Calendário de embarques e oportunidades de upsell'}, relatorios:{title:'Relatórios',sub:'Exportação consolidada de desempenho em PDF'}, posvenda:{title:'Pós-Venda TZ Viagens',sub:'Painel gerencial de controle de viajantes'}, voaapp:{title:'VOA',sub:'Itinerário de viagem · TZ Viagens'}, liberarespaco:{title:'Liberar espaço',sub:'Apaga apenas fotos e PDFs antigos para liberar espaço na nuvem'} };
+const VIEW_META = { administracao:{title:'Administração',sub:'Visão consolidada da equipe e da operação'}, dashboard:{title:'Dashboard',sub:'Visão geral do desempenho'}, orcamentos:{title:'Orçamentos',sub:'Gere, gerencie e acompanhe propostas de viagem'}, vendas:{title:'Vendas',sub:'Registro financeiro das vendas da agência'}, financeiro:{title:'Financeiro',sub:'Contas a pagar, a receber e saldo da agência'}, controle:{title:'Controle Diário',sub:'Rotina, metas e métricas do mês'}, agenda:{title:'Agenda de Viajantes',sub:'Calendário de embarques e oportunidades de upsell'}, relatorios:{title:'Relatórios',sub:'Exportação consolidada de desempenho em PDF'}, posvenda:{title:'Pós-Venda TZ Viagens',sub:'Painel gerencial de controle de viajantes'}, voaapp:{title:'VOA',sub:'Itinerário de viagem · TZ Viagens'}, liberarespaco:{title:'Liberar espaço',sub:'Apaga apenas fotos e PDFs antigos para liberar espaço na nuvem'} };
 function bindNav(){
   document.querySelectorAll('.nav-item').forEach(el=>{ el.addEventListener('click',()=>setView(el.dataset.view)); });
   document.getElementById('menuToggle').addEventListener('click',()=>{ document.getElementById('sidebar').classList.toggle('is-open'); });
@@ -1437,6 +1441,7 @@ function setView(view){
   if(view==='dashboard') renderDashboard(c);
   if(view==='orcamentos') renderOrcamentos(c);
   if(view==='vendas') renderVendas(c);
+  if(view==='financeiro') renderFinanceiro(c);
   if(view==='controle') renderControle(c);
   if(view==='agenda') renderAgenda(c);
   if(view==='relatorios') renderRelatorios(c);
@@ -2274,6 +2279,166 @@ async function importarOrcamentosFechados(){
   renderVendasMain();
   toast(ok+' venda(s) pré-lançada(s) com sucesso! As consultoras já podem completar.',ok?'success':'warning');
 }
+
+/* ============================================================================
+   MENU FINANCEIRO (somente admin) — contas a pagar, a receber, saldo e projeções.
+   Lançamentos ÚNICOS ou RECORRENTES (mensais). Recorrente = 1 registro que gera
+   ocorrências mensais; cada mês pode ser marcado como pago/recebido (mapa "baixas").
+   ============================================================================ */
+const FIN_CAT_PAGAR=['Aluguel','Salários','Fornecedores','Impostos','Marketing','Sistemas/Serviços','Contador','Energia/Água/Internet','Pró-labore','Outros'];
+const FIN_CAT_RECEBER=['Comissão de fornecedor','Pagamento de cliente','Outros'];
+let finTab='pagar';
+function blankFin(tipo){ return { id:'f'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), tipo:tipo||'pagar', descricao:'', categoria:'', valor:'', recorrente:false, vencimento:todayISO(), diaVenc:String(new Date().getDate()), inicioRec:currentMonth(), origem:'', obs:'', pago:false, dataPago:'', baixas:{}, createdAt:localNowISO() }; }
+function monthAdd(ym,n){ let p=String(ym).split('-'); let y=Number(p[0]), m=Number(p[1])+n; while(m<1){ m+=12; y--; } while(m>12){ m-=12; y++; } return y+'-'+String(m).padStart(2,'0'); }
+// Gera as ocorrências de um lançamento dentro da janela [fromYM, toYM].
+function finInstances(item, fromYM, toYM){
+  const out=[];
+  if(item.recorrente){
+    const inicio=item.inicioRec||fromYM;
+    let ym=(fromYM<inicio)?inicio:fromYM;
+    while(ym<=toYM){
+      const p=ym.split('-'); const y=Number(p[0]), m=Number(p[1]);
+      const dd=Math.min(parseInt(item.diaVenc)||1, new Date(y,m,0).getDate());
+      const data=ym+'-'+String(dd).padStart(2,'0');
+      const b=(item.baixas||{})[ym];
+      out.push({ item, mesRef:ym, data, valor:Number((b&&b.valor)||item.valor)||0, feito:!!b, dataFeito:(b&&b.data)||'' });
+      ym=monthAdd(ym,1);
+    }
+  } else {
+    out.push({ item, mesRef:'', data:item.vencimento||'', valor:Number(item.valor)||0, feito:!!item.pago, dataFeito:item.dataPago||'' });
+  }
+  return out;
+}
+
+// ---- Nuvem ----
+async function cloudLoadFinanceiro(){
+  if(!sb) return;
+  try{
+    const { data, error } = await sb.from('financeiro').select('id,tipo,data');
+    if(error){ console.error('cloudLoadFinanceiro',error); return; }
+    const rows=data||[];
+    const saldoRow=rows.find(r=>r.id==='_saldo');
+    state.finSaldo = saldoRow ? (Number(saldoRow.data&&saldoRow.data.valor)||0) : (Number(state.finSaldo)||0);
+    state.financeiro = rows.filter(r=>r.id!=='_saldo' && (r.tipo==='pagar'||r.tipo==='receber')).map(r=>{ const o=Object.assign({},r.data||{}); o.id=r.id; o.tipo=r.tipo; return o; });
+  }catch(e){ console.error('cloudLoadFinanceiro',e); }
+}
+async function cloudSaveFinanceiro(item){
+  if(!sb||!state.user) return false;
+  try{ const { data, error } = await sb.from('financeiro').upsert({ id:item.id, user_id:state.user.id, tipo:item.tipo, data:item }).select(); if(error){ console.error('cloudSaveFinanceiro',error); return false; } return !!(data&&data.length); }catch(e){ console.error('cloudSaveFinanceiro',e); return false; }
+}
+async function cloudDeleteFinanceiro(id){
+  if(!sb) return false;
+  try{ const { data, error } = await sb.from('financeiro').delete().eq('id',id).select(); if(error){ console.error('cloudDeleteFinanceiro',error); return false; } return !!(data&&data.length); }catch(e){ console.error('cloudDeleteFinanceiro',e); return false; }
+}
+
+// ---- Render ----
+async function renderFinanceiro(c){
+  if(currentRole()!=='admin'){ c.innerHTML='<div class="card"><p>Acesso restrito ao administrador.</p></div>'; return; }
+  c.innerHTML='<div class="card" style="text-align:center;padding:48px 24px"><div class="empty">Carregando financeiro…</div></div>';
+  await cloudLoadFinanceiro();
+  renderFinanceiroMain(c);
+}
+function renderFinanceiroMain(c){
+  c=c||document.getElementById('content'); if(!c) return;
+  const itens=(state.financeiro||[]).filter(x=>x.tipo==='pagar'||x.tipo==='receber');
+  const hoje=todayISO();
+  const fromYM=monthAdd(currentMonth(),-6), toYM=monthAdd(currentMonth(),12);
+  const inst=[]; itens.forEach(it=>{ finInstances(it,fromYM,toYM).forEach(x=>inst.push(x)); });
+  const dPlus=n=>{ const d=new Date(); d.setDate(d.getDate()+n); return ymd(d); };
+  const h15=dPlus(15), h30=dPlus(30);
+  const pagarPend=inst.filter(x=>x.item.tipo==='pagar'&&!x.feito).sort((a,b)=>(a.data||'').localeCompare(b.data||''));
+  const receberPend=inst.filter(x=>x.item.tipo==='receber'&&!x.feito).sort((a,b)=>(a.data||'').localeCompare(b.data||''));
+  const feitos=inst.filter(x=>x.feito).sort((a,b)=>(b.dataFeito||'').localeCompare(a.dataFeito||''));
+  const somaAte=(arr,lim)=>arr.filter(x=>x.data&&x.data<=lim).reduce((s,x)=>s+x.valor,0);
+  const entr15=somaAte(receberPend,h15), entr30=somaAte(receberPend,h30);
+  const said15=somaAte(pagarPend,h15), said30=somaAte(pagarPend,h30);
+  const saldo=Number(state.finSaldo)||0; const proj30=saldo+entr30-said30;
+  const _ed=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+  const _tr=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>`;
+  const linhaPend=x=>{ const it=x.item; const atras=x.data&&x.data<hoje; const tp=it.recorrente?`<span class="badge neutral">Mensal · dia ${escapeHtml(String(it.diaVenc||''))}</span>`:`<span class="badge neutral">Única</span>`; return `<tr><td><strong>${escapeHtml(it.descricao||'—')}</strong>${it.origem?`<div style="font-size:11px;color:var(--text-mute)">${escapeHtml(it.origem)}</div>`:''}</td><td>${escapeHtml(it.categoria||'—')}</td><td>${tp}</td><td style="${atras?'color:var(--danger);font-weight:600':''}">${x.data?fmtDateBR(x.data):'—'}${atras?' · vencida':''}</td><td class="num">${fmtBRL(x.valor)}</td><td class="num"><div style="display:inline-flex;gap:4px;align-items:center"><button class="btn btn-success btn-sm" onclick="finBaixar('${it.id}','${x.mesRef||''}')">${it.tipo==='pagar'?'Marcar paga':'Recebido'}</button><button class="btn-icon" title="Editar" onclick="openFinForm('${it.id}')">${_ed}</button><button class="btn-icon" title="Excluir" onclick="finExcluir('${it.id}')" style="color:var(--danger)">${_tr}</button></div></td></tr>`; };
+  const linhaFeita=x=>{ const it=x.item; const bd=it.tipo==='pagar'?`<span class="badge danger">Pago</span>`:`<span class="badge success">Recebido</span>`; return `<tr><td><strong>${escapeHtml(it.descricao||'—')}</strong></td><td>${bd}${it.recorrente?` <span class="badge neutral">${escapeHtml(x.mesRef||'')}</span>`:''}</td><td>${x.dataFeito?fmtDateBR(x.dataFeito):'—'}</td><td class="num">${fmtBRL(x.valor)}</td><td class="num"><div style="display:inline-flex;gap:4px;align-items:center"><button class="btn btn-ghost btn-sm" onclick="finDesfazer('${it.id}','${x.mesRef||''}')">Desfazer</button><button class="btn-icon" title="Excluir" onclick="finExcluir('${it.id}')" style="color:var(--danger)">${_tr}</button></div></td></tr>`; };
+  let body='';
+  if(finTab==='pagar'){
+    body = pagarPend.length ? `<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Descrição</th><th>Categoria</th><th>Tipo</th><th>Vencimento</th><th class="num">Valor</th><th class="num">Ações</th></tr></thead><tbody>${pagarPend.map(linhaPend).join('')}</tbody></table></div>` : `<div class="empty">Nenhuma conta a pagar pendente. 🎉</div>`;
+  } else if(finTab==='receber'){
+    body = `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"><span class="badge success" style="padding:8px 12px;font-size:12px">Entradas previstas · próximos 15 dias: ${fmtBRL(entr15)}</span><span class="badge success" style="padding:8px 12px;font-size:12px">Próximos 30 dias: ${fmtBRL(entr30)}</span></div>`+
+      (receberPend.length ? `<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Descrição</th><th>Origem</th><th>Tipo</th><th>Previsão</th><th class="num">Valor</th><th class="num">Ações</th></tr></thead><tbody>${receberPend.map(x=>{ const it=x.item; const tp=it.recorrente?`<span class="badge neutral">Mensal · dia ${escapeHtml(String(it.diaVenc||''))}</span>`:`<span class="badge neutral">Única</span>`; return `<tr><td><strong>${escapeHtml(it.descricao||'—')}</strong>${it.categoria?`<div style="font-size:11px;color:var(--text-mute)">${escapeHtml(it.categoria)}</div>`:''}</td><td>${escapeHtml(it.origem||'—')}</td><td>${tp}</td><td>${x.data?fmtDateBR(x.data):'—'}</td><td class="num">${fmtBRL(x.valor)}</td><td class="num"><div style="display:inline-flex;gap:4px;align-items:center"><button class="btn btn-success btn-sm" onclick="finBaixar('${it.id}','${x.mesRef||''}')">Recebido</button><button class="btn-icon" title="Editar" onclick="openFinForm('${it.id}')">${_ed}</button><button class="btn-icon" title="Excluir" onclick="finExcluir('${it.id}')" style="color:var(--danger)">${_tr}</button></div></td></tr>`; }).join('')}</tbody></table></div>` : `<div class="empty">Nenhum recebimento previsto pendente.</div>`);
+  } else {
+    body = feitos.length ? `<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Descrição</th><th>Status</th><th>Baixa em</th><th class="num">Valor</th><th class="num">Ações</th></tr></thead><tbody>${feitos.map(linhaFeita).join('')}</tbody></table></div>` : `<div class="empty">Nada no histórico ainda.</div>`;
+  }
+  c.innerHTML=`
+    <div style="display:flex;justify-content:flex-end;margin-bottom:14px"><button class="btn btn-primary" onclick="openFinForm()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Novo lançamento</button></div>
+    <div class="stat-grid" style="margin-bottom:18px">
+      <div class="stat-card blue"><div class="stat-label">Saldo atual em conta</div><div class="stat-value" style="font-size:22px">${fmtBRL(saldo)}</div><div class="stat-sub"><button class="btn btn-ghost btn-sm" style="padding:2px 10px" onclick="finEditarSaldo()">Atualizar saldo</button></div></div>
+      <div class="stat-card red"><div class="stat-label">A pagar (até 30 dias)</div><div class="stat-value" style="font-size:22px">${fmtBRL(said30)}</div><div class="stat-sub">${pagarPend.filter(x=>x.data&&x.data<=h30).length} conta(s)</div></div>
+      <div class="stat-card green"><div class="stat-label">A receber (até 30 dias)</div><div class="stat-value" style="font-size:22px">${fmtBRL(entr30)}</div><div class="stat-sub">${receberPend.filter(x=>x.data&&x.data<=h30).length} lançamento(s)</div></div>
+      <div class="stat-card amber"><div class="stat-label">Saldo projetado (30 dias)</div><div class="stat-value" style="font-size:22px;color:${proj30>=0?'var(--success)':'var(--danger)'}">${fmtBRL(proj30)}</div><div class="stat-sub">saldo + entradas − saídas</div></div>
+    </div>
+    <div class="card">
+      <div class="rec-tabs" style="max-width:560px">
+        <button class="rec-tab ${finTab==='pagar'?'active':''}" onclick="setFinTab('pagar')">A pagar ${pagarPend.length?`<span class="pill">${pagarPend.length}</span>`:''}</button>
+        <button class="rec-tab ${finTab==='receber'?'active':''}" onclick="setFinTab('receber')">A receber ${receberPend.length?`<span class="pill">${receberPend.length}</span>`:''}</button>
+        <button class="rec-tab ${finTab==='historico'?'active':''}" onclick="setFinTab('historico')">Histórico</button>
+      </div>
+      ${body}
+    </div>`;
+}
+function setFinTab(t){ finTab=t; renderFinanceiroMain(); }
+async function finBaixar(id, mesRef){
+  const item=(state.financeiro||[]).find(x=>x.id===id); if(!item) return;
+  const d=todayISO();
+  if(item.recorrente && mesRef){ item.baixas=item.baixas||{}; item.baixas[mesRef]={ data:d, valor:Number(item.valor)||0 }; }
+  else { item.pago=true; item.dataPago=d; }
+  renderFinanceiroMain();
+  const ok=await cloudSaveFinanceiro(item); if(!ok) toast('Salvo localmente, mas a nuvem não confirmou.','warning');
+}
+async function finDesfazer(id, mesRef){
+  const item=(state.financeiro||[]).find(x=>x.id===id); if(!item) return;
+  if(item.recorrente && mesRef){ if(item.baixas) delete item.baixas[mesRef]; }
+  else { item.pago=false; item.dataPago=''; }
+  renderFinanceiroMain();
+  await cloudSaveFinanceiro(item);
+}
+function finExcluir(id){ const it=(state.financeiro||[]).find(x=>x.id===id); if(!it) return; if(!confirm('Excluir o lançamento "'+(it.descricao||'')+'"? Se for recorrente, todas as ocorrências somem.')) return; state.financeiro=(state.financeiro||[]).filter(x=>x.id!==id); renderFinanceiroMain(); cloudDeleteFinanceiro(id).then(ok=>toast(ok?'Lançamento excluído':'Removido localmente, mas a nuvem não confirmou.',ok?'success':'warning')); }
+
+function openFinForm(id){
+  const item = id ? JSON.parse(JSON.stringify((state.financeiro||[]).find(x=>x.id===id)||blankFin('pagar'))) : blankFin('pagar');
+  window._finEdit=item;
+  const cats=[...FIN_CAT_PAGAR, ...FIN_CAT_RECEBER];
+  const inicioBR=item.inicioRec?(item.inicioRec.split('-')[1]+'/'+item.inicioRec.split('-')[0]):'';
+  openModal(`<div class="modal-head"><h3>${id?'Editar lançamento':'Novo lançamento'}</h3><button class="btn-icon" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div class="field-row"><div class="field"><label>Tipo</label><select id="fin_tipo"><option value="pagar" ${item.tipo==='pagar'?'selected':''}>Conta a pagar</option><option value="receber" ${item.tipo==='receber'?'selected':''}>Recebimento (a receber)</option></select></div><div class="field"><label>Valor (R$)</label><input id="fin_valor" type="number" step="0.01" placeholder="0,00" value="${item.valor||''}"></div></div>
+    <div class="field"><label>Descrição</label><input id="fin_desc" placeholder="Ex.: Aluguel da agência" value="${escapeHtml(item.descricao)}"></div>
+    <div class="field-row"><div class="field"><label>Categoria</label><input id="fin_cat" list="finCatList" value="${escapeHtml(item.categoria)}"><datalist id="finCatList">${cats.map(c=>`<option value="${escapeHtml(c)}"></option>`).join('')}</datalist></div><div class="field"><label>Origem (fornecedor / cliente)</label><input id="fin_origem" placeholder="Opcional" value="${escapeHtml(item.origem)}"></div></div>
+    <div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0"><input type="checkbox" id="fin_rec" ${item.recorrente?'checked':''} onchange="finFormRec(this.checked)" style="width:16px;height:16px;accent-color:var(--brand-blue)"> Recorrente (repete todo mês)</label></div>
+    <div id="fin_unicaWrap" class="field" style="${item.recorrente?'display:none':''}"><label>Data de vencimento</label><input id="fin_venc" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(item.vencimento)}"></div>
+    <div id="fin_recWrap" class="field-row" style="${item.recorrente?'':'display:none'}"><div class="field"><label>Dia do vencimento</label><input id="fin_dia" type="number" min="1" max="31" placeholder="1 a 31" value="${item.diaVenc||''}"></div><div class="field"><label>A partir de (mm/aaaa)</label><input id="fin_inicio" inputmode="numeric" placeholder="mm/aaaa" maxlength="7" value="${inicioBR}"></div></div>
+    <div class="field"><label>Observações</label><textarea id="fin_obs">${escapeHtml(item.obs)}</textarea></div>
+  </div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="finSalvarForm('${id||''}')">Salvar</button></div>`);
+}
+function finFormRec(ch){ const u=document.getElementById('fin_unicaWrap'), r=document.getElementById('fin_recWrap'); if(u) u.style.display=ch?'none':''; if(r) r.style.display=ch?'':'none'; }
+async function finSalvarForm(id){
+  const g=i=>{ const e=document.getElementById(i); return e?e.value:''; };
+  const item = id ? (state.financeiro||[]).find(x=>x.id===id) : blankFin('pagar');
+  if(!item) return;
+  item.tipo=g('fin_tipo')||'pagar';
+  item.valor=parseFloat(g('fin_valor'))||'';
+  item.descricao=g('fin_desc').trim();
+  item.categoria=g('fin_cat').trim();
+  item.origem=g('fin_origem').trim();
+  item.obs=g('fin_obs');
+  item.recorrente=document.getElementById('fin_rec').checked;
+  if(item.recorrente){ item.diaVenc=String(Math.min(Math.max(parseInt(g('fin_dia'))||1,1),31)); const iv=g('fin_inicio').replace(/[^\d]/g,''); item.inicioRec=(iv.length>=6)?(iv.slice(2,6)+'-'+iv.slice(0,2)):(item.inicioRec||currentMonth()); }
+  else { item.vencimento=_brToISO(g('fin_venc'))||todayISO(); }
+  if(!item.descricao || !item.valor){ toast('Preencha a descrição e o valor.','warning'); return; }
+  if(!id){ state.financeiro=state.financeiro||[]; state.financeiro.unshift(item); }
+  closeModal(); renderFinanceiroMain();
+  const ok=await cloudSaveFinanceiro(item); toast(ok?'Lançamento salvo':'Salvo localmente, mas a nuvem não confirmou.',ok?'success':'warning');
+}
+function finEditarSaldo(){ openModal(`<div class="modal-head"><h3>Saldo atual em conta</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><p style="font-size:13px;color:var(--text-soft);margin:0 0 12px">Informe o saldo atual disponível na conta da agência. O sistema usa este valor para projetar o saldo futuro.</p><div class="field"><label>Saldo (R$)</label><input id="fin_saldoInput" type="number" step="0.01" value="${Number(state.finSaldo)||''}"></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="finSalvarSaldo()">Salvar</button></div>`); setTimeout(()=>{ const e=document.getElementById('fin_saldoInput'); if(e) e.focus(); },50); }
+async function finSalvarSaldo(){ const v=parseFloat((document.getElementById('fin_saldoInput')||{}).value)||0; state.finSaldo=v; closeModal(); renderFinanceiroMain(); try{ await sb.from('financeiro').upsert({ id:'_saldo', user_id:state.user.id, tipo:'saldo', data:{ valor:v, atualizadoEm:localNowISO() } }); toast('Saldo atualizado','success'); }catch(e){ console.error('finSalvarSaldo',e); toast('Falha ao salvar o saldo.','danger'); } }
 
 // Converte data interna (aaaa-mm-dd) para exibição em texto (dd/mm/aaaa).
 function _isoToBR(iso){ if(!iso) return ''; const m=String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/); return m?(m[3]+'/'+m[2]+'/'+m[1]):''; }
