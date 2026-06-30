@@ -4490,7 +4490,7 @@ function ReservationDetail({res, onUpdate, onBack, onEdit}){
 function App(){
   const [reservations, setReservations] = useState(loadData);
   const [view, setView] = useState({name:"dashboard"}); // dashboard | list | form | detail
-  const [theme, setTheme] = useState(()=>localStorage.getItem(THEME_KEY)||"dark");
+  const [theme, setTheme] = useState("light");
   const [cloudReady, setCloudReady] = useState(false);
   const [syncStatus, setSyncStatus] = useState("idle"); // idle | saving | ok | error
 
@@ -4532,8 +4532,8 @@ function App(){
     return ()=>clearTimeout(t);
   }, [syncStatus, reservations]);
   useEffect(()=>{
-    document.documentElement.classList.toggle("dark", theme==="dark");
-    localStorage.setItem(THEME_KEY, theme);
+    document.documentElement.classList.remove("dark");
+    localStorage.setItem(THEME_KEY, "light");
   }, [theme]);
 
   const openDetail = (id)=> setView({name:"detail", id});
@@ -4575,7 +4575,6 @@ function App(){
             </span>}
             {navBtn("dashboard","Dashboard")}
             {navBtn("list","Reservas")}
-            <button onClick={()=>setTheme(theme==="dark"?"light":"dark")} className="ml-2 px-3 py-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800" title="Alternar tema">{theme==="dark"?"☀️":"🌙"}</button>
           </nav>
         </div>
       </header>
