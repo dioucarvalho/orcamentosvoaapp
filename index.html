@@ -3884,13 +3884,20 @@ function Dashboard({reservations, onOpen}){
       <Card className="p-4">
         <h3 className="font-semibold mb-3">📅 Agenda de reuniões de pré-embarque</h3>
         <div className="space-y-2">
-          {computed.filter(x=>x.r.preEmbarqueData).sort((a,b)=>a.r.preEmbarqueData.localeCompare(b.r.preEmbarqueData)).map(({r,c})=>(
-            <div key={r.id} onClick={()=>onOpen(r.id)} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800 cursor-pointer">
-              <span className="text-sm">{fmtDate(r.preEmbarqueData)} {r.preEmbarqueHora} — {r.passageiros[0]?.nome} ({r.id})</span>
-              <Badge tone={c.preStatus==="Concluído"?"green":c.preStatus==="Atrasado"?"red":"amber"}>{c.preStatus}</Badge>
-            </div>
-          ))}
-          {computed.filter(x=>x.r.preEmbarqueData).length===0 && <p className="text-sm opacity-60">Nenhuma reunião agendada.</p>}
+          {(()=>{
+            const rank=s=>s==="Atrasado"?0:s==="Pendente"?1:2;
+            const lim=new Date(); lim.setDate(lim.getDate()-30);
+            const lista=computed.filter(x=>x.r.preEmbarqueData)
+              .filter(({c,r})=>{ if(c.preStatus!=="Concluído") return true; const d=new Date(r.preEmbarqueData+"T00:00"); return d>=lim; })
+              .sort((a,b)=>{ const ra=rank(a.c.preStatus), rb=rank(b.c.preStatus); if(ra!==rb) return ra-rb; const cmp=a.r.preEmbarqueData.localeCompare(b.r.preEmbarqueData); return ra===2?-cmp:cmp; });
+            if(!lista.length) return <p className="text-sm opacity-60">Nenhuma reunião pendente ou recente.</p>;
+            return lista.map(({r,c})=>(
+              <div key={r.id} onClick={()=>onOpen(r.id)} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800 cursor-pointer">
+                <span className="text-sm">{fmtDate(r.preEmbarqueData)} {r.preEmbarqueHora} — {r.passageiros[0]?.nome} ({r.id})</span>
+                <Badge tone={c.preStatus==="Concluído"?"green":c.preStatus==="Atrasado"?"red":"amber"}>{c.preStatus}</Badge>
+              </div>
+            ));
+          })()}
         </div>
       </Card>
     </div>
