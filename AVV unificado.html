@@ -2288,6 +2288,9 @@ async function importarOrcamentosFechados(){
 const FIN_CAT_PAGAR=['Aluguel','Salários','Fornecedores','Impostos','Marketing','Sistemas/Serviços','Contador','Energia/Água/Internet','Pró-labore','Outros'];
 const FIN_CAT_RECEBER=['Comissão de fornecedor','Pagamento de cliente','Outros'];
 let finTab='pagar';
+let finCursor=(()=>{ const d=new Date(); return {y:d.getFullYear(), m:d.getMonth()}; })();
+function finShift(d){ let m=finCursor.m+d, y=finCursor.y; while(m<0){ m+=12; y--; } while(m>11){ m-=12; y++; } finCursor={y:y,m:m}; renderFinanceiroMain(); }
+function finHoje(){ const d=new Date(); finCursor={y:d.getFullYear(), m:d.getMonth()}; renderFinanceiroMain(); }
 function blankFin(tipo){ return { id:'f'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), tipo:tipo||'pagar', descricao:'', categoria:'', valor:'', recorrente:false, vencimento:todayISO(), diaVenc:String(new Date().getDate()), inicioRec:currentMonth(), origem:'', obs:'', pago:false, dataPago:'', baixas:{}, createdAt:localNowISO() }; }
 function monthAdd(ym,n){ let p=String(ym).split('-'); let y=Number(p[0]), m=Number(p[1])+n; while(m<1){ m+=12; y--; } while(m>12){ m-=12; y++; } return y+'-'+String(m).padStart(2,'0'); }
 // Gera as ocorrências de um lançamento dentro da janela [fromYM, toYM].
@@ -2357,12 +2360,21 @@ function renderFinanceiroMain(c){
   const _tr=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>`;
   const linhaPend=x=>{ const it=x.item; const atras=x.data&&x.data<hoje; const tp=it.recorrente?`<span class="badge neutral">Mensal · dia ${escapeHtml(String(it.diaVenc||''))}</span>`:`<span class="badge neutral">Única</span>`; return `<tr><td><strong>${escapeHtml(it.descricao||'—')}</strong>${it.origem?`<div style="font-size:11px;color:var(--text-mute)">${escapeHtml(it.origem)}</div>`:''}</td><td>${escapeHtml(it.categoria||'—')}</td><td>${tp}</td><td style="${atras?'color:var(--danger);font-weight:600':''}">${x.data?fmtDateBR(x.data):'—'}${atras?' · vencida':''}</td><td class="num">${fmtBRL(x.valor)}</td><td class="num"><div style="display:inline-flex;gap:4px;align-items:center"><button class="btn btn-success btn-sm" onclick="finBaixar('${it.id}','${x.mesRef||''}')">${it.tipo==='pagar'?'Marcar paga':'Recebido'}</button><button class="btn-icon" title="Editar" onclick="openFinForm('${it.id}')">${_ed}</button><button class="btn-icon" title="Excluir" onclick="finExcluir('${it.id}')" style="color:var(--danger)">${_tr}</button></div></td></tr>`; };
   const linhaFeita=x=>{ const it=x.item; const bd=it.tipo==='pagar'?`<span class="badge danger">Pago</span>`:`<span class="badge success">Recebido</span>`; return `<tr><td><strong>${escapeHtml(it.descricao||'—')}</strong></td><td>${bd}${it.recorrente?` <span class="badge neutral">${escapeHtml(x.mesRef||'')}</span>`:''}</td><td>${x.dataFeito?fmtDateBR(x.dataFeito):'—'}</td><td class="num">${fmtBRL(x.valor)}</td><td class="num"><div style="display:inline-flex;gap:4px;align-items:center"><button class="btn btn-ghost btn-sm" onclick="finDesfazer('${it.id}','${x.mesRef||''}')">Desfazer</button><button class="btn-icon" title="Excluir" onclick="finExcluir('${it.id}')" style="color:var(--danger)">${_tr}</button></div></td></tr>`; };
+  const selMonth=finCursor.y+'-'+String(finCursor.m+1).padStart(2,'0');
+  const atrPagar=pagarPend.filter(x=>x.data&&x.data<hoje).length, atrReceber=receberPend.filter(x=>x.data&&x.data<hoje).length;
+  const _nav=`<div style="display:flex;align-items:center;gap:8px;justify-content:center;margin:2px 0 16px;flex-wrap:wrap"><button class="btn-icon" onclick="finShift(-1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button><strong style="min-width:150px;text-align:center;font-family:Poppins;color:var(--brand-blue);font-size:15px">${monthLabelBR(selMonth)}</strong><button class="btn-icon" onclick="finShift(1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button><button class="btn btn-ghost btn-sm" onclick="finHoje()">Mês atual</button></div>`;
+  const _thData=(finTab==='receber')?'Previsão':'Vencimento';
+  const _tbl=rows=>`<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Descrição</th><th>Categoria</th><th>Tipo</th><th>${_thData}</th><th class="num">Valor</th><th class="num">Ações</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   let body='';
-  if(finTab==='pagar'){
-    body = pagarPend.length ? `<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Descrição</th><th>Categoria</th><th>Tipo</th><th>Vencimento</th><th class="num">Valor</th><th class="num">Ações</th></tr></thead><tbody>${pagarPend.map(linhaPend).join('')}</tbody></table></div>` : `<div class="empty">Nenhuma conta a pagar pendente. 🎉</div>`;
-  } else if(finTab==='receber'){
-    body = `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"><span class="badge success" style="padding:8px 12px;font-size:12px">Entradas previstas · próximos 15 dias: ${fmtBRL(entr15)}</span><span class="badge success" style="padding:8px 12px;font-size:12px">Próximos 30 dias: ${fmtBRL(entr30)}</span></div>`+
-      (receberPend.length ? `<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Descrição</th><th>Origem</th><th>Tipo</th><th>Previsão</th><th class="num">Valor</th><th class="num">Ações</th></tr></thead><tbody>${receberPend.map(x=>{ const it=x.item; const tp=it.recorrente?`<span class="badge neutral">Mensal · dia ${escapeHtml(String(it.diaVenc||''))}</span>`:`<span class="badge neutral">Única</span>`; return `<tr><td><strong>${escapeHtml(it.descricao||'—')}</strong>${it.categoria?`<div style="font-size:11px;color:var(--text-mute)">${escapeHtml(it.categoria)}</div>`:''}</td><td>${escapeHtml(it.origem||'—')}</td><td>${tp}</td><td>${x.data?fmtDateBR(x.data):'—'}</td><td class="num">${fmtBRL(x.valor)}</td><td class="num"><div style="display:inline-flex;gap:4px;align-items:center"><button class="btn btn-success btn-sm" onclick="finBaixar('${it.id}','${x.mesRef||''}')">Recebido</button><button class="btn-icon" title="Editar" onclick="openFinForm('${it.id}')">${_ed}</button><button class="btn-icon" title="Excluir" onclick="finExcluir('${it.id}')" style="color:var(--danger)">${_tr}</button></div></td></tr>`; }).join('')}</tbody></table></div>` : `<div class="empty">Nenhum recebimento previsto pendente.</div>`);
+  if(finTab==='pagar' || finTab==='receber'){
+    const pend=(finTab==='pagar')?pagarPend:receberPend;
+    const atrasadas=pend.filter(x=>x.data && x.data<hoje);
+    const doMes=pend.filter(x=>x.data && monthOf(x.data)===selMonth && x.data>=hoje);
+    const proj=(finTab==='receber')?`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"><span class="badge success" style="padding:8px 12px;font-size:12px">Entradas previstas · próximos 15 dias: ${fmtBRL(entr15)}</span><span class="badge success" style="padding:8px 12px;font-size:12px">Próximos 30 dias: ${fmtBRL(entr30)}</span></div>`:'';
+    const atrHTML=atrasadas.length?`<div style="font-size:12px;font-weight:700;color:var(--danger);text-transform:uppercase;letter-spacing:.04em;margin:0 0 6px">⚠ Atrasadas — ${atrasadas.length}</div>${_tbl(atrasadas.map(linhaPend).join(''))}<div style="height:20px"></div>`:'';
+    const mesTit=`<div style="font-size:12px;font-weight:700;color:var(--text-soft);text-transform:uppercase;letter-spacing:.04em;margin:0 0 6px">${monthLabelBR(selMonth)}</div>`;
+    const mesHTML=doMes.length?(mesTit+_tbl(doMes.map(linhaPend).join(''))):(mesTit+`<div class="empty">Nenhuma conta ${finTab==='pagar'?'a pagar':'a receber'} em ${monthLabelBR(selMonth)}.</div>`);
+    body = proj + _nav + atrHTML + mesHTML;
   } else {
     body = feitos.length ? `<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Descrição</th><th>Status</th><th>Baixa em</th><th class="num">Valor</th><th class="num">Ações</th></tr></thead><tbody>${feitos.map(linhaFeita).join('')}</tbody></table></div>` : `<div class="empty">Nada no histórico ainda.</div>`;
   }
@@ -2376,8 +2388,8 @@ function renderFinanceiroMain(c){
     </div>
     <div class="card">
       <div class="rec-tabs" style="max-width:560px">
-        <button class="rec-tab ${finTab==='pagar'?'active':''}" onclick="setFinTab('pagar')">A pagar ${pagarPend.length?`<span class="pill">${pagarPend.length}</span>`:''}</button>
-        <button class="rec-tab ${finTab==='receber'?'active':''}" onclick="setFinTab('receber')">A receber ${receberPend.length?`<span class="pill">${receberPend.length}</span>`:''}</button>
+        <button class="rec-tab ${finTab==='pagar'?'active':''}" onclick="setFinTab('pagar')" title="${atrPagar} conta(s) atrasada(s)">A pagar ${atrPagar?`<span class="pill">${atrPagar}</span>`:''}</button>
+        <button class="rec-tab ${finTab==='receber'?'active':''}" onclick="setFinTab('receber')" title="${atrReceber} recebimento(s) atrasado(s)">A receber ${atrReceber?`<span class="pill">${atrReceber}</span>`:''}</button>
         <button class="rec-tab ${finTab==='historico'?'active':''}" onclick="setFinTab('historico')">Histórico</button>
       </div>
       ${body}
