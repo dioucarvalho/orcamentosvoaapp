@@ -2064,6 +2064,57 @@ async function cloudDeleteVenda(id){
   try{ const { data, error } = await sb.from('vendas').delete().eq('id',id).select(); if(error){ console.error(error); return false; } return !!(data&&data.length); }catch(e){ console.error(e); return false; }
 }
 
+/* ---- AGENDA DE CLIENTES (compartilhada na agência) ----
+   Guarda os clientes/passageiros já atendidos para reaproveitar numa venda
+   futura. A agenda se constrói sozinha ao salvar uma venda. */
+function _clienteNorm(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim().replace(/\s+/g,' '); }
+function _clienteId(nome, nascimento){ const key=_clienteNorm(nome)+'|'+(nascimento||''); let h=0; for(let i=0;i<key.length;i++){ h=(h*31+key.charCodeAt(i))>>>0; } return 'c-'+h.toString(36); }
+async function cloudLoadClientes(){
+  if(!sb) return;
+  try{ const { data, error } = await sb.from('clientes').select('id,data'); if(error){ console.error('cloudLoadClientes',error); return; } state.clientes=(data||[]).map(r=>{ const o=Object.assign({},r.data||{}); o.id=r.id; return o; }); }
+  catch(e){ console.error('cloudLoadClientes',e); }
+}
+async function cloudSaveCliente(c){
+  if(!sb||!state.user) return false;
+  try{ const { error } = await sb.from('clientes').upsert({ id:c.id, user_id:state.user.id, data:c }); if(error){ console.error('cloudSaveCliente',error); return false; } return true; }catch(e){ console.error('cloudSaveCliente',e); return false; }
+}
+// Ao salvar uma venda, joga os passageiros na agenda de clientes (sem duplicar).
+async function salvarClientesDaVenda(venda){
+  if(!sb||!venda) return;
+  try{
+    if(!Array.isArray(state.clientes)) await cloudLoadClientes();
+    const byId={}; (state.clientes||[]).forEach(c=>{ if(c&&c.id) byId[c.id]=c; });
+    const pax=(venda.passageiros||[]).filter(p=>p&&(p.nome||'').trim());
+    for(let i=0;i<pax.length;i++){
+      const p=pax[i]; const id=_clienteId(p.nome,p.nascimento); const ex=byId[id]||{};
+      const merged={ id, nome:p.nome.trim(), nascimento:p.nascimento||ex.nascimento||'', telefone:(i===0?(venda.titularContato||ex.telefone||''):(ex.telefone||'')), email:ex.email||'', documento:ex.documento||'', obs:ex.obs||'' };
+      const mudou = !byId[id] || merged.nome!==ex.nome || merged.nascimento!==ex.nascimento || merged.telefone!==ex.telefone;
+      if(mudou){ await cloudSaveCliente(merged); byId[id]=merged; }
+    }
+    state.clientes=Object.values(byId);
+  }catch(e){ console.error('salvarClientesDaVenda',e); }
+}
+// Carrega a lista e popula o autocomplete (datalist) do formulário de venda.
+async function vendaCarregarClientes(){
+  if(!Array.isArray(state.clientes)) await cloudLoadClientes();
+  const dl=document.getElementById('vd_clientesList'); if(!dl) return;
+  dl.innerHTML=(state.clientes||[]).slice().sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||''))).map(c=>`<option value="${escapeHtml(c.nome||'')}">${c.nascimento?('nasc. '+_isoToBR(c.nascimento)):''}</option>`).join('');
+}
+// Selecionou um cliente no autocomplete: preenche o titular (1º passageiro) + contato.
+function vendaSelecionarCliente(valor){
+  if(!valor||!currentVenda) return;
+  const alvo=_clienteNorm(valor);
+  const c=(state.clientes||[]).find(x=>_clienteNorm(x.nome)===alvo);
+  if(!c){ return; }
+  _vendaReadPax();
+  if(!currentVenda.passageiros||!currentVenda.passageiros.length) currentVenda.passageiros=[{nome:'',nascimento:''}];
+  currentVenda.passageiros[0]={ nome:c.nome||'', nascimento:c.nascimento||'' };
+  if(c.telefone){ currentVenda.titularContato=c.telefone; const t=document.getElementById('vd_titularContato'); if(t) t.value=c.telefone; }
+  renderVendaPax();
+  const b=document.getElementById('vd_buscarCliente'); if(b) b.value='';
+  toast('Cliente "'+(c.nome||'')+'" preenchido como titular.','success');
+}
+
 function blankVenda(){ return { id:'v'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), ownerId:(state.user&&state.user.id)||'', owner:(state.user&&state.user.name)||'', orcamentoId:'', dataVenda:todayISO(), categoria:'', fornecedor:'', ambito:'nacional', dataInicio:'', dataFim:'', origem:'', destino:'', numReserva:'', valorTotal:'', passageiros:[{nome:'',nascimento:''}], titularContato:'', vouchers:[], comissaoAgencia:'', comissaoFornecedor:'', comissaoTotal:'', dataRecebFornecedor:'', observacoes:'', preLancada:false, createdAt:localNowISO() }; }
 
 function renderVendas(c){ c.innerHTML=`<div id="vendaFormWrap"></div><div id="vendaMainWrap"></div>`; renderVendasMain(); }
@@ -2150,6 +2201,7 @@ function openVendaForm(id){
     <div class="field-row"><div class="field"><label>Início da viagem</label><input id="vd_dataInicio" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataInicio)}"></div><div class="field"><label>Fim da viagem</label><input id="vd_dataFim" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataFim)}"></div></div>
     <div class="field-row"><div class="field"><label>Origem</label><input id="vd_origem" value="${escapeHtml(v.origem)}"></div><div class="field"><label>Destino</label><input id="vd_destino" value="${escapeHtml(v.destino)}"></div></div>
     <h4 style="margin:18px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Passageiros</h4>
+    <div class="field" style="max-width:460px"><label>Buscar cliente já cadastrado</label><input id="vd_buscarCliente" list="vd_clientesList" placeholder="Digite o nome e selecione…" onchange="vendaSelecionarCliente(this.value)" autocomplete="off"><datalist id="vd_clientesList"></datalist><div style="font-size:11px;color:var(--text-mute);margin-top:4px">Selecione um cliente já atendido para preencher o titular automaticamente. Quem você lança aqui fica salvo para as próximas vendas.</div></div>
     <div id="vd_paxWrap"></div>
     <button class="btn btn-ghost btn-sm" onclick="vendaAddPax()">+ Adicionar passageiro</button>
     <div class="field" style="margin-top:14px;max-width:340px"><label>Contato do passageiro titular</label><input id="vd_titularContato" placeholder="Telefone / WhatsApp" value="${escapeHtml(v.titularContato)}"></div>
@@ -2163,7 +2215,7 @@ function openVendaForm(id){
     <h4 style="margin:18px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Observações</h4>
     <div class="field"><textarea id="vd_observacoes" placeholder="Informações relevantes desta reserva">${escapeHtml(v.observacoes)}</textarea></div>
   </div>`;
-  renderVendaPax(); renderVendaVouchers(); vendaUpdateComissaoTotal();
+  renderVendaPax(); renderVendaVouchers(); vendaUpdateComissaoTotal(); vendaCarregarClientes();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function renderVendaPax(){
@@ -2219,6 +2271,7 @@ async function saveVendaForm(){
   closeVendaForm();
   const ok=await cloudSaveVenda(v);
   toast(ok?'Venda salva na nuvem':'Venda salva neste navegador, mas a nuvem não confirmou. Verifique a conexão.',ok?'success':'warning');
+  salvarClientesDaVenda(v); // alimenta a agenda de clientes (sem duplicar)
 }
 function closeVendaForm(){ const fw=document.getElementById('vendaFormWrap'); if(fw) fw.innerHTML=''; currentVenda=null; renderVendasMain(); }
 function editVenda(id){ const v=(state.vendas||[]).find(x=>x.id===id); if(v && !v.preLancada){ requireAdmin('Esta venda já está salva e bloqueada. Para visualizar ou editar, informe a senha do gestor.', ()=>openVendaForm(id)); } else { openVendaForm(id); } }
