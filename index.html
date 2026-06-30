@@ -2096,7 +2096,7 @@ async function salvarClientesDaVenda(venda){
 }
 // Carrega a lista e popula o autocomplete (datalist) do formulário de venda.
 async function vendaCarregarClientes(){
-  if(!Array.isArray(state.clientes)) await cloudLoadClientes();
+  await cloudLoadClientes();
   const dl=document.getElementById('vd_clientesList'); if(!dl) return;
   dl.innerHTML=(state.clientes||[]).slice().sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||''))).map(c=>`<option value="${escapeHtml(c.nome||'')}">${c.nascimento?('nasc. '+_isoToBR(c.nascimento)):''}</option>`).join('');
 }
