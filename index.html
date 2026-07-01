@@ -2839,7 +2839,21 @@ function buildReportData(monthYM,ownerName){
   const perdidas=state.orcamentos.filter(o=>o.status==='perdido'&&monthOf(o.closedAt||o.createdAt)===monthYM&&_matchOrc(o));
   const fechadasNoMes=state.orcamentos.filter(o=>o.status==='fechado'&&monthOf(o.closedAt||o.createdAt)===monthYM&&_matchOrc(o));
   const _orcIdsNoMes=new Set(fechadasNoMes.map(o=>o.id));
-  const vendasDiretas=(state.vendas||[]).filter(v=>!v.preLancada&&monthOf(v.dataVenda)===monthYM&&_matchVenda(v)&&(!v.orcamentoId||!_orcIdsNoMes.has(v.orcamentoId)));
+  // Dedup robusto: além do vínculo orcamentoId, também pelo Nº DA RESERVA (identificador
+  // único da operadora). Evita a MESMA venda contar duas vezes quando o vínculo se perde
+  // (ex.: venda lançada solta + orçamento fechado do mesmo negócio), e evita duas vendas
+  // com o mesmo nº de reserva. Assim o relatório fica igual em qualquer sessão.
+  const _normRes=s=>String(s||'').trim().toLowerCase();
+  const _orcResNoMes=new Set(fechadasNoMes.map(o=>_normRes(o.venda&&o.venda.idReserva)).filter(Boolean));
+  const _vendaResVista=new Set();
+  const vendasDiretas=(state.vendas||[]).filter(v=>{
+    if(v.preLancada||monthOf(v.dataVenda)!==monthYM||!_matchVenda(v)) return false;
+    if(v.orcamentoId&&_orcIdsNoMes.has(v.orcamentoId)) return false; // já é um orçamento fechado
+    const _res=_normRes(v.numReserva);
+    if(_res&&_orcResNoMes.has(_res)) return false;                   // mesmo nº de reserva de um fechado
+    if(_res){ if(_vendaResVista.has(_res)) return false; _vendaResVista.add(_res); } // reserva repetida
+    return true;
+  });
   const taxaOrc=orcamentosMes.length?Math.round((fechadasNoMes.length/orcamentosMes.length)*100):0;
   const taxaRep=total.repiques?Math.round((total.vendas/total.repiques)*100*100)/100:0;
   // Comissão para efeito de cálculo = soma da SEÇÃO 5 (Vendas do mês / conferência com a
