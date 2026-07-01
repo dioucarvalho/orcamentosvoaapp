@@ -2817,10 +2817,18 @@ function buildReportData(monthYM,ownerName){
   const vendasDiretas=(state.vendas||[]).filter(v=>!v.preLancada&&monthOf(v.dataVenda)===monthYM&&_matchVenda(v)&&(!v.orcamentoId||!_orcIdsNoMes.has(v.orcamentoId)));
   const taxaOrc=orcamentosMes.length?Math.round((fechadasNoMes.length/orcamentosMes.length)*100):0;
   const taxaRep=total.repiques?Math.round((total.vendas/total.repiques)*100*100)/100:0;
-  const metaBatida=total.comissao>=state.metas.vendaMin;
-  const comissaoPercentual=comissaoAgentePercentual(total.comissao);
-  const comissaoAgente=total.comissao*comissaoPercentual;
-  return {monthYM,owner,total,days,orcamentos:orcamentosMes,agendamentos:total.agendamento,repiques:total.repiques,vendas:total.vendas,comissaoTotal:total.comissao,fechadasNoMes,vendasDiretas,perdidas,taxaOrc,taxaRep,metaBatida,comissaoPercentual,comissaoAgente};
+  // Comissão para efeito de cálculo = soma da SEÇÃO 5 (Vendas do mês / conferência com a
+  // operadora), e NÃO do detalhamento diário (seção 4). Mesma lógica de linha da seção 5.
+  const _comSecao5=(()=>{
+    const orc=fechadasNoMes.map(o=>{ const lv=(state.vendas||[]).find(vv=>vv.orcamentoId===o.id); const ov=o.venda||{}; const brkAg=lv?Number(lv.comissaoAgencia)||0:Number(ov.comissaoAgencia)||0; const brkForn=lv?Number(lv.comissaoFornecedor)||0:Number(ov.comissaoFornecedor)||0; const tot=Number(o.comissao)||0; return (brkAg+brkForn>0)?(brkAg+brkForn):tot; });
+    const dir=vendasDiretas.map(v=>{ const brkAg=Number(v.comissaoAgencia)||0; const brkForn=Number(v.comissaoFornecedor)||0; const tot=Number(v.comissaoTotal)||0; return (brkAg+brkForn>0)?(brkAg+brkForn):tot; });
+    return [...orc,...dir].reduce((s,x)=>s+x,0);
+  })();
+  const comissaoTotal=_comSecao5;
+  const metaBatida=comissaoTotal>=state.metas.vendaMin;
+  const comissaoPercentual=comissaoAgentePercentual(comissaoTotal);
+  const comissaoAgente=comissaoTotal*comissaoPercentual;
+  return {monthYM,owner,total,days,orcamentos:orcamentosMes,agendamentos:total.agendamento,repiques:total.repiques,vendas:total.vendas,comissaoTotal,fechadasNoMes,vendasDiretas,perdidas,taxaOrc,taxaRep,metaBatida,comissaoPercentual,comissaoAgente};
 }
 function generateReportPreview(){
   const mo=document.getElementById('repMonth').value||currentMonth(); const owner=currentReportOwner(); const r=buildReportData(mo,owner); const [y,m]=mo.split('-'); const monthName=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][parseInt(m)-1];
