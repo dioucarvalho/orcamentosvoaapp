@@ -2479,17 +2479,25 @@ function setFinTab(t){ finTab=t; renderFinanceiroMain(); }
 async function finBaixar(id, mesRef){
   const item=(state.financeiro||[]).find(x=>x.id===id); if(!item) return;
   const d=todayISO();
-  if(item.recorrente && mesRef){ item.baixas=item.baixas||{}; item.baixas[mesRef]={ data:d, valor:Number(item.valor)||0 }; }
+  const valor=Number(item.valor)||0;
+  if(item.recorrente && mesRef){ item.baixas=item.baixas||{}; item.baixas[mesRef]={ data:d, valor:valor }; }
   else { item.pago=true; item.dataPago=d; }
+  if(item.tipo==='pagar') state.finSaldo=(Number(state.finSaldo)||0)-valor;
+  else if(item.tipo==='receber') state.finSaldo=(Number(state.finSaldo)||0)+valor;
   renderFinanceiroMain();
   const ok=await cloudSaveFinanceiro(item); if(!ok) toast('Salvo localmente, mas a nuvem não confirmou.','warning');
+  try{ await sb.from('financeiro').upsert({ id:'_saldo', user_id:state.user.id, tipo:'saldo', data:{ valor:state.finSaldo, atualizadoEm:localNowISO() } }); }catch(e){ console.error('finBaixar saldo',e); }
 }
 async function finDesfazer(id, mesRef){
   const item=(state.financeiro||[]).find(x=>x.id===id); if(!item) return;
+  const valor=Number(item.valor)||0;
   if(item.recorrente && mesRef){ if(item.baixas) delete item.baixas[mesRef]; }
   else { item.pago=false; item.dataPago=''; }
+  if(item.tipo==='pagar') state.finSaldo=(Number(state.finSaldo)||0)+valor;
+  else if(item.tipo==='receber') state.finSaldo=(Number(state.finSaldo)||0)-valor;
   renderFinanceiroMain();
   await cloudSaveFinanceiro(item);
+  try{ await sb.from('financeiro').upsert({ id:'_saldo', user_id:state.user.id, tipo:'saldo', data:{ valor:state.finSaldo, atualizadoEm:localNowISO() } }); }catch(e){ console.error('finDesfazer saldo',e); }
 }
 function finExcluir(id){ const it=(state.financeiro||[]).find(x=>x.id===id); if(!it) return; if(!confirm('Excluir o lançamento "'+(it.descricao||'')+'"? Se for recorrente, todas as ocorrências somem.')) return; state.financeiro=(state.financeiro||[]).filter(x=>x.id!==id); renderFinanceiroMain(); cloudDeleteFinanceiro(id).then(ok=>toast(ok?'Lançamento excluído':'Removido localmente, mas a nuvem não confirmou.',ok?'success':'warning')); }
 
