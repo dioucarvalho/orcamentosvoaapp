@@ -2799,14 +2799,17 @@ function renderRelatorios(c){
 function listMonthsWithData(){ const set=new Set(); state.orcamentos.forEach(o=>{ if(o.createdAt) set.add(monthOf(o.createdAt)); }); Object.keys(state.diaExtra).forEach(d=>set.add(d.slice(0,7))); return [...set].sort(); }
 function buildReportData(monthYM,ownerName){
   const owner=ownerName||currentReportOwner();
+  // Resolve o nome para ownerId para comparações robustas (nome pode variar entre registros)
+  const _rosterEntry=(state.roster||[]).find(p=>p.nome===owner);
+  const _repOwnerId=_rosterEntry?.id||(state.orcamentos||[]).find(o=>ownerNameOf(o)===owner)?.ownerId||'';
+  const _matchOrc=o=>ownerNameOf(o)===owner||(o.ownerId&&_repOwnerId&&o.ownerId===_repOwnerId);
+  const _matchVenda=v=>v.owner===owner||(v.ownerId&&_repOwnerId&&v.ownerId===_repOwnerId)||(v.ownerId&&(state.profilesById||{})[v.ownerId]===owner);
   const {total,days}=aggregateMonthForOwner(monthYM,owner);
-  const orcamentosMes=state.orcamentos.filter(o=>monthOf(o.createdAt)===monthYM&&!(o.versao>1)&&ownerNameOf(o)===owner);
-  const perdidas=state.orcamentos.filter(o=>o.status==='perdido'&&monthOf(o.closedAt||o.createdAt)===monthYM&&ownerNameOf(o)===owner);
-  const fechadasNoMes=state.orcamentos.filter(o=>o.status==='fechado'&&monthOf(o.closedAt||o.createdAt)===monthYM&&ownerNameOf(o)===owner);
+  const orcamentosMes=state.orcamentos.filter(o=>monthOf(o.createdAt)===monthYM&&!(o.versao>1)&&_matchOrc(o));
+  const perdidas=state.orcamentos.filter(o=>o.status==='perdido'&&monthOf(o.closedAt||o.createdAt)===monthYM&&_matchOrc(o));
+  const fechadasNoMes=state.orcamentos.filter(o=>o.status==='fechado'&&monthOf(o.closedAt||o.createdAt)===monthYM&&_matchOrc(o));
   const _orcIdsNoMes=new Set(fechadasNoMes.map(o=>o.id));
-  // Vendas confirmadas no mês: sem orçamento vinculado OU cujo orçamento não aparece em fechadasNoMes
-  const _ownerMatch=v=>v.owner===owner||(v.ownerId&&(state.profilesById||{})[v.ownerId]===owner);
-  const vendasDiretas=(state.vendas||[]).filter(v=>!v.preLancada&&monthOf(v.dataVenda)===monthYM&&_ownerMatch(v)&&(!v.orcamentoId||!_orcIdsNoMes.has(v.orcamentoId)));
+  const vendasDiretas=(state.vendas||[]).filter(v=>!v.preLancada&&monthOf(v.dataVenda)===monthYM&&_matchVenda(v)&&(!v.orcamentoId||!_orcIdsNoMes.has(v.orcamentoId)));
   const taxaOrc=orcamentosMes.length?Math.round((fechadasNoMes.length/orcamentosMes.length)*100):0;
   const taxaRep=total.repiques?Math.round((total.vendas/total.repiques)*100*100)/100:0;
   const metaBatida=total.comissao>=state.metas.vendaMin;
