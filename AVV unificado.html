@@ -2803,7 +2803,10 @@ function buildReportData(monthYM,ownerName){
   const orcamentosMes=state.orcamentos.filter(o=>monthOf(o.createdAt)===monthYM&&!(o.versao>1)&&ownerNameOf(o)===owner);
   const perdidas=state.orcamentos.filter(o=>o.status==='perdido'&&monthOf(o.closedAt||o.createdAt)===monthYM&&ownerNameOf(o)===owner);
   const fechadasNoMes=state.orcamentos.filter(o=>o.status==='fechado'&&monthOf(o.closedAt||o.createdAt)===monthYM&&ownerNameOf(o)===owner);
-  const vendasDiretas=(state.vendas||[]).filter(v=>!v.preLancada&&!v.orcamentoId&&monthOf(v.dataVenda)===monthYM&&v.owner===owner);
+  const _orcIdsNoMes=new Set(fechadasNoMes.map(o=>o.id));
+  // Vendas confirmadas no mês: sem orçamento vinculado OU cujo orçamento não aparece em fechadasNoMes
+  const _ownerMatch=v=>v.owner===owner||(v.ownerId&&(state.profilesById||{})[v.ownerId]===owner);
+  const vendasDiretas=(state.vendas||[]).filter(v=>!v.preLancada&&monthOf(v.dataVenda)===monthYM&&_ownerMatch(v)&&(!v.orcamentoId||!_orcIdsNoMes.has(v.orcamentoId)));
   const taxaOrc=orcamentosMes.length?Math.round((fechadasNoMes.length/orcamentosMes.length)*100):0;
   const taxaRep=total.repiques?Math.round((total.vendas/total.repiques)*100*100)/100:0;
   const metaBatida=total.comissao>=state.metas.vendaMin;
