@@ -2229,7 +2229,6 @@ function openVendaForm(id){
     <div class="field-row"><div class="field"><label>Origem</label><input id="vd_origem" value="${escapeHtml(v.origem)}"></div><div class="field"><label>Destino</label><input id="vd_destino" value="${escapeHtml(v.destino)}"></div></div>
     <h4 style="margin:18px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Passageiros</h4>
     <datalist id="vd_clientesList"></datalist>
-    <div style="font-size:11px;color:var(--text-mute);margin:0 0 8px">Em cada passageiro, use "Buscar cliente já cadastrado" para puxar os dados de quem já foi atendido. Quem você lança aqui fica salvo para as próximas vendas.</div>
     <div id="vd_paxWrap"></div>
     <button class="btn btn-ghost btn-sm" onclick="vendaAddPax()">+ Adicionar passageiro</button>
     <div class="field" style="margin-top:14px;max-width:340px"><label>Contato do passageiro titular</label><input id="vd_titularContato" placeholder="Telefone / WhatsApp" value="${escapeHtml(v.titularContato)}"></div>
