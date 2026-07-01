@@ -1861,7 +1861,7 @@ function renderPosVenda(c){
   document.getElementById('posvendaFrame').srcdoc=_posvendaSrcCache;
 }
 
-function getDayMetrics(iso){ const extra=state.diaExtra[iso]||{}; let orcamento=0,vendas=0,comissao=0; state.orcamentos.forEach(o=>{ if(o.createdAt&&o.createdAt.slice(0,10)===iso&&!(o.versao>1)) orcamento++; if(o.status==='fechado'&&o.closedAt&&o.closedAt.slice(0,10)===iso){ vendas++; comissao+=Number(o.comissao||0); } }); return { data:iso, repiques:Number(extra.repiques||0), agendamento:Number(extra.agendamento||0), atendimento:Number(extra.atendimento||0), orcamento:orcamento+Number(extra.orcamentoAjuste||0), vendas:vendas+Number(extra.vendasAjuste||0), comissao:comissao+Number(extra.comissaoAjuste||0) }; }
+function getDayMetrics(iso){ const extra=state.diaExtra[iso]||{}; let orcamento=0; state.orcamentos.forEach(o=>{ if(o.createdAt&&o.createdAt.slice(0,10)===iso&&!(o.versao>1)) orcamento++; }); let vendas=0,comissao=0; (state.vendas||[]).forEach(v=>{ if((v.dataVenda||'').slice(0,10)!==iso) return; vendas++; comissao+=Number(v.comissaoTotal)||0; }); return { data:iso, repiques:Number(extra.repiques||0), agendamento:Number(extra.agendamento||0), atendimento:Number(extra.atendimento||0), orcamento:orcamento+Number(extra.orcamentoAjuste||0), vendas:vendas+Number(extra.vendasAjuste||0), comissao:comissao+Number(extra.comissaoAjuste||0) }; }
 function getMonthRange(monthYM){ const [y,m]=monthYM.split('-').map(Number); const last=new Date(y,m,0).getDate(); const arr=[]; for(let d=1;d<=last;d++){ arr.push(`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`); } return arr; }
 function aggregateMonth(monthYM){ const days=getMonthRange(monthYM).map(getDayMetrics); const t=days.reduce((acc,d)=>({ repiques:acc.repiques+d.repiques, agendamento:acc.agendamento+d.agendamento, atendimento:acc.atendimento+d.atendimento, orcamento:acc.orcamento+d.orcamento, vendas:acc.vendas+d.vendas, comissao:acc.comissao+d.comissao }),{repiques:0,agendamento:0,atendimento:0,orcamento:0,vendas:0,comissao:0}); return {days,total:t}; }
 function aggregateRange(startISO,endISO){ const start=parseDate(startISO); const end=parseDate(endISO); const days=[]; for(let d=new Date(start);d<=end;d.setDate(d.getDate()+1)){ days.push(getDayMetrics(ymd(d))); } const t=days.reduce((acc,d)=>({ repiques:acc.repiques+d.repiques, agendamento:acc.agendamento+d.agendamento, atendimento:acc.atendimento+d.atendimento, orcamento:acc.orcamento+d.orcamento, vendas:acc.vendas+d.vendas, comissao:acc.comissao+d.comissao }),{repiques:0,agendamento:0,atendimento:0,orcamento:0,vendas:0,comissao:0}); return {days,total:t}; }
@@ -1897,16 +1897,16 @@ function getDayMetricsForOwner(iso,ownerName,idToName){
     const nome=oid?(idToName[oid]||e.owner||oid):(e.owner||(state.user&&state.user.name)||'Sem identificação');
     if(nome===ownerName) extra=e;
   });
-  let orcamento=0,vendas=0,comissao=0;
+  let orcamento=0;
   state.orcamentos.forEach(o=>{
     if(ownerNameOf(o)!==ownerName) return;
     if(o.createdAt&&o.createdAt.slice(0,10)===iso&&!(o.versao>1)) orcamento++;
-    if(o.status==='fechado'&&o.closedAt&&o.closedAt.slice(0,10)===iso){ vendas++; comissao+=Number(o.comissao||0); }
   });
-  // Vendas lançadas diretamente na aba Vendas (sem orçamento vinculado)
+  // Vendas e comissão do dia vêm da aba VENDAS (inclui pré-lançadas), casadas por dono e data.
+  let vendas=0,comissao=0;
   (state.vendas||[]).forEach(v=>{
-    if(v.preLancada||v.orcamentoId) return;
-    if(v.owner!==ownerName) return;
+    const vn=v.owner||(v.ownerId&&idToName[v.ownerId])||'';
+    if(vn!==ownerName) return;
     if((v.dataVenda||'').slice(0,10)!==iso) return;
     vendas++; comissao+=Number(v.comissaoTotal)||0;
   });
@@ -1935,10 +1935,15 @@ function getDayMetricsAll(iso){
     repiques+=Number(e.repiques||0); agendamento+=Number(e.agendamento||0); atendimento+=Number(e.atendimento||0);
     orcAj+=Number(e.orcamentoAjuste||0); vendasAj+=Number(e.vendasAjuste||0); comAj+=Number(e.comissaoAjuste||0);
   });
-  let orcamento=0,vendas=0,comissao=0;
+  let orcamento=0;
   state.orcamentos.forEach(o=>{
     if(o.createdAt&&o.createdAt.slice(0,10)===iso&&!(o.versao>1)) orcamento++;
-    if(o.status==='fechado'&&o.closedAt&&o.closedAt.slice(0,10)===iso){ vendas++; comissao+=Number(o.comissao||0); }
+  });
+  // Vendas e comissão do dia vêm da aba VENDAS (inclui pré-lançadas).
+  let vendas=0,comissao=0;
+  (state.vendas||[]).forEach(v=>{
+    if((v.dataVenda||'').slice(0,10)!==iso) return;
+    vendas++; comissao+=Number(v.comissaoTotal)||0;
   });
   return { data:iso, repiques, agendamento, atendimento, orcamento:orcamento+orcAj, vendas:vendas+vendasAj, comissao:comissao+comAj };
 }
