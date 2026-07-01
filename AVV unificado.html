@@ -899,7 +899,7 @@ async function loadProfileAndShow(authUser){
    SINCRONIA COM A NUVEM (Supabase) — carrega ao logar; grava a cada ação.
    ============================================================================ */
 function toISO(v){ try{ const d=new Date(v); return isNaN(d)?null:d.toISOString(); }catch(e){ return null; } }
-function cloudErr(e){ if(e){ console.error('cloud',e); toast('Falha ao salvar na nuvem. Verifique a conexão.','danger'); } }
+function cloudErr(e){ if(e){ console.error('cloud',e); const det=(e&&(e.message||e.details||e.hint||e.code))||''; toast('Falha ao salvar na nuvem'+(det?(': '+det):'. Verifique a conexão.'),'danger'); } }
 
 // Campos LEVES do orçamento (tudo o que listas/relatórios/admin usam), SEM as
 // fotos nem o snapshot voaData — buscados via projeção JSON direto no Postgres.
@@ -977,9 +977,14 @@ async function cloudLoadAll(){
         // pertencem ao usuário atualmente logado, para nunca misturar dados entre contas.
         const missing=localList.filter(q=>q&&q.id&&q.ownerId===state.user.id&&!cloudIds.has(q.id)&&!_deletedIds.has(q.id)&&!tombstones.has(q.id));
         if(missing.length){
-          missing.forEach(q=>cloudSaveOrcamento(q));
+          const _res=await Promise.all(missing.map(q=>cloudSaveOrcamento(q).then(ok=>({q,ok})).catch(()=>({q,ok:false}))));
+          const _ok=_res.filter(r=>r.ok).map(r=>r.q);
+          const _fail=_res.filter(r=>!r.ok).map(r=>r.q);
+          // Mostra os locais para a pessoa não "perder" o orçamento de vista, mas avisa com
+          // clareza os que NÃO subiram — esses ficam só neste navegador até sincronizar.
           cloudOrcamentos=cloudOrcamentos.concat(missing);
-          toast(`${missing.length} orçamento(s) salvo(s) só neste navegador foram encontrados e reenviados para a nuvem.`,'warning');
+          if(_ok.length){ toast(`${_ok.length} orçamento(s) que estavam só neste navegador foram reenviados para a nuvem.`,'success'); }
+          if(_fail.length){ const _n=_fail.map(q=>(q.cliente&&q.cliente.nome)||q.id).slice(0,3).join(', '); toast(`${_fail.length} orçamento(s) NÃO subiram para a nuvem (${_n}). Ficam só neste navegador até sincronizar — o motivo aparece na mensagem vermelha.`,'warning'); }
         }
       }catch(e){ console.error('reconciliação de orçamentos locais',e); }
     }
