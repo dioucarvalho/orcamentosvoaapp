@@ -2301,7 +2301,7 @@ async function saveVendaForm(){
   if(!v.categoria && !v.valorTotal && !(v.passageiros[0]&&v.passageiros[0].nome)){ toast('Preencha ao menos a categoria, o valor ou um passageiro.','warning'); return; }
   // Bloqueia lançamento fora do mês atual para consultora (exceto pré-lançadas de orçamento)
   const mesVenda=(v.dataVenda||'').slice(0,7);
-  if(mesVenda && mesVenda!==currentMonth() && !v.preLancada && currentRole()==='consultora'){
+  if(mesVenda && mesVenda!==currentMonth() && !v.preLancada){
     requireAdmin('A data da venda é fora do mês atual ('+mesVenda+'). Para lançar em outro mês, informe a senha do gestor.', ()=>_doSaveVenda(v));
     return;
   }
