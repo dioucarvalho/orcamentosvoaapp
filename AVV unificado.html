@@ -2101,18 +2101,17 @@ async function vendaCarregarClientes(){
   dl.innerHTML=(state.clientes||[]).slice().sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||''))).map(c=>`<option value="${escapeHtml(c.nome||'')}">${c.nascimento?('nasc. '+_isoToBR(c.nascimento)):''}</option>`).join('');
 }
 // Selecionou um cliente no autocomplete: preenche o titular (1º passageiro) + contato.
-function vendaSelecionarCliente(valor){
+function vendaSelecionarClientePax(i, valor){
   if(!valor||!currentVenda) return;
   const alvo=_clienteNorm(valor);
   const c=(state.clientes||[]).find(x=>_clienteNorm(x.nome)===alvo);
   if(!c){ return; }
   _vendaReadPax();
-  if(!currentVenda.passageiros||!currentVenda.passageiros.length) currentVenda.passageiros=[{nome:'',nascimento:''}];
-  currentVenda.passageiros[0]={ nome:c.nome||'', nascimento:c.nascimento||'' };
-  if(c.telefone){ currentVenda.titularContato=c.telefone; const t=document.getElementById('vd_titularContato'); if(t) t.value=c.telefone; }
+  if(!currentVenda.passageiros) currentVenda.passageiros=[];
+  currentVenda.passageiros[i]={ nome:c.nome||'', nascimento:c.nascimento||'' };
+  if(i===0 && c.telefone){ currentVenda.titularContato=c.telefone; const t=document.getElementById('vd_titularContato'); if(t) t.value=c.telefone; }
   renderVendaPax();
-  const b=document.getElementById('vd_buscarCliente'); if(b) b.value='';
-  toast('Cliente "'+(c.nome||'')+'" preenchido como titular.','success');
+  toast('Cliente "'+(c.nome||'')+'" preenchido no passageiro '+(i+1)+'.','success');
 }
 // IMPORTAÇÃO ÚNICA (admin): salva na agenda os clientes das vendas já lançadas.
 async function importarClientesDasVendas(){
@@ -2174,7 +2173,7 @@ function renderVendasMain(){
   wrap.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${ownerFiltroHTML}<span style="font-size:13px;font-weight:600;color:var(--text-soft);margin-left:4px">Período — De</span><input inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="${_isoToBR(vendaDateFrom)}" oninput="vendaDateMask(this)" onchange="vendaDateFrom=_brToISO(this.value);renderVendasMain()" style="${_dcss}"><span style="font-size:13px;font-weight:600;color:var(--text-soft)">Até</span><input inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="${_isoToBR(vendaDateTo)}" oninput="vendaDateMask(this)" onchange="vendaDateTo=_brToISO(this.value);renderVendasMain()" style="${_dcss}">${temP?`<button title="Limpar período" onclick="vendaDateFrom='';vendaDateTo='';renderVendasMain()" style="background:none;border:none;color:var(--text-mute);font-size:18px;cursor:pointer;line-height:1">×</button>`:''}</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${currentRole()==='admin'?`<button class="btn btn-ghost btn-sm" onclick="importarClientesDasVendas()" title="Salva na agenda os clientes das vendas já lançadas (uso único)">Importar clientes das vendas</button>`:''}<button class="btn btn-primary" onclick="openVendaForm()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nova venda</button></div>
+      <button class="btn btn-primary" onclick="openVendaForm()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nova venda</button>
     </div>
     <div class="stat-grid" style="margin-bottom:18px">
       <div class="stat-card green"><div class="stat-label">${temP?'Total vendido no período':'Total vendido pela agência'}</div><div class="stat-value" style="font-size:22px">${fmtBRL(totalBase)}</div><div class="stat-sub">${temP?(base.length+' venda(s) no período'):(vendas.length+' venda(s) no total')}</div></div>
@@ -2229,7 +2228,8 @@ function openVendaForm(id){
     <div class="field-row"><div class="field"><label>Início da viagem</label><input id="vd_dataInicio" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataInicio)}"></div><div class="field"><label>Fim da viagem</label><input id="vd_dataFim" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataFim)}"></div></div>
     <div class="field-row"><div class="field"><label>Origem</label><input id="vd_origem" value="${escapeHtml(v.origem)}"></div><div class="field"><label>Destino</label><input id="vd_destino" value="${escapeHtml(v.destino)}"></div></div>
     <h4 style="margin:18px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Passageiros</h4>
-    <div class="field" style="max-width:460px"><label>Buscar cliente já cadastrado</label><input id="vd_buscarCliente" list="vd_clientesList" placeholder="Digite o nome e selecione…" onchange="vendaSelecionarCliente(this.value)" autocomplete="off"><datalist id="vd_clientesList"></datalist><div style="font-size:11px;color:var(--text-mute);margin-top:4px">Selecione um cliente já atendido para preencher o titular automaticamente. Quem você lança aqui fica salvo para as próximas vendas.</div></div>
+    <datalist id="vd_clientesList"></datalist>
+    <div style="font-size:11px;color:var(--text-mute);margin:0 0 8px">Em cada passageiro, use "Buscar cliente já cadastrado" para puxar os dados de quem já foi atendido. Quem você lança aqui fica salvo para as próximas vendas.</div>
     <div id="vd_paxWrap"></div>
     <button class="btn btn-ghost btn-sm" onclick="vendaAddPax()">+ Adicionar passageiro</button>
     <div class="field" style="margin-top:14px;max-width:340px"><label>Contato do passageiro titular</label><input id="vd_titularContato" placeholder="Telefone / WhatsApp" value="${escapeHtml(v.titularContato)}"></div>
@@ -2248,7 +2248,7 @@ function openVendaForm(id){
 }
 function renderVendaPax(){
   const wrap=document.getElementById('vd_paxWrap'); if(!wrap) return;
-  wrap.innerHTML=(currentVenda.passageiros||[]).map((p,i)=>`<div class="vd-pax-row field-row" style="align-items:flex-end"><div class="field"><label>Nome completo do passageiro ${i+1}</label><input class="vd-pax-nome" value="${escapeHtml(p.nome||'')}"></div><div class="field" style="max-width:160px"><label>Nascimento</label><input class="vd-pax-nasc" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(p.nascimento)}"></div>${(currentVenda.passageiros.length>1)?`<button class="btn-icon" title="Remover" onclick="vendaRemovePax(${i})" style="color:var(--danger);margin-bottom:14px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`:''}</div>`).join('');
+  wrap.innerHTML=(currentVenda.passageiros||[]).map((p,i)=>`<div class="vd-pax-row" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;font-weight:700;color:var(--text-soft);text-transform:uppercase;letter-spacing:.04em">Passageiro ${i+1}</span>${(currentVenda.passageiros.length>1)?`<button class="btn-icon" title="Remover" onclick="vendaRemovePax(${i})" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`:''}</div><div class="field"><label>Buscar cliente já cadastrado</label><input list="vd_clientesList" placeholder="Digite o nome e selecione…" autocomplete="off" onchange="vendaSelecionarClientePax(${i}, this.value)"></div><div class="field-row"><div class="field"><label>Nome completo</label><input class="vd-pax-nome" value="${escapeHtml(p.nome||'')}"></div><div class="field" style="max-width:170px"><label>Nascimento</label><input class="vd-pax-nasc" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(p.nascimento)}"></div></div></div>`).join('');
 }
 function _vendaReadPax(){ currentVenda.passageiros=[...document.querySelectorAll('#vd_paxWrap .vd-pax-row')].map(row=>({ nome:(row.querySelector('.vd-pax-nome').value||'').trim(), nascimento:_brToISO(row.querySelector('.vd-pax-nasc').value) })); if(!currentVenda.passageiros.length) currentVenda.passageiros=[{nome:'',nascimento:''}]; }
 function vendaAddPax(){ _vendaReadPax(); currentVenda.passageiros.push({nome:'',nascimento:''}); renderVendaPax(); }
