@@ -2299,13 +2299,22 @@ async function saveVendaForm(){
   _vendaReadForm();
   const v=currentVenda;
   if(!v.categoria && !v.valorTotal && !(v.passageiros[0]&&v.passageiros[0].nome)){ toast('Preencha ao menos a categoria, o valor ou um passageiro.','warning'); return; }
-  v.preLancada=false; // ao salvar manualmente, deixa de ser "pré-lançada"
+  // Bloqueia lançamento fora do mês atual para consultora (exceto pré-lançadas de orçamento)
+  const mesVenda=(v.dataVenda||'').slice(0,7);
+  if(mesVenda && mesVenda!==currentMonth() && !v.preLancada && currentRole()==='consultora'){
+    requireAdmin('A data da venda é fora do mês atual ('+mesVenda+'). Para lançar em outro mês, informe a senha do gestor.', ()=>_doSaveVenda(v));
+    return;
+  }
+  await _doSaveVenda(v);
+}
+async function _doSaveVenda(v){
+  v.preLancada=false;
   const idx=(state.vendas||[]).findIndex(x=>x.id===v.id);
   if(idx>=0) state.vendas[idx]=v; else { state.vendas=state.vendas||[]; state.vendas.unshift(v); }
   closeVendaForm();
   const ok=await cloudSaveVenda(v);
   toast(ok?'Venda salva na nuvem':'Venda salva neste navegador, mas a nuvem não confirmou. Verifique a conexão.',ok?'success':'warning');
-  salvarClientesDaVenda(v); // alimenta a agenda de clientes (sem duplicar)
+  salvarClientesDaVenda(v);
 }
 function closeVendaForm(){ const fw=document.getElementById('vendaFormWrap'); if(fw) fw.innerHTML=''; currentVenda=null; renderVendasMain(); }
 function editVenda(id){ const v=(state.vendas||[]).find(x=>x.id===id); if(v && !v.preLancada){ requireAdmin('Esta venda já está salva e bloqueada. Para visualizar ou editar, informe a senha do gestor.', ()=>openVendaForm(id)); } else { openVendaForm(id); } }
