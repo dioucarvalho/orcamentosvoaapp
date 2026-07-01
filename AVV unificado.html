@@ -1646,6 +1646,14 @@ const GERENTE_VE_VALORES = false; // gerente vê atividade, não os valores em R
 let adminFilter = { month: currentMonth(), owner:'' };
 function adminPodeVerValores(){ return currentRole()==='admin' || (currentRole()==='gerente' && GERENTE_VE_VALORES); }
 function ownerNameOf(o){ return o.owner || (o.ownerId? o.ownerId : 'Sem identificação'); }
+// REGRA GERAL: o "mês" de uma venda é sempre o mês da DATA DA VENDA (dataVenda na aba
+// Vendas). Para um orçamento fechado, usamos a data da venda vinculada; só caímos no
+// closedAt/createdAt se não houver venda. Assim, uma venda com data retroativa conta
+// APENAS no mês da data escolhida — nunca no mês em que o orçamento foi fechado.
+function saleMonthOfOrc(o){
+  const lv=(state.vendas||[]).find(vv=>vv.orcamentoId===o.id);
+  return monthOf((lv&&lv.dataVenda)||o.closedAt||o.createdAt);
+}
 
 async function renderAdmin(c){
   const verR$ = adminPodeVerValores();
@@ -1661,7 +1669,7 @@ async function renderAdmin(c){
   const owners = [...new Set(orcs.map(ownerNameOf))].sort((a,b)=>a.localeCompare(b));
   const mo = adminFilter.month || currentMonth();
   const inMonth = o => monthOf(o.createdAt)===mo;
-  const fechadaNoMes = o => o.status==='fechado' && monthOf(o.closedAt||o.createdAt)===mo;
+  const fechadaNoMes = o => o.status==='fechado' && saleMonthOfOrc(o)===mo;
 
   // Comissão por colaborador = comissões lançadas na aba VENDAS no mês (não dos orçamentos).
   const comVendasByName={};
@@ -1973,7 +1981,7 @@ function comissaoAgentePercentual(valor){
 function renderDashboard(c){
   const mo=currentMonth(); const {total}=aggregateMonth(mo);
   const orcamentosMes=state.orcamentos.filter(o=>monthOf(o.createdAt)===mo&&!(o.versao>1));
-  const fechadas=state.orcamentos.filter(o=>o.status==='fechado'&&monthOf(o.closedAt)===mo);
+  const fechadas=state.orcamentos.filter(o=>o.status==='fechado'&&saleMonthOfOrc(o)===mo);
   const perdidas=state.orcamentos.filter(o=>o.status==='perdido'&&monthOf(o.closedAt||o.createdAt)===mo);
   // Comissões acumuladas = comissões lançadas na aba VENDAS no mês (não dos orçamentos).
   const vendasMes=(state.vendas||[]).filter(v=>monthOf(v.dataVenda)===mo);
@@ -2853,7 +2861,7 @@ function buildReportData(monthYM,ownerName){
   const {total,days}=aggregateMonthForOwner(monthYM,owner);
   const orcamentosMes=state.orcamentos.filter(o=>monthOf(o.createdAt)===monthYM&&!(o.versao>1)&&_matchOrc(o));
   const perdidas=state.orcamentos.filter(o=>o.status==='perdido'&&monthOf(o.closedAt||o.createdAt)===monthYM&&_matchOrc(o));
-  const fechadasNoMes=state.orcamentos.filter(o=>o.status==='fechado'&&monthOf(o.closedAt||o.createdAt)===monthYM&&_matchOrc(o));
+  const fechadasNoMes=state.orcamentos.filter(o=>o.status==='fechado'&&saleMonthOfOrc(o)===monthYM&&_matchOrc(o));
   const _orcIdsNoMes=new Set(fechadasNoMes.map(o=>o.id));
   // Dedup robusto: além do vínculo orcamentoId, também pelo Nº DA RESERVA (identificador
   // único da operadora). Evita a MESMA venda contar duas vezes quando o vínculo se perde
