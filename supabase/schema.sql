@@ -192,10 +192,10 @@ create policy "dia_ler" on public.dia_extra
   for select using (user_id = auth.uid() or public.eh_gestao());
 drop policy if exists "dia_inserir" on public.dia_extra;
 create policy "dia_inserir" on public.dia_extra
-  for insert with check (user_id = auth.uid());
+  for insert with check (user_id = auth.uid() or public.meu_papel() = 'admin');
 drop policy if exists "dia_atualizar" on public.dia_extra;
 create policy "dia_atualizar" on public.dia_extra
-  for update using (user_id = auth.uid());
+  for update using (user_id = auth.uid() or public.meu_papel() = 'admin');
 
 -- METAS — todos leem; só admin altera
 drop policy if exists "metas_ler" on public.metas;
