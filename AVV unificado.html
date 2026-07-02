@@ -1275,6 +1275,10 @@ let _solPrev=null,_solInit=false,_solSub=null,_solTimer=null,_solBusy=false;
 // executa nada sozinha — ela LIBERA a colaboradora a fazer a ação. As demais são de
 // "efeito" (têm payload e a aprovação executa na nuvem: venda retroativa, exclusões).
 function _solEhGrant(k){ return k==='editar_venda'||k==='editar_orcamento'||k==='exportar_versao'||k==='trocar_logo'; }
+// Auto-limpeza: pedidos RESOLVIDOS (aprovado/reprovado) há mais de 7 dias saem do
+// histórico. Pendentes nunca são apagados. Ajuste o número de dias aqui se quiser.
+const SOL_LIMPAR_DIAS = 7;
+function _solVelha(r){ if(!r||r.status==='pendente'||!r.resolvido_em) return false; const t=new Date(r.resolvido_em).getTime(); if(isNaN(t)) return false; return (Date.now()-t) > SOL_LIMPAR_DIAS*86400000; }
 function _solGrantMatch(r,acaoKey,payload){ if(r.acao_key!==acaoKey) return false; const pid=(payload&&payload.id)||null; const rid=(r.payload&&r.payload.id)||null; return pid===rid; }
 function _solCut(t){ t=t||''; return t.length>70?t.slice(0,70)+'…':t; }
 function _solWhen(iso){ if(!iso) return ''; try{ const d=new Date(iso); const p=n=>String(n).padStart(2,'0'); return p(d.getDate())+'/'+p(d.getMonth()+1)+' '+p(d.getHours())+':'+p(d.getMinutes()); }catch(e){ return ''; } }
@@ -1300,7 +1304,12 @@ async function refreshSolicitacoes(){
   try{
     const { data, error } = await sb.from('solicitacoes').select('*').order('criado_em',{ascending:false});
     if(error){ console.error('refreshSolicitacoes',error); return; }
-    const rows=data||[]; const admin=currentRole()==='admin';
+    let rows=data||[]; const admin=currentRole()==='admin';
+    // Auto-limpeza: o admin apaga do histórico os pedidos resolvidos há mais de 7 dias.
+    if(admin){
+      const velhas=rows.filter(_solVelha).map(r=>r.id);
+      if(velhas.length){ try{ await sb.from('solicitacoes').delete().in('id',velhas); rows=rows.filter(r=>velhas.indexOf(r.id)<0); }catch(e){ console.error('limpar solicitacoes',e); } }
+    }
     // Admin: avisa quando chega um pedido NOVO (só depois da 1ª carga).
     if(_solInit && admin){
       rows.forEach(r=>{ const prev=_solPrev.get(r.id); if(r.status==='pendente' && prev===undefined){ toast('🔔 '+(r.solicitante_nome||'Colaboradora')+' pediu permissão: '+_solCut(r.descricao),'info'); } });
@@ -1420,7 +1429,7 @@ function openSolicitacoesPanel(){
 }
 function renderSolPanel(){
   const body=document.getElementById('solPanelBody'); if(!body) return;
-  const rows=(state.solicitacoes||[]).slice().sort((a,b)=> (a.status==='pendente')!==(b.status==='pendente') ? (a.status==='pendente'?-1:1) : (new Date(b.criado_em)-new Date(a.criado_em)));
+  const rows=(state.solicitacoes||[]).filter(r=>!_solVelha(r)).slice().sort((a,b)=> (a.status==='pendente')!==(b.status==='pendente') ? (a.status==='pendente'?-1:1) : (new Date(b.criado_em)-new Date(a.criado_em)));
   if(!rows.length){ body.innerHTML='<div class="rec-empty">Nenhum pedido no momento. 🎉</div>'; return; }
   body.innerHTML=rows.map(r=>{
     const pend=r.status==='pendente';
