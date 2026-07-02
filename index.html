@@ -977,14 +977,19 @@ async function cloudLoadAll(){
         // pertencem ao usuário atualmente logado, para nunca misturar dados entre contas.
         const missing=localList.filter(q=>q&&q.id&&q.ownerId===state.user.id&&!cloudIds.has(q.id)&&!_deletedIds.has(q.id)&&!tombstones.has(q.id));
         if(missing.length){
-          const _res=await Promise.all(missing.map(q=>cloudSaveOrcamento(q).then(ok=>({q,ok})).catch(()=>({q,ok:false}))));
+          const _res=await Promise.all(missing.map(q=>_reuploadLocalOrc(q).then(r=>Object.assign({q},r))));
           const _ok=_res.filter(r=>r.ok).map(r=>r.q);
-          const _fail=_res.filter(r=>!r.ok).map(r=>r.q);
-          // Mostra os locais para a pessoa não "perder" o orçamento de vista, mas avisa com
-          // clareza os que NÃO subiram — esses ficam só neste navegador até sincronizar.
-          cloudOrcamentos=cloudOrcamentos.concat(missing);
+          const _rls=_res.filter(r=>!r.ok&&r.rls).map(r=>r.q);
+          const _net=_res.filter(r=>!r.ok&&!r.rls);
+          // RLS: a linha já existe na nuvem sob OUTRO dono → a cópia local é um fantasma
+          // conflitante. Remove do navegador para parar o erro em loop e não poluir a visão.
+          for(const q of _rls){ try{ await idbDelete(q.id); }catch(e){} }
+          // Rede/transitório: mantém local e mostra, para tentar de novo depois.
+          const _netQ=_net.map(r=>r.q);
+          cloudOrcamentos=cloudOrcamentos.concat(_ok,_netQ);
           if(_ok.length){ toast(`${_ok.length} orçamento(s) que estavam só neste navegador foram reenviados para a nuvem.`,'success'); }
-          if(_fail.length){ const _n=_fail.map(q=>(q.cliente&&q.cliente.nome)||q.id).slice(0,3).join(', '); toast(`${_fail.length} orçamento(s) NÃO subiram para a nuvem (${_n}). Ficam só neste navegador até sincronizar — o motivo aparece na mensagem vermelha.`,'warning'); }
+          if(_rls.length){ const _n=_rls.map(q=>(q.cliente&&q.cliente.nome)||q.id).slice(0,3).join(', '); toast(`${_rls.length} orçamento(s) local(is) conflitante(s) foram removidos deste navegador (${_n}). A versão que vale está na nuvem.`,'warning'); }
+          if(_net.length){ const _n=_netQ.map(q=>(q.cliente&&q.cliente.nome)||q.id).slice(0,3).join(', '); toast(`${_net.length} orçamento(s) não subiram agora (${_n}). Tentaremos de novo — verifique a conexão.`,'warning'); if(_net[0]&&_net[0].error) cloudErr(_net[0].error); }
         }
       }catch(e){ console.error('reconciliação de orçamentos locais',e); }
     }
@@ -1263,6 +1268,19 @@ function cloudSaveOrcamento(q){
   });
 }
 function cloudDeleteOrcamento(id){ if(!sb) return Promise.resolve(false); return sb.from('orcamentos').delete().eq('id',id).select().then(async ({data,error})=>{ if(error){ cloudErr(error); return false; } if(!data||!data.length){ console.error('cloudDeleteOrcamento: 0 linhas — a exclusão foi bloqueada pela regra de acesso (precisa ser o dono ou gestão).'); return false; } try{ await sb.from('orcamentos_excluidos').upsert({ id:id, por:(state.user&&state.user.id)||null }); }catch(e){ console.error('registro de exclusão (tombstone)',e); } return true; }); }
+// Reenvio de um orçamento local durante a reconciliação, distinguindo BLOQUEIO de
+// PERMISSÃO (RLS: a linha já existe na nuvem sob outro dono e nunca poderá ser gravada
+// por este usuário) de falha transitória (rede). No caso de RLS, o chamador descarta a
+// cópia local travada, para parar o erro em loop e não poluir os relatórios.
+async function _reuploadLocalOrc(q){
+  if(!sb||!state.user||!q||q._lite) return { ok:false, rls:false };
+  try{
+    const { data, error } = await sb.from('orcamentos').upsert({ id:q.id, user_id:state.user.id, owner_nome:q.owner||state.user.name||null, status:q.status||null, versao:q.versao||1, created_at:q.createdAt?toISO(q.createdAt):new Date().toISOString(), closed_at:q.closedAt?toISO(q.closedAt):null, data:q }).select();
+    if(error){ const rls=(error.code==='42501')||/row-level security/i.test(error.message||''); return { ok:false, rls, error }; }
+    if(!data||!data.length){ return { ok:false, rls:true }; } // 0 linhas = bloqueado silenciosamente pela RLS
+    return { ok:true };
+  }catch(e){ return { ok:false, rls:false, error:e }; }
+}
 // Confere se a escrita de fato afetou alguma linha. O Supabase NÃO retorna
 // erro quando uma política de segurança (RLS) bloqueia um update/upsert —
 // ele só atualiza 0 linhas e segue como "sucesso". Sem essa checagem, o app
