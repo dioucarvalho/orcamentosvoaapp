@@ -482,6 +482,10 @@ table.tbl th.num{text-align:right}
         </div>
       </div>
       <div class="topbar-actions">
+        <button id="solBtn" class="recados-btn" title="Pedidos de permissão" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span id="solBadge" class="recados-badge" style="display:none">0</span>
+        </button>
         <button id="recadosBtn" class="recados-btn" title="Recados e tarefas da equipe">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           <span id="recadosBadge" class="recados-badge" style="display:none">0</span>
@@ -893,6 +897,7 @@ async function loadProfileAndShow(authUser){
   const reRender=()=>{ _cloudLoading=false; const active=document.querySelector('.nav-item.active'); if(active) setView(active.dataset.view); };
   cloudLoadAll().then(reRender).catch(e=>{ console.error('cloudLoadAll(bg)',e); reRender(); });
   initRecados(); // mural de recados da equipe (tempo real)
+  initSolicitacoes(); // sininho de pedidos de permissão (tempo real)
 }
 
 /* ============================================================================
@@ -1258,6 +1263,156 @@ async function excluirRecado(id){
   }catch(e){ console.error('excluirRecado',e); }
 }
 
+/* ============================================================================
+   SOLICITAÇÕES DE PERMISSÃO — a colaboradora pede autorização ao admin em vez
+   de digitar a senha. O admin recebe no sininho, aprova/reprova (com a senha),
+   e ao APROVAR a própria sessão do admin executa a ação na nuvem (payload),
+   refletindo no PC dela mesmo que tenha fechado o sistema. Tabela "solicitacoes"
+   + Realtime, mesmo padrão dos recados. Isolado — não toca no resto.
+   ============================================================================ */
+let _solPrev=null,_solInit=false,_solSub=null,_solTimer=null,_solBusy=false;
+function _solCut(t){ t=t||''; return t.length>70?t.slice(0,70)+'…':t; }
+function _solWhen(iso){ if(!iso) return ''; try{ const d=new Date(iso); const p=n=>String(n).padStart(2,'0'); return p(d.getDate())+'/'+p(d.getMonth()+1)+' '+p(d.getHours())+':'+p(d.getMinutes()); }catch(e){ return ''; } }
+function _solPanelVisible(){ const ov=document.getElementById('modalOverlay'); return !!(ov&&ov.classList.contains('is-open')&&document.getElementById('solPanelRoot')); }
+
+function initSolicitacoes(){
+  if(!sb||!state.user) return;
+  // O sininho de aprovações é só do administrador (quem aprova com a senha).
+  const btn=document.getElementById('solBtn'); if(btn) btn.style.display=(currentRole()==='admin')?'flex':'none';
+  refreshSolicitacoes();
+  try{
+    if(_solSub){ sb.removeChannel(_solSub); _solSub=null; }
+    _solSub=sb.channel('sol-rt-'+state.user.id)
+      .on('postgres_changes',{event:'*',schema:'public',table:'solicitacoes'},()=>{ refreshSolicitacoes(); })
+      .subscribe();
+  }catch(e){ console.error('solicitacoes realtime',e); }
+  if(_solTimer) clearInterval(_solTimer);
+  _solTimer=setInterval(()=>{ if(!document.hidden) refreshSolicitacoes(); }, 25000);
+}
+
+async function refreshSolicitacoes(){
+  if(!sb||!state.user||_solBusy) return; _solBusy=true;
+  try{
+    const { data, error } = await sb.from('solicitacoes').select('*').order('criado_em',{ascending:false});
+    if(error){ console.error('refreshSolicitacoes',error); return; }
+    const rows=data||[]; const admin=currentRole()==='admin';
+    // Admin: avisa quando chega um pedido NOVO (só depois da 1ª carga).
+    if(_solInit && admin){
+      rows.forEach(r=>{ const prev=_solPrev.get(r.id); if(r.status==='pendente' && prev===undefined){ toast('🔔 '+(r.solicitante_nome||'Colaboradora')+' pediu permissão: '+_solCut(r.descricao),'info'); } });
+    }
+    _solPrev=new Map(rows.map(r=>[r.id,r.status]));
+    _solInit=true;
+    state.solicitacoes=rows;
+    updateSolBadge();
+    if(_solPanelVisible()) renderSolPanel();
+    // Colaboradora: avisa quando o pedido dela foi respondido (robusto via "visto").
+    if(!admin) await _solNotificarRespostas(rows);
+  }catch(e){ console.error('refreshSolicitacoes',e); }
+  finally{ _solBusy=false; }
+}
+
+async function _solNotificarRespostas(rows){
+  const me=(state.user&&state.user.id)||'';
+  const resp=rows.filter(r=>r.solicitante_id===me && !r.visto && (r.status==='aprovada'||r.status==='reprovada'));
+  if(!resp.length) return;
+  let aprovou=false;
+  resp.forEach(r=>{ if(r.status==='aprovada'){ toast('✅ Pedido aprovado: '+_solCut(r.descricao),'success'); aprovou=true; } else { toast('❌ Pedido negado: '+_solCut(r.descricao),'warning'); } r.visto=true; });
+  try{ await sb.from('solicitacoes').update({visto:true}).in('id',resp.map(r=>r.id)); }catch(e){ console.error('sol visto',e); }
+  // Aplica o que o admin gravou na nuvem (ex.: a venda aprovada) na tela dela.
+  if(aprovou){ try{ await cloudLoadAll(); const active=document.querySelector('.nav-item.active'); if(active) setView(active.dataset.view); }catch(e){ console.error('sol reload',e); } }
+}
+
+function updateSolBadge(){
+  const b=document.getElementById('solBadge'); if(!b) return;
+  if(currentRole()!=='admin'){ b.style.display='none'; return; }
+  const n=(state.solicitacoes||[]).filter(r=>r.status==='pendente').length;
+  if(n>0){ b.textContent=n>99?'99+':String(n); b.style.display='flex'; } else { b.style.display='none'; }
+}
+
+// Ponto de entrada: uma ação gatilho chama isto. Admin executa direto; colaboradora
+// vê o convite para solicitar e, ao aceitar, cria o pedido (com o payload da ação).
+function pedirPermissao(opts){
+  opts=opts||{};
+  if(currentRole()==='admin'){ if(typeof opts.runDireto==='function') opts.runDireto(); return; }
+  openModal(`<div class="modal-head"><h3>Permissão do administrador</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><p style="margin:0 0 8px;font-size:13px;color:var(--text-soft)">Essa ação depende da permissão do administrador.</p><p style="margin:0;font-size:13px;color:var(--text)"><strong>${escapeHtml(opts.descricao||'')}</strong></p><p style="margin:10px 0 0;font-size:12px;color:var(--text-mute)">Deseja enviar um pedido de autorização? Você será avisada assim que o administrador responder.</p></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Não</button><button class="btn btn-primary" id="solPedirOk">Sim, solicitar</button></div>`);
+  const ok=document.getElementById('solPedirOk'); if(!ok) return;
+  ok.addEventListener('click',async ()=>{
+    ok.disabled=true; ok.textContent='Enviando…';
+    const row={ id:uid(), solicitante_id:(state.user&&state.user.id)||null, solicitante_nome:(state.user&&state.user.name)||'', acao_key:opts.acaoKey||'', descricao:opts.descricao||'', payload:opts.payload||null, status:'pendente', visto:false };
+    try{
+      const { error } = await sb.from('solicitacoes').insert(row);
+      if(error){ console.error('pedirPermissao',error); toast('Não foi possível enviar o pedido. Verifique a conexão.','danger'); ok.disabled=false; ok.textContent='Sim, solicitar'; return; }
+      closeModal();
+      toast('Pedido enviado ao administrador. Você será avisada quando ele responder.','success');
+      if(typeof opts.aoEnviar==='function') opts.aoEnviar();
+      refreshSolicitacoes();
+    }catch(e){ console.error('pedirPermissao',e); toast('Não foi possível enviar o pedido.','danger'); ok.disabled=false; ok.textContent='Sim, solicitar'; }
+  });
+}
+
+// Executor (só admin): aplica na nuvem a ação aprovada, a partir do payload.
+async function _executarSolicitacao(sol){
+  const p=(sol&&sol.payload)||{};
+  try{
+    if(sol.acao_key==='venda_retroativa'){
+      const v=p; v.preLancada=false;
+      const okc=await cloudSaveVenda(v);
+      if(okc){ const i=(state.vendas||[]).findIndex(x=>x.id===v.id); if(i>=0) state.vendas[i]=v; else { state.vendas=state.vendas||[]; state.vendas.unshift(v); } }
+      return okc;
+    }
+    if(sol.acao_key==='excluir_venda'){
+      const okc=await cloudDeleteVenda(p.id);
+      if(okc) state.vendas=(state.vendas||[]).filter(x=>x.id!==p.id);
+      return okc;
+    }
+    if(sol.acao_key==='excluir_orcamento'){
+      const okc=await cloudDeleteOrcamento(p.id);
+      if(okc){ state.orcamentos=(state.orcamentos||[]).filter(x=>x.id!==p.id); _deletedIds.add(p.id); }
+      return okc;
+    }
+    return false;
+  }catch(e){ console.error('_executarSolicitacao',e); return false; }
+}
+
+function aprovarSolicitacao(id){
+  const sol=(state.solicitacoes||[]).find(x=>x.id===id); if(!sol) return;
+  requireAdmin('Aprovar o pedido de '+(sol.solicitante_nome||'colaboradora')+'? Ao confirmar com a senha, a ação será executada e salva na nuvem.', async ()=>{
+    const okc=await _executarSolicitacao(sol);
+    if(!okc){ toast('Não foi possível executar a ação aprovada. Verifique a conexão e tente de novo.','danger'); return; }
+    try{ await sb.from('solicitacoes').update({status:'aprovada',resolvido_em:new Date().toISOString(),resolvido_por:(state.user&&state.user.name)||'',visto:false}).eq('id',id); }catch(e){ console.error('aprovar update',e); }
+    toast('Pedido aprovado e aplicado. A colaboradora será avisada.','success');
+    await refreshSolicitacoes();
+    const active=document.querySelector('.nav-item.active'); if(active) setView(active.dataset.view);
+  });
+}
+
+function reprovarSolicitacao(id){
+  const sol=(state.solicitacoes||[]).find(x=>x.id===id); if(!sol) return;
+  requireAdmin('Reprovar o pedido de '+(sol.solicitante_nome||'colaboradora')+'? Confirme com a senha de administrador.', async ()=>{
+    try{ await sb.from('solicitacoes').update({status:'reprovada',resolvido_em:new Date().toISOString(),resolvido_por:(state.user&&state.user.name)||'',visto:false}).eq('id',id); }catch(e){ console.error('reprovar update',e); }
+    toast('Pedido reprovado. A colaboradora será avisada.','info');
+    await refreshSolicitacoes();
+  });
+}
+
+function openSolicitacoesPanel(){
+  openModal(`<div class="modal-head"><h3>🔔 Pedidos de permissão</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body" id="solPanelRoot"><div id="solPanelBody"></div></div>`);
+  refreshSolicitacoes().then(()=>{ if(_solPanelVisible()) renderSolPanel(); });
+}
+function renderSolPanel(){
+  const body=document.getElementById('solPanelBody'); if(!body) return;
+  const rows=(state.solicitacoes||[]).slice().sort((a,b)=> (a.status==='pendente')!==(b.status==='pendente') ? (a.status==='pendente'?-1:1) : (new Date(b.criado_em)-new Date(a.criado_em)));
+  if(!rows.length){ body.innerHTML='<div class="rec-empty">Nenhum pedido no momento. 🎉</div>'; return; }
+  body.innerHTML=rows.map(r=>{
+    const pend=r.status==='pendente';
+    const st = pend?'<span class="badge warning">Pendente</span>':(r.status==='aprovada'?'<span class="badge success">Aprovado</span>':'<span class="badge" style="background:#fde8e8;color:#c0341d">Reprovado</span>');
+    const acoes = pend
+      ? `<div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-success btn-sm" onclick="aprovarSolicitacao('${r.id}')">Aprovar</button><button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="reprovarSolicitacao('${r.id}')">Reprovar</button></div>`
+      : `<div style="font-size:11px;color:var(--text-mute);margin-top:4px">${r.status==='aprovada'?'Aprovado':'Reprovado'} por ${escapeHtml(r.resolvido_por||'—')} · ${_solWhen(r.resolvido_em)}</div>`;
+    return `<div class="rec-item" style="display:block"><div class="rec-body"><div class="rec-texto"><strong>${escapeHtml(r.solicitante_nome||'Colaboradora')}</strong> pediu: ${escapeHtml(r.descricao||'')}</div><div class="rec-meta">${_solWhen(r.criado_em)} · ${st}</div>${acoes}</div></div>`;
+  }).join('');
+}
+
 function cloudSaveOrcamento(q){
   if(!sb||!state.user) return Promise.resolve(false);
   if(q && q._lite){ console.error('cloudSaveOrcamento BLOQUEADO: tentativa de salvar um orçamento "lite" (sem fotos) — isso apagaria as fotos na nuvem. Carregue o completo antes (ensureFullOrcamento).'); return Promise.resolve(false); }
@@ -1448,6 +1603,7 @@ function bindNav(){
   document.getElementById('menuToggle').addEventListener('click',()=>{ document.getElementById('sidebar').classList.toggle('is-open'); });
   document.getElementById('changeNameBtn').addEventListener('click',requestNameChange);
   const recBtn=document.getElementById('recadosBtn'); if(recBtn) recBtn.addEventListener('click',()=>openRecadosPanel());
+  const solB=document.getElementById('solBtn'); if(solB) solB.addEventListener('click',()=>openSolicitacoesPanel());
   document.getElementById('logoutBtn').addEventListener('click',()=>{ if(confirm('Sair e voltar para a tela de acesso?')) logout(); });
   document.getElementById('changeLogoBtn').addEventListener('click',()=>{ requireAdmin('Para trocar a logo da agência, informe a senha de administrador.',()=>{ document.getElementById('logoFileInput').click(); }); });
   document.getElementById('logoFileInput').addEventListener('change',(e)=>handleLogoUpload(e,()=>{ document.getElementById('sidebarLogo').innerHTML=logoHTML(); const active=document.querySelector('.nav-item.active'); if(active) setView(active.dataset.view); }));
@@ -2359,7 +2515,7 @@ async function saveVendaForm(){
   if(mesVenda && !v.preLancada){
     const mesServidor=await mesAtualServidor();
     if(mesVenda!==mesServidor){
-      requireAdmin('A data da venda é fora do mês atual ('+mesVenda+'). Para lançar em outro mês, informe a senha do gestor.', ()=>_doSaveVenda(v));
+      pedirPermissao({ acaoKey:'venda_retroativa', descricao:'Lançar venda com data de '+mesVenda+' (fora do mês atual) — '+((v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'cliente')+', valor '+fmtBRL(Number(v.valorTotal)||0), payload:v, runDireto:()=>_doSaveVenda(v), aoEnviar:()=>closeVendaForm() });
       return;
     }
   }
@@ -2376,7 +2532,7 @@ async function _doSaveVenda(v){
 }
 function closeVendaForm(){ const fw=document.getElementById('vendaFormWrap'); if(fw) fw.innerHTML=''; currentVenda=null; renderVendasMain(); }
 function editVenda(id){ const v=(state.vendas||[]).find(x=>x.id===id); if(v && !v.preLancada){ requireAdmin('Esta venda já está salva e bloqueada. Para visualizar ou editar, informe a senha do gestor.', ()=>openVendaForm(id)); } else { openVendaForm(id); } }
-function deleteVenda(id){ const v=(state.vendas||[]).find(x=>x.id===id); if(!v) return; const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'esta venda'; requireAdmin('Excluir a venda de "'+tit+'" é uma ação que não pode ser desfeita. Informe a senha do gestor para confirmar.', ()=>{ state.vendas=(state.vendas||[]).filter(x=>x.id!==id); renderVendasMain(); cloudDeleteVenda(id).then(ok=>{ toast(ok?'Venda excluída':'Removida deste navegador, mas a nuvem não confirmou.',ok?'success':'warning'); }); }); }
+function deleteVenda(id){ const v=(state.vendas||[]).find(x=>x.id===id); if(!v) return; const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'esta venda'; pedirPermissao({ acaoKey:'excluir_venda', descricao:'Excluir a venda de "'+tit+'"', payload:{id:id,nome:tit}, runDireto:()=>{ state.vendas=(state.vendas||[]).filter(x=>x.id!==id); renderVendasMain(); cloudDeleteVenda(id).then(ok=>{ toast(ok?'Venda excluída':'Removida deste navegador, mas a nuvem não confirmou.',ok?'success':'warning'); }); } }); }
 
 // Monta um objeto de venda (pré-lançada) a partir de um orçamento fechado.
 // Mantém o DONO do orçamento como dono da venda (preserva a separação de acesso).
@@ -2707,7 +2863,7 @@ async function saveCurrentQuote(){
   toast(cloudOk?'Orçamento salvo na nuvem':'Orçamento salvo neste navegador, mas falhou ao confirmar na nuvem. Tentaremos novamente automaticamente.',cloudOk?'success':'warning');
 }
 function cancelQuoteForm(){ currentQuote=null; document.getElementById('quoteFormWrap').innerHTML=''; renderQuoteList(); }
-function deleteQuote(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) return; requireAdmin(`A exclusão de orçamentos é uma ação restrita ao administrador. Para excluir o orçamento de "${o.cliente?.nome||'cliente'}", informe a senha.`,async ()=>{ state.orcamentos=state.orcamentos.filter(x=>x.id!==id); _deletedIds.add(id); persistAll(); renderQuoteList(); const ok=await cloudDeleteOrcamento(id); toast(ok?'Orçamento excluído':'Removido deste navegador, mas a nuvem NÃO confirmou a exclusão (ele pode voltar ao atualizar). Rode a migração de permissões no Supabase.',ok?'success':'warning'); }); }
+function deleteQuote(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) return; const nome=o.cliente?.nome||'cliente'; pedirPermissao({ acaoKey:'excluir_orcamento', descricao:'Excluir o orçamento de "'+nome+'"', payload:{id:id,nome:nome}, runDireto:async ()=>{ state.orcamentos=state.orcamentos.filter(x=>x.id!==id); _deletedIds.add(id); persistAll(); renderQuoteList(); const ok=await cloudDeleteOrcamento(id); toast(ok?'Orçamento excluído':'Removido deste navegador, mas a nuvem NÃO confirmou a exclusão (ele pode voltar ao atualizar). Rode a migração de permissões no Supabase.',ok?'success':'warning'); } }); }
 
 function openStatusModal(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) return; if(o.status==='fechado'){ requireAdmin('Esta venda já foi efetivada e está bloqueada. Informe a senha de administrador para visualizar ou editar os dados da venda.', ()=>_openStatusModal(id)); return; } _openStatusModal(id); }
 function _openStatusModal(id){ const o=state.orcamentos.find(x=>x.id===id); if(!o) return; openModal(`<div class="modal-head"><h3>Atualizar status do orçamento</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><p style="font-size:13px;color:var(--text-soft);margin:0 0 14px"><strong>${escapeHtml(o.cliente?.nome||'')}</strong> · ${escapeHtml(o.destino?.titulo||'')}</p><div class="field"><label>Status</label><select id="st_status"><option value="aberto" ${o.status==='aberto'?'selected':''}>Em aberto</option><option value="fechado" ${o.status==='fechado'?'selected':''}>Fechada</option><option value="perdido" ${o.status==='perdido'?'selected':''}>Perdida</option></select></div><div id="st_extra"></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveStatus('${id}')">Salvar</button></div>`); const sel=document.getElementById('st_status'); const renderExtra=()=>{ const val=sel.value; const extra=document.getElementById('st_extra'); if(val==='fechado'){ const v=o.venda||{}; extra.innerHTML=`<div style="background:var(--surface-alt);border:1px solid var(--border);border-radius:10px;padding:14px;margin-top:6px"><p style="font-size:12px;font-weight:700;color:var(--brand-blue);margin:0 0 10px;text-transform:uppercase;letter-spacing:.04em">✓ Checklist da venda efetivada</p><div class="field"><label>Data de fechamento</label><input id="st_dataFechamento" type="date" value="${v.dataFechamento||todayISO()}"></div><div class="field"><label>Fornecedor</label><input id="st_fornecedor" placeholder="Insira a operadora" value="${escapeHtml(v.fornecedor||'')}"></div><div class="field"><label>ID da reserva</label><input id="st_idReserva" placeholder="Localizador / código da reserva" value="${escapeHtml(v.idReserva||'')}"></div><div class="field"><label>Nome do passageiro titular</label><input id="st_titular" placeholder="Nome completo do titular" value="${escapeHtml(v.titular||'')}"></div><div class="field-row"><div class="field"><label>Comissão na agência (R$)</label><input id="st_comissao" type="number" step="0.01" placeholder="0,00" value="${v.comissaoAgencia||''}"></div><div class="field"><label>Comissão no fornecedor (R$)</label><input id="st_comFornecedor" type="number" step="0.01" placeholder="0,00" value="${v.comissaoFornecedor||''}"></div></div><p style="font-size:11px;color:var(--text-mute);margin:2px 0 0">A comissão registrada no histórico será a <strong>soma</strong> da comissão na agência + comissão no fornecedor. Estes dados aparecerão no relatório "Vendas do mês" para conferência com a operadora.</p></div>`; } else if(val==='perdido'){ extra.innerHTML=`<div class="field"><label>Motivo da perda</label><textarea id="st_motivo" placeholder="Descreva por que a venda foi perdida">${escapeHtml(o.motivoPerda||'')}</textarea></div>`; } else { extra.innerHTML=''; } }; sel.addEventListener('change',renderExtra); renderExtra(); }
