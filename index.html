@@ -552,6 +552,13 @@ table.tbl th.num{text-align:right}
           <label>Nome do cliente / família</label>
           <input type="text" id="voaClientName" placeholder="Ex.: nome do cliente" />
         </div>
+        <div class="voa-field" style="border:1px dashed #c99a2e;border-radius:8px;padding:10px 12px;background:rgba(201,154,46,.07);margin-bottom:12px">
+          <label style="display:flex;align-items:center;gap:6px;margin-bottom:6px">🔒 Uso interno da agência <span class="voa-hint">(não aparece para o cliente)</span></label>
+          <div class="voa-grid voa-g2">
+            <div class="voa-field"><label>Fornecedor do orçamento</label><input type="text" id="voaFornecedor" placeholder="Ex.: CVC, Azul Viagens, operadora..." /></div>
+            <div class="voa-field"><label>ID do orçamento (no fornecedor)</label><input type="text" id="voaIdOrcamento" placeholder="Ex.: 123456" /></div>
+          </div>
+        </div>
         <div class="voa-grid voa-g2">
           <div class="voa-field"><label>Adultos</label><input type="number" id="voaAdults" min="0" value="2" /></div>
           <div class="voa-field"><label>Crianças</label><input type="number" id="voaChildren" min="0" value="0" /></div>
@@ -908,7 +915,7 @@ function cloudErr(e){ if(e){ console.error('cloud',e); const det=(e&&(e.message|
 
 // Campos LEVES do orçamento (tudo o que listas/relatórios/admin usam), SEM as
 // fotos nem o snapshot voaData — buscados via projeção JSON direto no Postgres.
-const LITE_ORC_SELECT='id,user_id,owner_nome,status:data->>status,versao:data->versao,comissao:data->comissao,motivoPerda:data->>motivoPerda,baseId:data->>baseId,baseNome:data->>baseNome,dOwner:data->>owner,dOwnerId:data->>ownerId,createdAt:data->>createdAt,closedAt:data->>closedAt,cliente:data->cliente,destinoTitulo:data->destino->>titulo,destinoDescricao:data->destino->>descricao,datas:data->datas,investimento:data->investimento,venda:data->venda';
+const LITE_ORC_SELECT='id,user_id,owner_nome,status:data->>status,versao:data->versao,comissao:data->comissao,motivoPerda:data->>motivoPerda,baseId:data->>baseId,baseNome:data->>baseNome,dOwner:data->>owner,dOwnerId:data->>ownerId,createdAt:data->>createdAt,closedAt:data->>closedAt,cliente:data->cliente,fornecedor:data->>fornecedor,idOrcamento:data->>idOrcamento,destinoTitulo:data->destino->>titulo,destinoDescricao:data->destino->>descricao,datas:data->datas,investimento:data->investimento,venda:data->venda';
 async function cloudLoadAll(){
   if(!sb||!state.user) return;
   try{
@@ -954,6 +961,7 @@ async function cloudLoadAll(){
         motivoPerda:r.motivoPerda||'', baseId:r.baseId||null, baseNome:r.baseNome||'',
         createdAt:r.createdAt||'', closedAt:r.closedAt||null,
         cliente:r.cliente||{nome:'',telefone:'',email:''},
+        fornecedor:r.fornecedor||'', idOrcamento:r.idOrcamento||'',
         destino:{titulo:r.destinoTitulo||'',descricao:r.destinoDescricao||'',imagens:['','','','']},
         datas:Array.isArray(r.datas)?r.datas:[{inicio:'',fim:'',trecho:''}],
         investimento:r.investimento||{valor:'',parcelas:'',observacoes:''},
@@ -2831,7 +2839,7 @@ function renderQuoteList(){
   if(quoteDateFrom||quoteDateTo){ list=list.filter(o=>{ const dt=(o.createdAt||'').slice(0,10); if(!dt) return false; if(quoteDateFrom && dt<quoteDateFrom) return false; if(quoteDateTo && dt>quoteDateTo) return false; return true; }); }
   const qq=(quoteSearch||'').trim().toLowerCase();
   if(qq){ list=list.filter(o=>((o.cliente&&o.cliente.nome)||'').toLowerCase().includes(qq)||((o.baseNome)||'').toLowerCase().includes(qq)||((o.venda&&o.venda.titular)||'').toLowerCase().includes(qq)||((o.destino&&o.destino.titulo)||'').toLowerCase().includes(qq)); }
-  wrap.innerHTML=`<div class="card"><div class="card-header"><h3 class="card-title">Histórico de orçamentos</h3><span class="badge neutral">${list.length} total</span></div>${list.length===0?`<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>${qq?'Nenhum orçamento encontrado para essa busca.':'Nenhum orçamento ainda. Clique em "Novo orçamento" para começar.'}</div>`:`<table class="tbl"><thead><tr><th>Cliente</th><th>Destino</th><th>Criado</th><th>Investimento</th><th>Status</th><th class="num">Ações</th></tr></thead><tbody>${list.map(o=>{ const status=o.status==='fechado'?`<span class="badge success">Fechada · ${fmtBRL(o.comissao)}</span>`:o.status==='perdido'?`<span class="badge danger">Perdida</span>`:`<span class="badge warning">Em aberto</span>`; return `<tr><td><strong>${quoteDisplayName(o)}</strong></td><td>${escapeHtml(o.destino?.titulo||'—')}</td><td>${fmtDateBR(o.createdAt.slice(0,10))}</td><td>${o.investimento?.valor?fmtBRL(o.investimento.valor):'—'}</td><td>${status}</td><td class="num"><button class="btn-icon" title="Editar" onclick="editQuote('${o.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="btn-icon" title="Gerar HTML" onclick="exportQuoteHTML('${o.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button><button class="btn-icon" title="Status" onclick="openStatusModal('${o.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></button><button class="btn-icon" title="Exportar JSON" onclick="exportQuoteJSON('${o.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button><button class="btn-icon" title="Excluir" onclick="deleteQuote('${o.id}')" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></td></tr>`; }).join('')}</tbody></table>`}</div>`;
+  wrap.innerHTML=`<div class="card"><div class="card-header"><h3 class="card-title">Histórico de orçamentos</h3><span class="badge neutral">${list.length} total</span></div>${list.length===0?`<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>${qq?'Nenhum orçamento encontrado para essa busca.':'Nenhum orçamento ainda. Clique em "Novo orçamento" para começar.'}</div>`:`<table class="tbl"><thead><tr><th>Cliente</th><th>Destino</th><th>Criado</th><th>Fornecedor</th><th>Investimento</th><th>Status</th><th class="num">Ações</th></tr></thead><tbody>${list.map(o=>{ const status=o.status==='fechado'?`<span class="badge success">Fechada · ${fmtBRL(o.comissao)}</span>`:o.status==='perdido'?`<span class="badge danger">Perdida</span>`:`<span class="badge warning">Em aberto</span>`; return `<tr><td><strong>${quoteDisplayName(o)}</strong></td><td>${escapeHtml(o.destino?.titulo||'—')}</td><td>${fmtDateBR(o.createdAt.slice(0,10))}</td><td>${o.fornecedor?escapeHtml(o.fornecedor):'—'}${o.idOrcamento?`<br><span style="font-size:11px;color:var(--text-mute)">ID: ${escapeHtml(o.idOrcamento)}</span>`:''}</td><td>${o.investimento?.valor?fmtBRL(o.investimento.valor):'—'}</td><td>${status}</td><td class="num"><button class="btn-icon" title="Editar" onclick="editQuote('${o.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="btn-icon" title="Gerar HTML" onclick="exportQuoteHTML('${o.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button><button class="btn-icon" title="Status" onclick="openStatusModal('${o.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></button><button class="btn-icon" title="Exportar JSON" onclick="exportQuoteJSON('${o.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button><button class="btn-icon" title="Excluir" onclick="deleteQuote('${o.id}')" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></td></tr>`; }).join('')}</tbody></table>`}</div>`;
 }
 
 /* Abre o gerador novo (VOA) preenchido com o orçamento existente.
@@ -2847,7 +2855,7 @@ function buildVoaDataFromQuote(o){
   const hotelName=(o.hospedagem&&o.hospedagem[0]&&o.hospedagem[0].nome)||'';
   const destPeriod=(o.datas&&o.datas[0]&&o.datas[0].trecho)||'';
   const valor=o.investimento&&o.investimento.valor?Number(o.investimento.valor).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}):'';
-  return { agentName:(state.user&&state.user.name)||'', agentPhone:'', clientName:(o.cliente&&o.cliente.nome)||'', adults:'2', children:'0', childAges:[], destName:(o.destino&&o.destino.titulo)||'', destPeriod:destPeriod, destText:(o.destino&&o.destino.descricao)||'', gallery:[], flights:flights, hotelName:hotelName, hotelImgs:[], hotelsExtra:[], passeios:[], traslados:[], docs:[], priceTotal:valor, priceInstall:(o.investimento&&o.investimento.parcelas)||'', priceNote:'' };
+  return { agentName:(state.user&&state.user.name)||'', agentPhone:'', clientName:(o.cliente&&o.cliente.nome)||'', fornecedor:o.fornecedor||'', idOrcamento:o.idOrcamento||'', adults:'2', children:'0', childAges:[], destName:(o.destino&&o.destino.titulo)||'', destPeriod:destPeriod, destText:(o.destino&&o.destino.descricao)||'', gallery:[], flights:flights, hotelName:hotelName, hotelImgs:[], hotelsExtra:[], passeios:[], traslados:[], docs:[], priceTotal:valor, priceInstall:(o.investimento&&o.investimento.parcelas)||'', priceNote:'' };
 }
 async function openQuoteForm(id){
   if(id){ let existing=state.orcamentos.find(o=>o.id===id); if(!existing) return; if(existing._lite){ toast('Carregando orçamento…'); existing=await ensureFullOrcamento(id); } if(!existing) return; currentQuote=JSON.parse(JSON.stringify(existing)); } else { currentQuote=blankQuote(); }
@@ -3324,6 +3332,8 @@ const VOA = (function(){
       agentName:(vEl('voaAgentName')||{value:''}).value.trim(),
       agentPhone:(vEl('voaAgentPhone')||{value:''}).value.replace(/\D/g,''),
       clientName:(vEl('voaClientName')||{value:''}).value.trim(),
+      fornecedor:(vEl('voaFornecedor')||{value:''}).value.trim(),
+      idOrcamento:(vEl('voaIdOrcamento')||{value:''}).value.trim(),
       adults:(vEl('voaAdults')||{value:'2'}).value.trim(),
       children:(vEl('voaChildren')||{value:'0'}).value.trim(),
       childAges:childAges,
@@ -3596,6 +3606,8 @@ const VOA = (function(){
     if(vEl('voaAgentName')) vEl('voaAgentName').value=data.agentName||'';
     if(vEl('voaAgentPhone')) vEl('voaAgentPhone').value=data.agentPhone||'';
     if(vEl('voaClientName')) vEl('voaClientName').value=data.clientName||'';
+    if(vEl('voaFornecedor')) vEl('voaFornecedor').value=data.fornecedor||'';
+    if(vEl('voaIdOrcamento')) vEl('voaIdOrcamento').value=data.idOrcamento||'';
     if(vEl('voaAdults')) vEl('voaAdults').value=data.adults||'2';
     if(vEl('voaChildren')) vEl('voaChildren').value=data.children||'0';
     (data.childAges||[]).forEach(function(a){ addChild(a); });
@@ -3828,6 +3840,8 @@ function avvSaveFromVOA(data,editId){
   else { q.baseId=q.id; q.versao=1; q.baseNome=data.clientName||''; }
   q.owner=(state.user&&state.user.name)||''; q.ownerId=(state.user&&state.user.id)||userSlug(q.owner);
   q.cliente.nome=data.clientName||'';
+  q.fornecedor=data.fornecedor||'';       // uso interno da agência (não vai ao cliente)
+  q.idOrcamento=data.idOrcamento||'';     // uso interno da agência (não vai ao cliente)
   q.destino.titulo=data.destName||'';
   q.destino.descricao=data.destText||'';
   const priceRaw=(data.priceTotal||'').replace(/[R$\s]/g,'').replace(/\./g,'').replace(',','.');
