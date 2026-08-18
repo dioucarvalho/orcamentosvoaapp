@@ -1011,6 +1011,8 @@ async function cloudLoadAll(){
       }catch(e){ console.error('reconciliação de orçamentos locais',e); }
     }
     state.orcamentos=cloudOrcamentos;
+    // DIAGNÓSTICO TEMPORÁRIO (orçamentos zerados no admin): mostra o que a nuvem devolveu.
+    try{ if(currentRole()==='admin'||currentRole()==='gerente'){ const _n=(cloudOrcamentos||[]).length; if(_n===0){ const _e=orcsR&&orcsR.error; toast('Diagnóstico: 0 orçamentos'+(_e?(' — erro: '+(_e.message||_e.code||JSON.stringify(_e))):' (busca sem erro)'),'warning'); } else { toast('Diagnóstico: '+_n+' orçamento(s) carregado(s) da nuvem.','info'); } } }catch(_dbg){}
 
     // PRIVACIDADE DO ADMINISTRADOR: gerente e consultora não enxergam NADA que seja
     // de um administrador (orçamentos e atividades diárias). Filtramos na origem, então
