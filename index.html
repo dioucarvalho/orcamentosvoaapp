@@ -915,7 +915,7 @@ function cloudErr(e){ if(e){ console.error('cloud',e); const det=(e&&(e.message|
 
 // Campos LEVES do orçamento (tudo o que listas/relatórios/admin usam), SEM as
 // fotos nem o snapshot voaData — buscados via projeção JSON direto no Postgres.
-const LITE_ORC_SELECT='id,user_id,owner_nome,status:data->>status,versao:data->versao,comissao:data->comissao,motivoPerda:data->>motivoPerda,baseId:data->>baseId,baseNome:data->>baseNome,dOwner:data->>owner,dOwnerId:data->>ownerId,createdAt:data->>createdAt,closedAt:data->>closedAt,cliente:data->cliente,fornecedor:data->>fornecedor,idOrcamento:data->>idOrcamento,destinoTitulo:data->destino->>titulo,destinoDescricao:data->destino->>descricao,datas:data->datas,investimento:data->investimento,venda:data->venda';
+const LITE_ORC_SELECT='id,user_id,owner_nome,status:data->>status,versao:data->versao,comissao:data->comissao,motivoPerda:data->>motivoPerda,baseId:data->>baseId,baseNome:data->>baseNome,dOwner:data->>owner,dOwnerId:data->>ownerId,createdAt:data->>createdAt,closedAt:data->>closedAt,cliente:data->cliente,destinoTitulo:data->destino->>titulo,destinoDescricao:data->destino->>descricao,datas:data->datas,investimento:data->investimento,venda:data->venda';
 async function cloudLoadAll(){
   if(!sb||!state.user) return;
   try{
@@ -942,8 +942,12 @@ async function cloudLoadAll(){
 
     let cloudOrcamentos;
     // Confere se a projeção leve veio no formato esperado (chave 'createdAt' presente).
-    const liteShapeOk = !(orcsR.data&&orcsR.data.length) || ('createdAt' in orcsR.data[0]);
-    if(orcsR.error || !liteShapeOk){
+    // Rede de segurança: se a projeção leve vier VAZIA, cai para a carga completa — assim
+    // uma falha silenciosa na projeção nunca "esconde" os orçamentos da equipe (para uma
+    // agência realmente sem orçamentos, o fallback só confirma o vazio, sem prejuízo).
+    const _liteVazia = !(orcsR.data&&orcsR.data.length);
+    const liteShapeOk = _liteVazia || ('createdAt' in orcsR.data[0]);
+    if(orcsR.error || !liteShapeOk || _liteVazia){
       // Se a busca leve falhar ou vier malformada, cai para a carga completa
       // (mais pesada, mas garante que o login NUNCA quebre nem mostre listas vazias).
       console.error('busca leve de orçamentos indisponível; usando carga completa',orcsR.error||'formato inesperado');
