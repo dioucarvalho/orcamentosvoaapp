@@ -1013,7 +1013,7 @@ async function cloudLoadAll(){
     }
     state.orcamentos=cloudOrcamentos;
     // DIAGNÓSTICO TEMPORÁRIO (orçamentos zerados no admin): mostra o que a nuvem devolveu.
-    try{ if(currentRole()==='admin'||currentRole()==='gerente'){ const _n=(cloudOrcamentos||[]).length; if(_n===0){ const _le=orcsR&&orcsR.error; const _fe=window._orcFullErr; const _msg='DIAGNÓSTICO AVV — 0 orçamentos carregados.\n\n• Erro da busca leve:\n'+(_le?JSON.stringify(_le):'nenhum')+'\n\n• Erro da busca completa:\n'+(_fe?JSON.stringify(_fe):'nenhum'); try{ alert(_msg); }catch(_a){} toast('Diagnóstico: 0 orçamentos (veja o alerta).','warning'); } else { toast('Diagnóstico: '+_n+' orçamento(s) carregado(s) da nuvem.','info'); } } }catch(_dbg){}
+    try{ if((currentRole()==='admin'||currentRole()==='gerente') && (cloudOrcamentos||[]).length===0){ const _le=orcsR&&orcsR.error; const _fe=window._orcFullErr; const _to=(_le&&_le.code==='57014')||(_fe&&_fe.code==='57014'); toast(_to?'Orçamentos não carregaram: o banco excedeu o tempo limite. Rode a migração de timeout no Supabase.':'Orçamentos não carregaram (0). Verifique a conexão.','warning'); } }catch(_dbg){}
 
     // PRIVACIDADE DO ADMINISTRADOR: gerente e consultora não enxergam NADA que seja
     // de um administrador (orçamentos e atividades diárias). Filtramos na origem, então
