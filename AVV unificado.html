@@ -952,6 +952,7 @@ async function cloudLoadAll(){
       // (mais pesada, mas garante que o login NUNCA quebre nem mostre listas vazias).
       console.error('busca leve de orçamentos indisponível; usando carga completa',orcsR.error||'formato inesperado');
       const full=await sb.from('orcamentos').select('data,user_id,owner_nome,created_at').order('created_at',{ascending:false});
+      window._orcFullErr=full.error||null;
       cloudOrcamentos=(full.data||[]).filter(r=>r.data).map(r=>{ const q=r.data; q.ownerId=r.user_id||q.ownerId||''; q.owner=(r.user_id&&state.profilesById[r.user_id])||r.owner_nome||q.owner||''; return q; });
     } else {
       // Carga LEVE: monta o orçamento só com os campos de lista/relatório. As fotos
@@ -1012,7 +1013,7 @@ async function cloudLoadAll(){
     }
     state.orcamentos=cloudOrcamentos;
     // DIAGNÓSTICO TEMPORÁRIO (orçamentos zerados no admin): mostra o que a nuvem devolveu.
-    try{ if(currentRole()==='admin'||currentRole()==='gerente'){ const _n=(cloudOrcamentos||[]).length; if(_n===0){ const _e=orcsR&&orcsR.error; toast('Diagnóstico: 0 orçamentos'+(_e?(' — erro: '+(_e.message||_e.code||JSON.stringify(_e))):' (busca sem erro)'),'warning'); } else { toast('Diagnóstico: '+_n+' orçamento(s) carregado(s) da nuvem.','info'); } } }catch(_dbg){}
+    try{ if(currentRole()==='admin'||currentRole()==='gerente'){ const _n=(cloudOrcamentos||[]).length; if(_n===0){ const _le=orcsR&&orcsR.error; const _fe=window._orcFullErr; const _msg='DIAGNÓSTICO AVV — 0 orçamentos carregados.\n\n• Erro da busca leve:\n'+(_le?JSON.stringify(_le):'nenhum')+'\n\n• Erro da busca completa:\n'+(_fe?JSON.stringify(_fe):'nenhum'); try{ alert(_msg); }catch(_a){} toast('Diagnóstico: 0 orçamentos (veja o alerta).','warning'); } else { toast('Diagnóstico: '+_n+' orçamento(s) carregado(s) da nuvem.','info'); } } }catch(_dbg){}
 
     // PRIVACIDADE DO ADMINISTRADOR: gerente e consultora não enxergam NADA que seja
     // de um administrador (orçamentos e atividades diárias). Filtramos na origem, então
