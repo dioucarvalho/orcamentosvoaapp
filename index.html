@@ -915,7 +915,9 @@ function cloudErr(e){ if(e){ console.error('cloud',e); const det=(e&&(e.message|
 
 // Campos LEVES do orçamento (tudo o que listas/relatórios/admin usam), SEM as
 // fotos nem o snapshot voaData — buscados via projeção JSON direto no Postgres.
-const LITE_ORC_SELECT='id,user_id,owner_nome,status:data->>status,versao:data->versao,comissao:data->comissao,motivoPerda:data->>motivoPerda,baseId:data->>baseId,baseNome:data->>baseNome,dOwner:data->>owner,dOwnerId:data->>ownerId,createdAt:data->>createdAt,closedAt:data->>closedAt,cliente:data->cliente,destinoTitulo:data->destino->>titulo,destinoDescricao:data->destino->>descricao,datas:data->datas,investimento:data->investimento,venda:data->venda';
+// Busca só a coluna LEVE "resumo" (mantida pelo banco) + colunas reais — NUNCA toca no
+// JSON "data" (com as fotos). Evita o timeout ao listar. Requer a migração que cria "resumo".
+const LITE_ORC_SELECT='id,user_id,owner_nome,created_at,resumo';
 async function cloudLoadAll(){
   if(!sb||!state.user) return;
   try{
@@ -946,7 +948,7 @@ async function cloudLoadAll(){
     // uma falha silenciosa na projeção nunca "esconde" os orçamentos da equipe (para uma
     // agência realmente sem orçamentos, o fallback só confirma o vazio, sem prejuízo).
     const _liteVazia = !(orcsR.data&&orcsR.data.length);
-    const liteShapeOk = _liteVazia || ('createdAt' in orcsR.data[0]);
+    const liteShapeOk = _liteVazia || ('resumo' in orcsR.data[0]);
     if(orcsR.error || !liteShapeOk || _liteVazia){
       // Se a busca leve falhar ou vier malformada, cai para a carga completa
       // (mais pesada, mas garante que o login NUNCA quebre nem mostre listas vazias).
@@ -958,21 +960,21 @@ async function cloudLoadAll(){
       // Carga LEVE: monta o orçamento só com os campos de lista/relatório. As fotos
       // e o snapshot voaData ficam vazios e são baixados sob demanda (ensureFullOrcamento)
       // somente ao ABRIR/EDITAR/EXPORTAR o orçamento. _lite=true marca que está incompleto.
-      cloudOrcamentos=(orcsR.data||[]).map(r=>({
+      cloudOrcamentos=(orcsR.data||[]).map(r=>{ const s=r.resumo||{}; return {
         id:r.id, _lite:true,
-        ownerId:r.user_id||r.dOwnerId||'',
-        owner:(r.user_id&&state.profilesById[r.user_id])||r.owner_nome||r.dOwner||'',
-        status:r.status||'aberto', versao:r.versao||1, comissao:r.comissao||0,
-        motivoPerda:r.motivoPerda||'', baseId:r.baseId||null, baseNome:r.baseNome||'',
-        createdAt:r.createdAt||'', closedAt:r.closedAt||null,
-        cliente:r.cliente||{nome:'',telefone:'',email:''},
-        fornecedor:r.fornecedor||'', idOrcamento:r.idOrcamento||'',
-        destino:{titulo:r.destinoTitulo||'',descricao:r.destinoDescricao||'',imagens:['','','','']},
-        datas:Array.isArray(r.datas)?r.datas:[{inicio:'',fim:'',trecho:''}],
-        investimento:r.investimento||{valor:'',parcelas:'',observacoes:''},
-        venda:r.venda||{fornecedor:'',idReserva:'',titular:'',comissaoAgencia:'',comissaoFornecedor:''},
+        ownerId:r.user_id||s.ownerId||'',
+        owner:(r.user_id&&state.profilesById[r.user_id])||r.owner_nome||s.owner||'',
+        status:s.status||'aberto', versao:s.versao||1, comissao:s.comissao||0,
+        motivoPerda:s.motivoPerda||'', baseId:s.baseId||null, baseNome:s.baseNome||'',
+        createdAt:s.createdAt||r.created_at||'', closedAt:s.closedAt||null,
+        cliente:s.cliente||{nome:'',telefone:'',email:''},
+        fornecedor:s.fornecedor||'', idOrcamento:s.idOrcamento||'',
+        destino:{titulo:s.destinoTitulo||'',descricao:s.destinoDescricao||'',imagens:['','','','']},
+        datas:Array.isArray(s.datas)?s.datas:[{inicio:'',fim:'',trecho:''}],
+        investimento:s.investimento||{valor:'',parcelas:'',observacoes:''},
+        venda:s.venda||{fornecedor:'',idReserva:'',titular:'',comissaoAgencia:'',comissaoFornecedor:''},
         hospedagem:[], voos:[], passeios:'', traslados:'', seguro:{resumo:'',apolice:''}, diferenciais:'', documentacao:'', infoImportantes:''
-      }));
+      }; });
     }
     // Lista de exclusões (tombstones): orçamentos apagados pela gestão. Garante
     // que a exclusão se propague para todos os navegadores e que a reconciliação
