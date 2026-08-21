@@ -688,11 +688,11 @@ table.tbl th.num{text-align:right}
       <fieldset>
         <legend><span class="num">7</span> Investimento &amp; Condições</legend>
         <div class="voa-grid voa-g2">
-          <div class="voa-field"><label>Valor total (R$)</label><input type="text" id="voaPriceTotal" placeholder="14.890,00" /></div>
-          <div class="voa-field"><label>Valor por pessoa (R$) <span class="voa-hint">(opcional)</span></label><input type="text" id="voaPricePerson" placeholder="4.963,33" /></div>
+          <div class="voa-field"><label>Valor total (R$)</label><input type="text" inputmode="numeric" id="voaPriceTotal" placeholder="14.890,00" oninput="voaMoneyMask(this)" /></div>
+          <div class="voa-field"><label>Valor por pessoa (R$) <span class="voa-hint">(opcional)</span></label><input type="text" inputmode="numeric" id="voaPricePerson" placeholder="4.963,33" oninput="voaMoneyMask(this)" /></div>
         </div>
         <div class="voa-grid voa-g2">
-          <div class="voa-field"><label>Entrada (R$)</label><input type="text" id="voaPriceEntry" placeholder="2.890,00" /></div>
+          <div class="voa-field"><label>Entrada (R$)</label><input type="text" inputmode="numeric" id="voaPriceEntry" placeholder="2.890,00" oninput="voaMoneyMask(this)" /></div>
           <div class="voa-field"><label>Parcelamento</label><input type="text" id="voaPriceInstall" placeholder="12x de R$ 1.000,00 sem juros" /></div>
         </div>
         <div class="voa-field">
@@ -911,6 +911,9 @@ async function loadProfileAndShow(authUser){
    SINCRONIA COM A NUVEM (Supabase) — carrega ao logar; grava a cada ação.
    ============================================================================ */
 function toISO(v){ try{ const d=new Date(v); return isNaN(d)?null:d.toISOString(); }catch(e){ return null; } }
+// Máscara de dinheiro (pt-BR): a pessoa digita só números e o sistema coloca o ponto dos
+// milhares e a vírgula dos centavos sozinho. Ex.: digitar "1489000" vira "14.890,00".
+function voaMoneyMask(el){ let v=(el.value||'').replace(/\D/g,''); if(!v){ el.value=''; return; } el.value=(parseInt(v,10)/100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function cloudErr(e){ if(e){ console.error('cloud',e); const det=(e&&(e.message||e.details||e.hint||e.code))||''; toast('Falha ao salvar na nuvem'+(det?(': '+det):'. Verifique a conexão.'),'danger'); } }
 
 // Campos LEVES do orçamento (tudo o que listas/relatórios/admin usam), SEM as
