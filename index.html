@@ -2420,7 +2420,7 @@ async function importarClientesDasVendas(){
   toast(ok+' cliente(s) salvos/atualizados na agenda.',ok?'success':'warning');
 }
 
-function blankVenda(){ return { id:'v'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), ownerId:(state.user&&state.user.id)||'', owner:(state.user&&state.user.name)||'', orcamentoId:'', dataVenda:todayISO(), categoria:'', fornecedor:'', ambito:'nacional', dataInicio:'', dataFim:'', origem:'', destino:'', numReserva:'', valorTotal:'', passageiros:[{nome:'',nascimento:''}], titularContato:'', vouchers:[], comissaoAgencia:'', comissaoFornecedor:'', comissaoTotal:'', dataRecebFornecedor:'', observacoes:'', preLancada:false, createdAt:localNowISO() }; }
+function blankVenda(){ return { id:'v'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), ownerId:(state.user&&state.user.id)||'', owner:(state.user&&state.user.name)||'', orcamentoId:'', dataVenda:todayISO(), categoria:'', fornecedor:'', ambito:'nacional', dataInicio:'', dataFim:'', origem:'', destino:'', voosDetalhes:'', numReserva:'', valorTotal:'', passageiros:[{nome:'',nascimento:''}], titularContato:'', vouchers:[], comissaoAgencia:'', comissaoFornecedor:'', comissaoTotal:'', dataRecebFornecedor:'', observacoes:'', preLancada:false, createdAt:localNowISO() }; }
 
 function renderVendas(c){ c.innerHTML=`<div id="vendaFormWrap"></div><div id="vendaMainWrap"></div>`; renderVendasMain(); }
 
@@ -2510,6 +2510,7 @@ function openVendaForm(id){
     <h4 style="margin:18px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Viagem</h4>
     <div class="field-row"><div class="field"><label>Início da viagem</label><input id="vd_dataInicio" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataInicio)}"></div><div class="field"><label>Fim da viagem</label><input id="vd_dataFim" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataFim)}"></div></div>
     <div class="field-row"><div class="field"><label>Origem</label><input id="vd_origem" value="${escapeHtml(v.origem)}"></div><div class="field"><label>Destino</label><input id="vd_destino" value="${escapeHtml(v.destino)}"></div></div>
+    <div class="field"><label>Detalhes dos voos <span style="font-weight:400;color:var(--text-mute);font-size:11px">(cia, localizador, horários, trechos — migra do orçamento e depois para o pós-venda)</span></label><textarea id="vd_voosDetalhes" rows="3" placeholder="Ex.: LATAM · GRU → MCO · Saída 08:30 · Chegada 16:40 · Bagagem 23kg">${escapeHtml(v.voosDetalhes||'')}</textarea></div>
     <h4 style="margin:18px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Passageiros</h4>
     <datalist id="vd_clientesList"></datalist>
     <div id="vd_paxWrap"></div>
@@ -2564,6 +2565,7 @@ function _vendaReadForm(){
   currentVenda.dataFim=_brToISO(g('vd_dataFim'));
   currentVenda.origem=g('vd_origem').trim();
   currentVenda.destino=g('vd_destino').trim();
+  currentVenda.voosDetalhes=g('vd_voosDetalhes').trim();
   currentVenda.titularContato=g('vd_titularContato').trim();
   currentVenda.comissaoAgencia=moneyBRToNum(g('vd_comAgencia'))||'';
   currentVenda.comissaoFornecedor=moneyBRToNum(g('vd_comForn'))||'';
@@ -2604,6 +2606,19 @@ function deleteVenda(id){ const v=(state.vendas||[]).find(x=>x.id===id); if(!v) 
 
 // Monta um objeto de venda (pré-lançada) a partir de um orçamento fechado.
 // Mantém o DONO do orçamento como dono da venda (preserva a separação de acesso).
+// Formata os voos estruturados do orçamento num texto legível (para a venda e, no futuro,
+// para o pós-venda). Uma linha por voo, só com os campos preenchidos.
+function _voosOrcParaTexto(voos){
+  return (voos||[]).filter(f=>f&&(f.cia||f.origem||f.destino||f.horarioSaida||f.horarioChegada)).map(f=>{
+    const rota=[f.origem,f.destino].filter(Boolean).join(' → ');
+    const p=[]; if(f.cia) p.push(f.cia); if(rota) p.push(rota);
+    if(f.horarioSaida) p.push('Saída '+f.horarioSaida);
+    if(f.horarioChegada) p.push('Chegada '+f.horarioChegada);
+    if(f.bagagem) p.push('Bagagem: '+f.bagagem);
+    if(f.tarifa) p.push('Tarifa: '+f.tarifa);
+    return '• '+p.join(' · ');
+  }).join('\n');
+}
 function _vendaDeOrcamento(o){
   const v=blankVenda();
   v.id='v-'+o.id; v.orcamentoId=o.id; v.preLancada=true;
@@ -2612,6 +2627,7 @@ function _vendaDeOrcamento(o){
   v.fornecedor=(o.venda&&o.venda.fornecedor)||'';
   v.numReserva=(o.venda&&o.venda.idReserva)||'';
   v.destino=(o.destino&&o.destino.titulo)||'';
+  v.voosDetalhes=_voosOrcParaTexto(o.voos);   // migra os voos do orçamento para a venda
   const d0=(o.datas&&o.datas[0])||{}; v.dataInicio=d0.inicio||''; v.dataFim=d0.fim||'';
   v.valorTotal=(o.investimento&&o.investimento.valor)||'';
   v.comissaoAgencia=(o.venda&&o.venda.comissaoAgencia)||'';
