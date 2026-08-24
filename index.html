@@ -4587,12 +4587,19 @@ function ReservationsTable({reservations, onOpen, onNew, onDelete, onUpdate, onI
   const [q, setQ] = useState("");
   const [month, setMonth] = useState(""); // "" = todos os meses
   const [taskForId, setTaskForId] = useState(null);
+  const [page, setPage] = useState(0);
   const fileRef = React.useRef(null);
 
   const filtered = reservations.filter(r=>{
     const s=(r.id+" "+r.destino+" "+r.fornecedor+" "+r.passageiros.map(p=>p.nome).join(" ")).toLowerCase();
     return s.includes(q.toLowerCase()) && tripTouchesMonth(r, month);
   });
+  // Mais NOVA -> mais antiga, paginado de 10 em 10.
+  const ordered = filtered.slice().reverse();
+  const PER_PAGE = 10;
+  const totalPages = Math.max(1, Math.ceil(ordered.length / PER_PAGE));
+  const pageSafe = Math.min(Math.max(page, 0), totalPages - 1);
+  const pageItems = ordered.slice(pageSafe*PER_PAGE, pageSafe*PER_PAGE + PER_PAGE);
   const taskRes = taskForId ? reservations.find(r=>r.id===taskForId) : null;
 
   function download(filename, text){
@@ -4625,12 +4632,12 @@ function ReservationsTable({reservations, onOpen, onNew, onDelete, onUpdate, onI
   return (
     <div className="space-y-4 fade-in">
       <div className="flex flex-wrap gap-3 items-center justify-between">
-        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar por nome, destino, ID, fornecedor..."
+        <input value={q} onChange={e=>{setQ(e.target.value);setPage(0);}} placeholder="Buscar por nome, destino, ID, fornecedor..."
           className="flex-1 min-w-[200px] px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900" />
         <div className="flex items-center gap-2">
           <label className="text-xs opacity-70 whitespace-nowrap">Mês:</label>
-          <input type="month" value={month} onChange={e=>setMonth(e.target.value)} className="px-2 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"/>
-          {month && <button onClick={()=>setMonth("")} className="text-xs text-brand-600 hover:underline">limpar</button>}
+          <input type="month" value={month} onChange={e=>{setMonth(e.target.value);setPage(0);}} className="px-2 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"/>
+          {month && <button onClick={()=>{setMonth("");setPage(0);}} className="text-xs text-brand-600 hover:underline">limpar</button>}
         </div>
         <div className="flex items-center gap-2">
           <button onClick={exportData} className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-sm" title="Salvar backup em arquivo JSON">⬇️ Exportar</button>
@@ -4656,7 +4663,7 @@ function ReservationsTable({reservations, onOpen, onNew, onDelete, onUpdate, onI
               </tr>
             </thead>
             <tbody>
-              {filtered.map(r=>{
+              {pageItems.map(r=>{
                 const c=computeReservation(r);
                 const pendTasks=(r.tarefas||[]).filter(t=>!t.concluida).length;
                 return (
@@ -4691,6 +4698,14 @@ function ReservationsTable({reservations, onOpen, onNew, onDelete, onUpdate, onI
           </table>
         </div>
       </Card>
+
+      {totalPages>1 && (
+        <div className="flex items-center justify-center gap-3 text-sm">
+          <button onClick={()=>setPage(p=>Math.max(0,p-1))} disabled={pageSafe<=0} className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 disabled:opacity-40">← Anterior</button>
+          <span className="opacity-70">Página {pageSafe+1} de {totalPages}</span>
+          <button onClick={()=>setPage(p=>Math.min(totalPages-1,p+1))} disabled={pageSafe>=totalPages-1} className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 disabled:opacity-40">Próxima →</button>
+        </div>
+      )}
 
       {taskRes && <TaskModal res={taskRes} onClose={()=>setTaskForId(null)} onUpdate={onUpdate} />}
     </div>
