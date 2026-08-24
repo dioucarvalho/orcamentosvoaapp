@@ -2105,13 +2105,74 @@ function renderVoaApp(c){
 }
 
 /* ========= PÓS-VENDA (webapp embutido em iframe isolado) ========= */
+// ============================================================================
+// INTEGRAÇÃO Vendas -> Pós-Venda (só gestão, ao abrir o Pós-Venda).
+// Para cada venda LANÇADA (não pré-lançada) sem reserva ainda, cria uma reserva
+// no Pós-Venda já pré-preenchida (passageiros, datas, destino, fornecedor, voos).
+// - ADD-ONLY: nunca sobrescreve/edita/apaga o que a gerência já mexeu.
+// - Linha de base: as vendas que já existiam são ignoradas (não retroage).
+// - Idempotente: uma reserva por venda (vínculo origemVendaId + nº de reserva).
+// - Roda ANTES do iframe carregar, e relê os dados na hora de gravar (reduz o
+//   risco de atropelar uma edição em curso de outro gestor no mesmo blob).
+// ============================================================================
+async function reconciliarVendasPosvenda(){
+  if(!sb||!state.user) return;
+  if(currentRole()!=='admin'&&currentRole()!=='gerente') return;
+  let row;
+  try{ const { data, error } = await sb.from('posvenda_dados').select('dados,controle').eq('id',1).maybeSingle(); if(error){ console.error('posvenda reconc load',error); return; } row=data; }
+  catch(e){ console.error('posvenda reconc load',e); return; }
+  const dados = Array.isArray(row&&row.dados)?row.dados:[];
+  const controle = (row&&row.controle&&typeof row.controle==='object')?row.controle:{};
+  const vendas=(state.vendas||[]).filter(v=>v&&v.id&&!v.preLancada);
+  // 1) Linha de base (primeira vez): marca as vendas atuais para NÃO criar retroativo.
+  if(!controle.baseline){
+    controle.baseline = vendas.map(v=>v.id); controle.baselineEm = localNowISO();
+    try{ await sb.from('posvenda_dados').update({ controle }).eq('id',1); }catch(e){ console.error('posvenda baseline',e); }
+    return;
+  }
+  const baseSet=new Set(controle.baseline||[]);
+  const linkados=new Set(); const reservaIds=new Set();
+  dados.forEach(r=>{ if(r&&r.origemVendaId) linkados.add(String(r.origemVendaId)); if(r&&r.id) reservaIds.add(String(r.id)); });
+  const novos=[];
+  vendas.forEach(v=>{
+    if(baseSet.has(v.id) || linkados.has(String(v.id))) return;
+    const resId = (v.numReserva&&String(v.numReserva).trim()) || ('RES-'+String(v.id).slice(-6).toUpperCase());
+    if(reservaIds.has(String(resId))) return; // já existe reserva com esse número (ex.: lançada à mão)
+    const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'';
+    const pax=(v.passageiros||[]).filter(p=>p&&(p.nome||'').trim()).map((p,i)=>({ id:uid(), nome:p.nome||'', nascimento:p.nascimento||'', email:'', telefone:i===0?(v.titularContato||''):'', docs:[] }));
+    novos.push({
+      id: resId, origemVendaId: v.id, _autoDoAVV:true,
+      fornecedor: v.fornecedor||'', destino: v.destino||'',
+      dataIda: v.dataInicio||'', horaIda:'', dataVolta: v.dataFim||'', horaVolta:'',
+      voos: v.voosDetalhes||'',
+      preEmbarqueData:'', preEmbarqueHora:'', preEmbarqueRealizadaData:'',
+      servicos:[], passageiros: pax.length?pax:[{id:uid(),nome:tit,nascimento:'',email:'',telefone:v.titularContato||'',docs:[]}],
+      tripStatus:'Confirmada', checks:{}, observacoes:[], tarefas:[]
+    });
+  });
+  if(!novos.length) return;
+  // 2) Relê fresco imediatamente antes de gravar e filtra duplicados que possam ter
+  //    surgido no meio-tempo — depois grava só acrescentando (add-only).
+  try{
+    const { data:fresh } = await sb.from('posvenda_dados').select('dados').eq('id',1).maybeSingle();
+    const base = Array.isArray(fresh&&fresh.dados)?fresh.dados:dados;
+    const jaLink=new Set(base.filter(r=>r&&r.origemVendaId).map(r=>String(r.origemVendaId)));
+    const jaId=new Set(base.filter(r=>r&&r.id).map(r=>String(r.id)));
+    const add=novos.filter(n=>!jaLink.has(String(n.origemVendaId)) && !jaId.has(String(n.id)));
+    if(!add.length) return;
+    await sb.from('posvenda_dados').update({ dados: base.concat(add), atualizado_em:new Date().toISOString() }).eq('id',1);
+    if(typeof toast==='function') toast(add.length+' reserva(s) criada(s) no Pós-Venda a partir das vendas.','info');
+  }catch(e){ console.error('posvenda reconc save',e); }
+}
 let _posvendaSrcCache=null;
-function renderPosVenda(c){
+async function renderPosVenda(c){
   if(_posvendaSrcCache===null){
     const node=document.getElementById('posvendaSrc');
     _posvendaSrcCache=node?node.textContent.replace(/<\\\/script>/g,'<\/script>'):'';
   }
   if(!_posvendaSrcCache){ c.innerHTML='<div class="card"><div class="empty">Conteúdo do Pós-Venda não encontrado.</div></div>'; return; }
+  c.innerHTML='<div class="card" style="text-align:center;padding:40px 24px"><div class="empty">Sincronizando vendas com o Pós-Venda…</div></div>';
+  try{ await reconciliarVendasPosvenda(); }catch(e){ console.error('reconciliar vendas->posvenda',e); }
   c.innerHTML='<iframe id="posvendaFrame" title="Pós-Venda TZ Viagens" style="width:100%;height:calc(100vh - 130px);border:0;border-radius:14px;background:#fff;box-shadow:var(--shadow-sm)"></iframe>';
   document.getElementById('posvendaFrame').srcdoc=_posvendaSrcCache;
 }
