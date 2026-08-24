@@ -1608,7 +1608,7 @@ const ROLE_LABELS = { consultora:'Consultor(a)', gerente:'Gerente', admin:'Admin
 const ROLE_MENUS = {
   consultora: ['dashboard','orcamentos','vendas','controle','agenda','relatorios'],
   gerente:    ['administracao','vendas','posvenda','voaapp'],
-  admin:      ['dashboard','administracao','orcamentos','vendas','financeiro','controle','agenda','relatorios','posvenda','voaapp','liberarespaco']
+  admin:      ['administracao','orcamentos','vendas','financeiro','controle','agenda','relatorios','posvenda','voaapp','liberarespaco']
 };
 function userSlug(name){ return String(name||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'user'; }
 function currentRole(){ return (state.user&&state.user.role)||'consultora'; }
@@ -3085,6 +3085,16 @@ async function saveMetas(){ state.metas={agendamento:parseFloat(document.getElem
 let agendaCursor=(()=>{ const d=new Date(); return {y:d.getFullYear(),m:d.getMonth()}; })();
 let agendaEmbFrom='', agendaEmbTo='';
 function agendaGoto(y,m){ y=Number(y); m=Number(m); if(!isNaN(y)&&!isNaN(m)){ agendaCursor={y:y,m:m}; drawAgenda(); } }
+// Card "Tarefas para os próximos 14 dias" — usado na Agenda pela gestão (o Dashboard,
+// onde ficava, foi ocultado para os gestores). Mostra as tarefas de todos + quem lançou.
+function tarefas14CardHTML(){
+  const today=new Date(); today.setHours(0,0,0,0); const in14=new Date(today); in14.setDate(in14.getDate()+14);
+  const lista=(state.tarefas||[]).filter(t=>!t.done).filter(t=>{ const d=parseDate(t.data); return d&&d>=today&&d<=in14; }).sort((a,b)=>a.data.localeCompare(b.data));
+  const corpo = lista.length===0
+    ? `<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Nenhuma tarefa pendente para os próximos 14 dias.</div>`
+    : lista.map(t=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)"><input type="checkbox" onclick="toggleTarefa('${t.id}')" style="width:16px;height:16px;cursor:pointer;margin-top:2px;accent-color:#0d2a55"><div style="flex:1"><div style="font-size:13px;color:var(--text)">${escapeHtml(t.texto)}</div><div style="font-size:11px;color:var(--text-mute)">${fmtDateBR(t.data)}${t.owner?(' · '+escapeHtml(t.owner)):''}</div></div></div>`).join('');
+  return `<div class="card" style="margin-top:18px"><div class="card-header"><h3 class="card-title">Tarefas para os próximos 14 dias</h3><span class="badge neutral">${lista.length}</span></div>${corpo}</div>`;
+}
 function renderAgenda(c){
   const _ec="padding:9px 10px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;outline:none;width:118px";
   // Seletor rápido de mês/ano (além das setas) para pular direto para qualquer mês.
@@ -3094,6 +3104,7 @@ function renderAgenda(c){
   const _mSel=`<select id="agendaMonthSel" onchange="agendaGoto(document.getElementById('agendaYearSel').value, this.value)" style="${_selCss}">${_mn.map((n,i)=>`<option value="${i}" ${i===agendaCursor.m?'selected':''}>${n}</option>`).join('')}</select>`;
   const _ySel=`<select id="agendaYearSel" onchange="agendaGoto(this.value, document.getElementById('agendaMonthSel').value)" style="${_selCss}">${_years.map(y=>`<option value="${y}" ${y===agendaCursor.y?'selected':''}>${y}</option>`).join('')}</select>`;
   c.innerHTML=`<div class="card"><div class="card-header"><div style="display:flex;align-items:center;gap:10px"><button class="btn-icon" onclick="agendaShift(-1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button><h3 class="card-title" id="agendaTitle"></h3><button class="btn-icon" onclick="agendaShift(1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button>${_mSel}${_ySel}</div><div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" onclick="addTarefaPrompt()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Adicionar tarefa</button><button class="btn btn-ghost btn-sm" onclick="agendaToday()">Hoje</button></div></div><div id="agendaWrap"></div></div>
+  ${(currentRole()==='admin'||currentRole()==='gerente')?tarefas14CardHTML():''}
   <div class="card" style="margin-top:18px"><div class="card-header"><h3 class="card-title">Quem estará viajando no período</h3><span class="badge neutral">a partir das vendas lançadas</span></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px"><span style="font-size:12px;font-weight:600;color:var(--text-soft)">Embarques de</span><input inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="${_isoToBR(agendaEmbFrom)}" oninput="agendaEmbDateFilter(this,'from')" style="${_ec}"><span style="font-size:12px;font-weight:600;color:var(--text-soft)">até</span><input inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="${_isoToBR(agendaEmbTo)}" oninput="agendaEmbDateFilter(this,'to')" style="${_ec}"><button title="Limpar período" onclick="agendaEmbFrom='';agendaEmbTo='';renderAgenda(document.getElementById('content'))" style="background:none;border:none;color:var(--text-mute);font-size:18px;cursor:pointer;line-height:1">×</button></div>
     <div id="agendaEmbResult"></div>
