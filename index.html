@@ -2685,7 +2685,78 @@ async function cloudLoadFinanceiro(){
     const saldoRow=rows.find(r=>r.id==='_saldo');
     state.finSaldo = saldoRow ? (Number(saldoRow.data&&saldoRow.data.valor)||0) : (Number(state.finSaldo)||0);
     state.financeiro = rows.filter(r=>r.id!=='_saldo' && (r.tipo==='pagar'||r.tipo==='receber')).map(r=>{ const o=Object.assign({},r.data||{}); o.id=r.id; o.tipo=r.tipo; return o; });
+    // Controle da automação Vendas -> Financeiro (linha de base e ledger de saldo).
+    state._vendaBaseline = (rows.find(r=>r.id==='_venda_baseline')||{}).data || null;
+    state._vendaLedger   = (rows.find(r=>r.id==='_venda_ledger')||{}).data || null;
   }catch(e){ console.error('cloudLoadFinanceiro',e); }
+}
+// ============================================================================
+// AUTOMAÇÃO Vendas -> Financeiro (só admin, ao abrir a aba Financeiro).
+// - Comissão da AGÊNCIA de cada venda = dinheiro que entrou -> soma no SALDO e vira
+//   um lançamento "recebido" no histórico (com passageiro / reserva).
+// - Comissão do FORNECEDOR = vira uma CONTA A RECEBER pendente (baixa quando pagar).
+// Vale só para vendas NOVAS: as que já existiam viram "linha de base" e são ignoradas.
+// À prova de duplicidade: um "ledger" guarda quanto de cada venda já entrou no saldo,
+// então nunca conta duas vezes e ajusta se a venda for editada ou excluída.
+// ============================================================================
+async function reconciliarVendasFinanceiro(){
+  if(currentRole()!=='admin'||!sb||!state.user) return;
+  state.financeiro=state.financeiro||[];
+  const vendas=(state.vendas||[]).filter(v=>v&&v.id&&!v.preLancada);
+  // 1) Linha de base (primeira vez): marca o que já existe para NÃO retroagir no saldo.
+  if(!state._vendaBaseline){
+    state._vendaBaseline={ ids:vendas.map(v=>v.id), em:localNowISO() };
+    try{ await sb.from('financeiro').upsert({ id:'_venda_baseline', user_id:state.user.id, tipo:'baseline', data:state._vendaBaseline }); }catch(e){ console.error('fin baseline',e); }
+    return;
+  }
+  const baseSet=new Set(state._vendaBaseline.ids||[]);
+  const ledger=state._vendaLedger||{};
+  const find=id=>state.financeiro.find(x=>x.id===id);
+  const vivos=new Set(vendas.map(v=>v.id));
+  let saldoDelta=0, ledgerMudou=false; const salvar=[], apagar=[];
+
+  for(const v of vendas){
+    if(baseSet.has(v.id)) continue; // venda anterior à automação: ignora
+    const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'—';
+    const ref=v.numReserva?(' · reserva '+String(v.numReserva)):(' · venda '+String(v.id).slice(-6));
+    const dataV=(v.dataVenda||'').slice(0,10)||todayISO();
+    const comAg=Number(v.comissaoAgencia)||0;
+    const comFn=Number(v.comissaoFornecedor)||0;
+    const L=ledger[v.id]||{ag:0,fn:null};
+
+    // ---- AGÊNCIA: entra no saldo (via ledger) e vira lançamento recebido no histórico ----
+    if(comAg!==L.ag){ saldoDelta+=(comAg-L.ag); L.ag=comAg; ledgerMudou=true; }
+    const agE=find('comag-'+v.id);
+    if(comAg>0){
+      if(!agE){ const it=Object.assign(blankFin('receber'),{ id:'comag-'+v.id, auto:true, vendaId:v.id, descricao:'Comissão da agência — '+tit+ref, categoria:'Comissão de venda', origem:v.owner||'', valor:comAg, pago:true, dataPago:dataV, vencimento:dataV }); state.financeiro.unshift(it); salvar.push(it); }
+      else if(Number(agE.valor)!==comAg){ agE.valor=comAg; agE.descricao='Comissão da agência — '+tit+ref; agE.pago=true; salvar.push(agE); }
+    } else if(agE){ state.financeiro=state.financeiro.filter(x=>x.id!==agE.id); apagar.push(agE.id); }
+
+    // ---- FORNECEDOR: conta a receber pendente (baixa quando o fornecedor pagar) ----
+    const fnE=find('comfn-'+v.id);
+    if(comFn>0){
+      if(L.fn===null && !fnE){ const venc=v.dataRecebFornecedor?String(v.dataRecebFornecedor).slice(0,10):dataV; const it=Object.assign(blankFin('receber'),{ id:'comfn-'+v.id, auto:true, vendaId:v.id, descricao:'Comissão do fornecedor — '+tit+ref, categoria:'Comissão a receber', origem:v.fornecedor||v.owner||'', valor:comFn, pago:false, vencimento:venc }); state.financeiro.unshift(it); salvar.push(it); L.fn=comFn; ledgerMudou=true; }
+      else if(fnE && !fnE.pago && Number(fnE.valor)!==comFn){ fnE.valor=comFn; fnE.descricao='Comissão do fornecedor — '+tit+ref; salvar.push(fnE); L.fn=comFn; ledgerMudou=true; }
+    } else { if(fnE && !fnE.pago){ state.financeiro=state.financeiro.filter(x=>x.id!==fnE.id); apagar.push(fnE.id); } if(L.fn!==null){ L.fn=null; ledgerMudou=true; } }
+
+    ledger[v.id]=L;
+  }
+
+  // 2) Vendas EXCLUÍDAS: reverte o saldo e remove os lançamentos automáticos órfãos.
+  for(const vid of Object.keys(ledger)){
+    if(vivos.has(vid)||baseSet.has(vid)) continue;
+    const L=ledger[vid]||{}; if(Number(L.ag)) saldoDelta-=Number(L.ag)||0;
+    const a=find('comag-'+vid); if(a){ state.financeiro=state.financeiro.filter(x=>x.id!==a.id); apagar.push(a.id); }
+    const f=find('comfn-'+vid); if(f&&!f.pago){ state.financeiro=state.financeiro.filter(x=>x.id!==f.id); apagar.push(f.id); }
+    delete ledger[vid]; ledgerMudou=true;
+  }
+
+  // 3) Persiste tudo.
+  state._vendaLedger=ledger;
+  if(saldoDelta!==0){ state.finSaldo=(Number(state.finSaldo)||0)+saldoDelta; try{ await sb.from('financeiro').upsert({ id:'_saldo', user_id:state.user.id, tipo:'saldo', data:{ valor:state.finSaldo, atualizadoEm:localNowISO() } }); }catch(e){ console.error('reconc saldo',e); } }
+  if(ledgerMudou){ try{ await sb.from('financeiro').upsert({ id:'_venda_ledger', user_id:state.user.id, tipo:'ledger', data:ledger }); }catch(e){ console.error('reconc ledger',e); } }
+  for(const it of salvar){ try{ await cloudSaveFinanceiro(it); }catch(e){ console.error(e); } }
+  for(const id of apagar){ try{ await cloudDeleteFinanceiro(id); }catch(e){ console.error(e); } }
 }
 async function cloudSaveFinanceiro(item){
   if(!sb||!state.user) return false;
@@ -2701,6 +2772,7 @@ async function renderFinanceiro(c){
   if(currentRole()!=='admin'){ c.innerHTML='<div class="card"><p>Acesso restrito ao administrador.</p></div>'; return; }
   c.innerHTML='<div class="card" style="text-align:center;padding:48px 24px"><div class="empty">Carregando financeiro…</div></div>';
   await cloudLoadFinanceiro();
+  try{ await reconciliarVendasFinanceiro(); }catch(e){ console.error('reconciliar vendas->financeiro',e); }
   renderFinanceiroMain(c);
 }
 function renderFinanceiroMain(c){
