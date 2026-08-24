@@ -1897,7 +1897,7 @@ async function renderAdmin(c){
   const _ehDeAdmin = o => _adminIds.has(o.ownerId) || _adminNomes.has(ownerNameOf(o));
   let orcs = Backend.orcamentos();
   if(_ocultarAdmin) orcs = orcs.filter(o=>!_ehDeAdmin(o));
-  const owners = [...new Set(orcs.map(ownerNameOf))].sort((a,b)=>a.localeCompare(b));
+  const _vendaOwnerNome = v => v.owner || (v.ownerId&&(state.profilesById||{})[v.ownerId]) || 'Sem identificação';
   const mo = adminFilter.month || currentMonth();
   const inMonth = o => monthOf(o.createdAt)===mo;
   const fechadaNoMes = o => o.status==='fechado' && saleMonthOfOrc(o)===mo;
@@ -1911,6 +1911,14 @@ async function renderAdmin(c){
     comVendasByName[vn]=(comVendasByName[vn]||0)+(Number(v.comissaoTotal)||0);
   });
 
+  // Vendas lançadas DIRETO na aba Vendas (sem orçamento) — precisam contar igual às
+  // fechadas (sem duplicar as que já vieram de um orçamento fechado). Respeita a
+  // privacidade do admin para quem não é admin.
+  const _fechIds = new Set(orcs.filter(fechadaNoMes).map(o=>o.id));
+  const vendasDiretas = (state.vendas||[]).filter(v=> v && !v.preLancada && monthOf(v.dataVenda)===mo && (!v.orcamentoId || !_fechIds.has(v.orcamentoId)) && (!_ocultarAdmin || !(_adminIds.has(v.ownerId)||_adminNomes.has(_vendaOwnerNome(v)))) );
+  const vendasDiretasByName={}; vendasDiretas.forEach(v=>{ const n=_vendaOwnerNome(v); vendasDiretasByName[n]=(vendasDiretasByName[n]||0)+1; });
+  const owners = [...new Set([...orcs.map(ownerNameOf), ...vendasDiretas.map(_vendaOwnerNome)])].sort((a,b)=>a.localeCompare(b));
+
   // agrega por funcionária
   const rows = owners.map(nome=>{
     const meus = orcs.filter(o=>ownerNameOf(o)===nome);
@@ -1919,7 +1927,7 @@ async function renderAdmin(c){
     const perdidas = meus.filter(o=>o.status==='perdido' && monthOf(o.closedAt||o.createdAt)===mo).length;
     const comissao = comVendasByName[nome]||0;
     const conv = orcMes? Math.round((fechadas.length/orcMes)*100):0;
-    return { nome, orcMes, vendas:fechadas.length, perdidas, comissao, conv };
+    return { nome, orcMes, vendas:fechadas.length+(vendasDiretasByName[nome]||0), perdidas, comissao, conv };
   }).filter(r=> !adminFilter.owner || r.nome===adminFilter.owner);
 
   const tot = rows.reduce((a,r)=>({orcMes:a.orcMes+r.orcMes,vendas:a.vendas+r.vendas,perdidas:a.perdidas+r.perdidas,comissao:a.comissao+r.comissao}),{orcMes:0,vendas:0,perdidas:0,comissao:0});
@@ -1942,6 +1950,8 @@ async function renderAdmin(c){
   const normName=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim().replace(/\s+/g,' ');
   let embarques=[];
   orcs.filter(o=>o.status==='fechado').forEach(o=>{ (o.datas||[]).forEach(t=>{ if(t.inicio){ const d=parseDate(t.inicio); if(d&&d>=today&&d<=in30){ const nome=(o.venda&&o.venda.titular)||o.cliente?.nome||'Cliente'; embarques.push({nome,dedupeKey:normName(nome),destino:o.destino?.titulo||t.trecho||'Destino',data:t.inicio,owner:ownerNameOf(o)}); } } }); });
+  // Embarques também das vendas lançadas direto na aba Vendas (usa o início da viagem).
+  vendasDiretas.forEach(v=>{ if(!v.dataInicio) return; const d=parseDate(v.dataInicio); if(d&&d>=today&&d<=in30){ const nome=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'Viajante'; embarques.push({nome,dedupeKey:normName(nome),destino:v.destino||'Destino',data:v.dataInicio,owner:_vendaOwnerNome(v)}); } });
   // Mesma viagem pode ter sido lançada por uma consultora (orçamento) E pela
   // gerência (Pós-Venda) separadamente — cada sistema continua aceitando
   // normalmente, só não duplicamos o passageiro nesta lista consolidada.
@@ -1963,7 +1973,10 @@ async function renderAdmin(c){
 
   // vendas fechadas no mês (para acompanhamento / pós-venda)
   // respeita o filtro por colaborador, igual ao restante do painel
-  const vendasMes = orcs.filter(fechadaNoMes).filter(o=> !adminFilter.owner || ownerNameOf(o)===adminFilter.owner).sort((a,b)=>(b.closedAt||'').localeCompare(a.closedAt||''));
+  const vendasMesOrc = orcs.filter(fechadaNoMes).filter(o=> !adminFilter.owner || ownerNameOf(o)===adminFilter.owner);
+  // Vendas diretas (aba Vendas) normalizadas para caber na mesma tabela.
+  const vendasMesDiretas = vendasDiretas.filter(v=> !adminFilter.owner || _vendaOwnerNome(v)===adminFilter.owner).map(v=>{ const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||''; return { _direta:true, owner:_vendaOwnerNome(v), ownerId:v.ownerId, closedAt:v.dataVenda, comissao:Number(v.comissaoTotal)||0, cliente:{nome:tit}, destino:{titulo:v.destino||''}, venda:{ dataFechamento:v.dataVenda, titular:tit, fornecedor:v.fornecedor||'', idReserva:v.numReserva||'', comissaoAgencia:Number(v.comissaoAgencia)||0, comissaoFornecedor:Number(v.comissaoFornecedor)||0 } }; });
+  const vendasMes = vendasMesOrc.concat(vendasMesDiretas).sort((a,b)=>(b.closedAt||'').localeCompare(a.closedAt||''));
 
   const cardsHTML = `
     <div class="stat-grid">
