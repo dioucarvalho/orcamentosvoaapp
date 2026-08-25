@@ -2057,18 +2057,7 @@ async function renderAdmin(c){
        <tbody>${embarques.slice(0,20).map(e=>`<tr><td>${fmtDateBR(e.data)}</td><td><strong>${escapeHtml(e.nome)}</strong></td><td>${escapeHtml(e.destino)}</td><td>${escapeHtml(e.owner)}</td></tr>`).join('')}</tbody></table>`}
     </div>`;
 
-  const posvendaHTML = currentRole()==='admin' ? `
-    <div class="card">
-      <div class="card-header"><h3 class="card-title">Pós-Venda (gerência)</h3></div>
-      <p style="font-size:13px;color:var(--text-soft);margin:0 0 12px">Acompanhe o controle de viajantes feito pela gerente.</p>
-      <button class="btn btn-primary" onclick="setView('posvenda')">Abrir Pós-Venda</button>
-      <p style="font-size:12px;color:var(--text-mute);margin-top:12px">As métricas do pós-venda no painel (reservas atrasadas, check-ins) ficam disponíveis quando migrarmos o pós-venda para o Supabase (fase 3.3).</p>
-    </div>
-    <div class="card" style="margin-top:18px">
-      <div class="card-header"><h3 class="card-title">Ferramentas</h3></div>
-      <p style="font-size:13px;color:var(--text-soft);margin:0 0 12px">Se este navegador tinha orçamentos antigos (salvos antes da nuvem), envie-os para o Supabase como seus.</p>
-      <button class="btn btn-outline-blue" onclick="migrarLocalParaNuvem()">Enviar dados deste navegador para a nuvem</button>
-    </div>` : '';
+  const posvendaHTML = '';  // removidas as caixas "Pós-Venda (gerência)" e "Ferramentas" (redundantes)
 
   c.innerHTML = `
     <div class="card" style="margin-bottom:18px">
