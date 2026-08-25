@@ -2478,10 +2478,10 @@ async function importarClientesDasVendas(){
   toast(ok+' cliente(s) salvos/atualizados na agenda.',ok?'success':'warning');
 }
 
-function blankVenda(){ return { id:'v'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), ownerId:(state.user&&state.user.id)||'', owner:(state.user&&state.user.name)||'', orcamentoId:'', dataVenda:todayISO(), categoria:'', itens:[{categoria:'',valor:''}], fornecedor:'', ambito:'', dataInicio:'', dataFim:'', origem:'', destino:'', voosDetalhes:'', numReserva:'', valorTotal:'', passageiros:[{nome:'',nascimento:''}], titularContato:'', vouchers:[], comissaoAgencia:'', comissaoFornecedor:'', comissaoTotal:'', dataRecebFornecedor:'', observacoes:'', preLancada:false, createdAt:localNowISO() }; }
+function blankVenda(){ return { id:'v'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), ownerId:(state.user&&state.user.id)||'', owner:(state.user&&state.user.name)||'', orcamentoId:'', dataVenda:todayISO(), categoria:'', itens:[{categoria:'',valor:'',fornecedor:'',comissaoFornecedor:'',dataRecebFornecedor:''}], fornecedor:'', ambito:'', dataInicio:'', dataFim:'', origem:'', destino:'', voosDetalhes:'', numReserva:'', valorTotal:'', passageiros:[{nome:'',nascimento:''}], titularContato:'', vouchers:[], comissaoAgencia:'', comissaoFornecedor:'', comissaoTotal:'', dataRecebFornecedor:'', observacoes:'', preLancada:false, createdAt:localNowISO() }; }
 // Itens da venda (categoria + valor). Compatível com vendas antigas: se não houver
 // "itens", deriva um item único a partir da categoria/valorTotal salvos antes.
-function vendaItens(v){ if(v && Array.isArray(v.itens) && v.itens.length) return v.itens; return [{categoria:(v&&v.categoria)||'', valor:(v&&v.valorTotal)||''}]; }
+function vendaItens(v){ if(v && Array.isArray(v.itens) && v.itens.length) return v.itens; return [{categoria:(v&&v.categoria)||'', valor:(v&&v.valorTotal)||'', fornecedor:(v&&v.fornecedor)||'', comissaoFornecedor:(v&&v.comissaoFornecedor)||'', dataRecebFornecedor:(v&&v.dataRecebFornecedor)||''}]; }
 
 function renderVendas(c){ c.innerHTML=`<div id="vendaFormWrap"></div><div id="vendaMainWrap"></div>`; renderVendasMain(); }
 
@@ -2568,9 +2568,8 @@ function openVendaForm(id){
   fw.innerHTML=`<div class="card">
     <div class="card-header"><h3 class="card-title">${id?'Editar venda':'Nova venda'}${v.preLancada?' <span class="badge warning" style="vertical-align:middle">pré-lançada do orçamento</span>':''}</h3><div style="display:flex;gap:8px"><button class="btn btn-success btn-sm" onclick="saveVendaForm()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Salvar</button><button class="btn btn-ghost btn-sm" onclick="closeVendaForm()">Cancelar</button></div></div>
     <h4 style="margin:14px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Dados da venda</h4>
-    <div class="field-row"><div class="field"><label>Data da venda</label><input id="vd_dataVenda" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataVenda)}"></div><div class="field"><label>Fornecedor</label><input id="vd_fornecedor" value="${escapeHtml(v.fornecedor)}"></div></div>
-    <div class="field-row"><div class="field"><label>Âmbito</label><select id="vd_ambito"><option value="" ${!v.ambito?'selected':''}>Selecione…</option><option value="nacional" ${v.ambito==='nacional'?'selected':''}>Nacional</option><option value="internacional" ${v.ambito==='internacional'?'selected':''}>Internacional</option></select></div><div class="field"><label>Número da reserva</label><input id="vd_numReserva" value="${escapeHtml(v.numReserva)}"></div></div>
-    <h4 style="margin:18px 0 4px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Itens da venda <span style="font-weight:400;color:var(--text-mute);font-size:11px">(marque uma categoria e o valor de cada item — ex.: Pacote R$3.000 + Chip R$50. O total é a soma dos itens.)</span></h4>
+    <div class="field-row"><div class="field"><label>Data da venda</label><input id="vd_dataVenda" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataVenda)}"></div><div class="field"><label>Âmbito</label><select id="vd_ambito"><option value="" ${!v.ambito?'selected':''}>Selecione…</option><option value="nacional" ${v.ambito==='nacional'?'selected':''}>Nacional</option><option value="internacional" ${v.ambito==='internacional'?'selected':''}>Internacional</option></select></div><div class="field"><label>Número da reserva</label><input id="vd_numReserva" value="${escapeHtml(v.numReserva)}"></div></div>
+    <h4 style="margin:18px 0 4px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Itens da venda <span style="font-weight:400;color:var(--text-mute);font-size:11px">(cada item tem sua categoria, valor, fornecedor e comissão a receber — ex.: Pacote na operadora X + Seguro na seguradora Y. O total é a soma dos itens.)</span></h4>
     <div id="vd_itensWrap"></div>
     <button class="btn btn-ghost btn-sm" onclick="vendaAddItem()">+ Adicionar item</button>
     <div id="vd_itensTotal" style="margin-top:10px;font-size:14px;font-weight:700;color:var(--brand-blue)"></div>
@@ -2588,8 +2587,8 @@ function openVendaForm(id){
     <span id="vd_voucherStatus" style="font-size:12px;color:var(--warning);margin-left:8px"></span>
     <div id="vd_vouchersWrap" style="margin-top:8px"></div>
     <h4 style="margin:18px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Comissões</h4>
-    <div class="field-row"><div class="field"><label>Comissão recebida na agência (R$)</label><input id="vd_comAgencia" type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(v.comissaoAgencia)}" oninput="voaMoneyMask(this);vendaUpdateComissaoTotal()"></div><div class="field"><label>Comissão a receber no fornecedor (R$)</label><input id="vd_comForn" type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(v.comissaoFornecedor)}" oninput="voaMoneyMask(this);vendaUpdateComissaoTotal()"></div></div>
-    <div class="field-row"><div class="field"><label>Data prevista de recebimento (fornecedor)</label><input id="vd_dataRecebForn" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataRecebFornecedor)}"></div><div class="field"><label>Comissão total da venda (R$)</label><input id="vd_comTotal" type="text" placeholder="0,00" value="${moneyToBR(v.comissaoTotal)}" readonly style="background:var(--surface-alt)"></div></div>
+    <div class="field-row"><div class="field"><label>Comissão recebida na agência (R$) <span style="font-weight:400;color:var(--text-mute);font-size:11px">(entra no saldo)</span></label><input id="vd_comAgencia" type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(v.comissaoAgencia)}" oninput="voaMoneyMask(this);vendaUpdateComissaoTotal()"></div><div class="field"><label>Comissão total da venda (R$) <span style="font-weight:400;color:var(--text-mute);font-size:11px">(agência + fornecedores dos itens)</span></label><input id="vd_comTotal" type="text" placeholder="0,00" value="${moneyToBR(v.comissaoTotal)}" readonly style="background:var(--surface-alt)"></div></div>
+    <p style="font-size:11px;color:var(--text-mute);margin:2px 0 0">A comissão <strong>a receber de cada fornecedor</strong> (e a data de recebimento) é lançada em cada item acima — vira uma conta a receber por fornecedor no Financeiro.</p>
     <h4 style="margin:18px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Observações</h4>
     <div class="field"><textarea id="vd_observacoes" placeholder="Informações relevantes desta reserva">${escapeHtml(v.observacoes)}</textarea></div>
   </div>`;
@@ -2603,20 +2602,22 @@ function renderVendaPax(){
 function _vendaReadPax(){ currentVenda.passageiros=[...document.querySelectorAll('#vd_paxWrap .vd-pax-row')].map(row=>({ nome:(row.querySelector('.vd-pax-nome').value||'').trim(), nascimento:_brToISO(row.querySelector('.vd-pax-nasc').value) })); if(!currentVenda.passageiros.length) currentVenda.passageiros=[{nome:'',nascimento:''}]; }
 function vendaAddPax(){ _vendaReadPax(); currentVenda.passageiros.push({nome:'',nascimento:''}); renderVendaPax(); }
 function vendaRemovePax(i){ _vendaReadPax(); currentVenda.passageiros.splice(i,1); if(!currentVenda.passageiros.length) currentVenda.passageiros=[{nome:'',nascimento:''}]; renderVendaPax(); }
+function _blankVendaItem(){ return {categoria:'',valor:'',fornecedor:'',comissaoFornecedor:'',dataRecebFornecedor:''}; }
 function renderVendaItens(){
   const wrap=document.getElementById('vd_itensWrap'); if(!wrap) return;
-  const itens=(currentVenda.itens&&currentVenda.itens.length)?currentVenda.itens:[{categoria:'',valor:''}];
+  const itens=(currentVenda.itens&&currentVenda.itens.length)?currentVenda.itens:[_blankVendaItem()];
   currentVenda.itens=itens;
   wrap.innerHTML=itens.map((it,i)=>{
     const opts=`<option value="">Selecione…</option>`+VENDA_CATS.filter(c=>c.id!=='outros').map(c=>`<option value="${c.id}" ${it.categoria===c.id?'selected':''}>${c.nome}</option>`).join('');
-    return `<div class="vd-item-row" style="display:flex;gap:8px;align-items:flex-end;margin-bottom:8px"><div class="field" style="flex:1;margin:0"><label>Categoria</label><select class="vd-item-cat" onchange="_vendaReadItens()">${opts}</select></div><div class="field" style="width:150px;margin:0"><label>Valor (R$)</label><input class="vd-item-valor" type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(it.valor)}" oninput="voaMoneyMask(this);vendaItensTotalUpdate()"></div>${itens.length>1?`<button class="btn-icon" title="Remover item" onclick="vendaRemoveItem(${i})" style="color:var(--danger);margin-bottom:6px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`:''}</div>`;
+    const rem=itens.length>1?`<button class="btn-icon" title="Remover item" onclick="vendaRemoveItem(${i})" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`:'';
+    return `<div class="vd-item-row" style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-size:12px;font-weight:700;color:var(--text-soft);text-transform:uppercase;letter-spacing:.04em">Item ${i+1}</span>${rem}</div><div class="field-row"><div class="field"><label>Categoria</label><select class="vd-item-cat" onchange="_vendaReadItens()">${opts}</select></div><div class="field" style="max-width:180px"><label>Valor (R$)</label><input class="vd-item-valor" type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(it.valor)}" oninput="voaMoneyMask(this);vendaItensTotalUpdate()"></div></div><div class="field-row"><div class="field"><label>Fornecedor deste item</label><input class="vd-item-forn" placeholder="Operadora / seguradora…" value="${escapeHtml(it.fornecedor||'')}" onchange="_vendaReadItens()"></div><div class="field" style="max-width:180px"><label>Comissão a receber (R$)</label><input class="vd-item-comfn" type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(it.comissaoFornecedor)}" oninput="voaMoneyMask(this);vendaUpdateComissaoTotal()"></div><div class="field" style="max-width:160px"><label>Data prev. recebimento</label><input class="vd-item-dtreceb" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(it.dataRecebFornecedor)}"></div></div></div>`;
   }).join('');
-  vendaItensTotalUpdate();
+  vendaItensTotalUpdate(); vendaUpdateComissaoTotal();
 }
-function _vendaReadItens(){ const rows=[...document.querySelectorAll('#vd_itensWrap .vd-item-row')]; if(rows.length){ currentVenda.itens=rows.map(r=>({ categoria:r.querySelector('.vd-item-cat').value, valor:moneyBRToNum(r.querySelector('.vd-item-valor').value)||'' })); } if(!currentVenda.itens||!currentVenda.itens.length) currentVenda.itens=[{categoria:'',valor:''}]; }
+function _vendaReadItens(){ const rows=[...document.querySelectorAll('#vd_itensWrap .vd-item-row')]; if(rows.length){ currentVenda.itens=rows.map(r=>({ categoria:r.querySelector('.vd-item-cat').value, valor:moneyBRToNum(r.querySelector('.vd-item-valor').value)||'', fornecedor:(r.querySelector('.vd-item-forn').value||'').trim(), comissaoFornecedor:moneyBRToNum(r.querySelector('.vd-item-comfn').value)||'', dataRecebFornecedor:_brToISO(r.querySelector('.vd-item-dtreceb').value) })); } if(!currentVenda.itens||!currentVenda.itens.length) currentVenda.itens=[_blankVendaItem()]; }
 function vendaItensTotalUpdate(){ const rows=[...document.querySelectorAll('#vd_itensWrap .vd-item-row')]; const tot=rows.reduce((s,r)=>s+(moneyBRToNum(r.querySelector('.vd-item-valor').value)||0),0); const el=document.getElementById('vd_itensTotal'); if(el) el.textContent='Total da venda: '+fmtBRL(tot); }
-function vendaAddItem(){ _vendaReadItens(); currentVenda.itens.push({categoria:'',valor:''}); renderVendaItens(); }
-function vendaRemoveItem(i){ _vendaReadItens(); currentVenda.itens.splice(i,1); if(!currentVenda.itens.length) currentVenda.itens=[{categoria:'',valor:''}]; renderVendaItens(); }
+function vendaAddItem(){ _vendaReadItens(); currentVenda.itens.push(_blankVendaItem()); renderVendaItens(); }
+function vendaRemoveItem(i){ _vendaReadItens(); currentVenda.itens.splice(i,1); if(!currentVenda.itens.length) currentVenda.itens=[_blankVendaItem()]; renderVendaItens(); }
 
 async function vendaPickVouchers(input){
   const files=[...(input.files||[])]; if(!files.length) return;
@@ -2631,7 +2632,7 @@ function renderVendaVouchers(){
 }
 async function openVendaVoucher(i){ const d=(currentVenda.vouchers||[])[i]; if(!d||!d.path) return; const url=await cloudGetVendaDocUrl(d.path); if(url) window.open(url,'_blank'); else toast('Não foi possível abrir o voucher.','danger'); }
 async function vendaRemoveVoucher(i){ const d=(currentVenda.vouchers||[])[i]; if(!d) return; if(d.path) cloudDeleteVendaDoc(d.path); currentVenda.vouchers.splice(i,1); renderVendaVouchers(); }
-function vendaUpdateComissaoTotal(){ const a=moneyBRToNum((document.getElementById('vd_comAgencia')||{}).value)||0; const b=moneyBRToNum((document.getElementById('vd_comForn')||{}).value)||0; const t=document.getElementById('vd_comTotal'); if(t) t.value=moneyToBR(a+b); }
+function vendaUpdateComissaoTotal(){ const a=moneyBRToNum((document.getElementById('vd_comAgencia')||{}).value)||0; const b=[...document.querySelectorAll('#vd_itensWrap .vd-item-comfn')].reduce((s,el)=>s+(moneyBRToNum(el.value)||0),0); const t=document.getElementById('vd_comTotal'); if(t) t.value=moneyToBR(a+b); }
 
 function _vendaReadForm(){
   const g=id=>{ const e=document.getElementById(id); return e?e.value:''; };
@@ -2640,7 +2641,11 @@ function _vendaReadForm(){
   _vendaReadItens();
   currentVenda.valorTotal=(currentVenda.itens||[]).reduce((s,it)=>s+(Number(it.valor)||0),0)||'';
   currentVenda.categoria=(currentVenda.itens[0]&&currentVenda.itens[0].categoria)||'';
-  currentVenda.fornecedor=g('vd_fornecedor').trim();
+  { const its=currentVenda.itens||[];
+    currentVenda.fornecedor=[...new Set(its.map(it=>(it.fornecedor||'').trim()).filter(Boolean))].join(' / ');
+    currentVenda.comissaoFornecedor=its.reduce((s,it)=>s+(Number(it.comissaoFornecedor)||0),0)||'';
+    const _dts=its.map(it=>it.dataRecebFornecedor).filter(Boolean).sort();
+    currentVenda.dataRecebFornecedor=_dts[0]||''; }
   currentVenda.ambito=g('vd_ambito');
   currentVenda.numReserva=g('vd_numReserva').trim();
   currentVenda.dataInicio=_brToISO(g('vd_dataInicio'));
@@ -2650,9 +2655,7 @@ function _vendaReadForm(){
   currentVenda.voosDetalhes=g('vd_voosDetalhes').trim();
   currentVenda.titularContato=g('vd_titularContato').trim();
   currentVenda.comissaoAgencia=moneyBRToNum(g('vd_comAgencia'))||'';
-  currentVenda.comissaoFornecedor=moneyBRToNum(g('vd_comForn'))||'';
-  currentVenda.comissaoTotal=moneyBRToNum(g('vd_comTotal'))||'';
-  currentVenda.dataRecebFornecedor=_brToISO(g('vd_dataRecebForn'));
+  currentVenda.comissaoTotal=((Number(currentVenda.comissaoAgencia)||0)+(Number(currentVenda.comissaoFornecedor)||0))||'';
   currentVenda.observacoes=g('vd_observacoes');
 }
 async function mesAtualServidor(){
@@ -2719,7 +2722,7 @@ function _vendaDeOrcamento(o){
   v.voosDetalhes=_voosOrcParaTexto(o.voos);   // migra os voos do orçamento para a venda
   const d0=(o.datas&&o.datas[0])||{}; v.dataInicio=d0.inicio||''; v.dataFim=d0.fim||'';
   v.valorTotal=(o.investimento&&o.investimento.valor)||'';
-  v.itens=[{categoria:'', valor:(o.investimento&&o.investimento.valor)||''}];   // 1 item com o valor; a categoria é escolhida ao completar
+  v.itens=[{categoria:'', valor:(o.investimento&&o.investimento.valor)||'', fornecedor:(o.venda&&o.venda.fornecedor)||'', comissaoFornecedor:(o.venda&&o.venda.comissaoFornecedor)||'', dataRecebFornecedor:''}];   // 1 item com valor/fornecedor; a categoria é escolhida ao completar
   v.comissaoAgencia=(o.venda&&o.venda.comissaoAgencia)||'';
   v.comissaoFornecedor=(o.venda&&o.venda.comissaoFornecedor)||'';
   v.comissaoTotal=o.comissao||'';
@@ -2854,12 +2857,21 @@ async function reconciliarVendasFinanceiro(){
       else if(Number(agE.valor)!==comAg){ agE.valor=comAg; agE.descricao='Comissão da agência — '+tit+ref; agE.pago=true; salvar.push(agE); }
     } else if(agE){ state.financeiro=state.financeiro.filter(x=>x.id!==agE.id); apagar.push(agE.id); }
 
-    // ---- FORNECEDOR: conta a receber pendente (baixa quando o fornecedor pagar) ----
-    const fnE=find('comfn-'+v.id);
-    if(comFn>0){
-      if(L.fn===null && !fnE){ const venc=v.dataRecebFornecedor?String(v.dataRecebFornecedor).slice(0,10):dataV; const it=Object.assign(blankFin('receber'),{ id:'comfn-'+v.id, auto:true, vendaId:v.id, descricao:'Comissão do fornecedor — '+tit+ref, categoria:'Comissão a receber', origem:v.fornecedor||v.owner||'', valor:comFn, pago:false, vencimento:venc }); state.financeiro.unshift(it); salvar.push(it); L.fn=comFn; ledgerMudou=true; }
-      else if(fnE && !fnE.pago && Number(fnE.valor)!==comFn){ fnE.valor=comFn; fnE.descricao='Comissão do fornecedor — '+tit+ref; salvar.push(fnE); L.fn=comFn; ledgerMudou=true; }
-    } else { if(fnE && !fnE.pago){ state.financeiro=state.financeiro.filter(x=>x.id!==fnE.id); apagar.push(fnE.id); } if(L.fn!==null){ L.fn=null; ledgerMudou=true; } }
+    // ---- FORNECEDOR: uma conta a receber por ITEM que tenha comissão de fornecedor ----
+    // Chave compatível: o 1º item que paga usa 'comfn-<venda>' (a mesma de antes); os
+    // demais recebem sufixo. Assim vendas antigas de 1 fornecedor não mudam de chave.
+    let linhasFn = vendaItens(v).filter(it=>Number(it.comissaoFornecedor)>0);
+    if(!linhasFn.length && comFn>0){ linhasFn=[{ categoria:v.categoria, fornecedor:v.fornecedor, comissaoFornecedor:v.comissaoFornecedor, dataRecebFornecedor:v.dataRecebFornecedor }]; } // compat: modelo antigo (comissão no nível da venda)
+    const desired={};
+    linhasFn.forEach((it,i)=>{ const key='comfn-'+v.id+(i===0?'':'-'+i); const venc=it.dataRecebFornecedor?String(it.dataRecebFornecedor).slice(0,10):dataV; const catNome=it.categoria?(vendaCat(it.categoria).nome+' — '):''; desired[key]={ valor:Number(it.comissaoFornecedor)||0, origem:it.fornecedor||v.owner||'', venc, desc:'Comissão do fornecedor — '+catNome+tit+ref }; });
+    for(const key of Object.keys(desired)){ const d=desired[key]; const e=find(key);
+      if(!e){ const it=Object.assign(blankFin('receber'),{ id:key, auto:true, vendaId:v.id, descricao:d.desc, categoria:'Comissão a receber', origem:d.origem, valor:d.valor, pago:false, vencimento:d.venc }); state.financeiro.unshift(it); salvar.push(it); ledgerMudou=true; }
+      else if(!e.pago && (Number(e.valor)!==d.valor || (e.origem||'')!==d.origem || (e.vencimento||'')!==d.venc || (e.descricao||'')!==d.desc)){ e.valor=d.valor; e.origem=d.origem; e.vencimento=d.venc; e.descricao=d.desc; salvar.push(e); ledgerMudou=true; }
+    }
+    const prevKeys=(L.fnKeys&&L.fnKeys.length)?L.fnKeys:((L.fn!==null&&L.fn!==undefined)?['comfn-'+v.id]:[]);
+    for(const key of prevKeys){ if(!desired[key]){ const e=find(key); if(e&&!e.pago){ state.financeiro=state.financeiro.filter(x=>x.id!==e.id); apagar.push(e.id); ledgerMudou=true; } } }
+    if(JSON.stringify(L.fnKeys||[])!==JSON.stringify(Object.keys(desired))) ledgerMudou=true;
+    L.fnKeys=Object.keys(desired); delete L.fn;
 
     ledger[v.id]=L;
   }
@@ -2869,7 +2881,8 @@ async function reconciliarVendasFinanceiro(){
     if(vivos.has(vid)||baseSet.has(vid)) continue;
     const L=ledger[vid]||{}; if(Number(L.ag)) saldoDelta-=Number(L.ag)||0;
     const a=find('comag-'+vid); if(a){ state.financeiro=state.financeiro.filter(x=>x.id!==a.id); apagar.push(a.id); }
-    const f=find('comfn-'+vid); if(f&&!f.pago){ state.financeiro=state.financeiro.filter(x=>x.id!==f.id); apagar.push(f.id); }
+    const fkeys=(L.fnKeys&&L.fnKeys.length)?L.fnKeys:['comfn-'+vid];
+    fkeys.forEach(k=>{ const f=find(k); if(f&&!f.pago){ state.financeiro=state.financeiro.filter(x=>x.id!==f.id); apagar.push(f.id); } });
     delete ledger[vid]; ledgerMudou=true;
   }
 
