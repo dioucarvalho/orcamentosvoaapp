@@ -2478,7 +2478,10 @@ async function importarClientesDasVendas(){
   toast(ok+' cliente(s) salvos/atualizados na agenda.',ok?'success':'warning');
 }
 
-function blankVenda(){ return { id:'v'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), ownerId:(state.user&&state.user.id)||'', owner:(state.user&&state.user.name)||'', orcamentoId:'', dataVenda:todayISO(), categoria:'', fornecedor:'', ambito:'', dataInicio:'', dataFim:'', origem:'', destino:'', voosDetalhes:'', numReserva:'', valorTotal:'', passageiros:[{nome:'',nascimento:''}], titularContato:'', vouchers:[], comissaoAgencia:'', comissaoFornecedor:'', comissaoTotal:'', dataRecebFornecedor:'', observacoes:'', preLancada:false, createdAt:localNowISO() }; }
+function blankVenda(){ return { id:'v'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), ownerId:(state.user&&state.user.id)||'', owner:(state.user&&state.user.name)||'', orcamentoId:'', dataVenda:todayISO(), categoria:'', itens:[{categoria:'',valor:''}], fornecedor:'', ambito:'', dataInicio:'', dataFim:'', origem:'', destino:'', voosDetalhes:'', numReserva:'', valorTotal:'', passageiros:[{nome:'',nascimento:''}], titularContato:'', vouchers:[], comissaoAgencia:'', comissaoFornecedor:'', comissaoTotal:'', dataRecebFornecedor:'', observacoes:'', preLancada:false, createdAt:localNowISO() }; }
+// Itens da venda (categoria + valor). Compatível com vendas antigas: se não houver
+// "itens", deriva um item único a partir da categoria/valorTotal salvos antes.
+function vendaItens(v){ if(v && Array.isArray(v.itens) && v.itens.length) return v.itens; return [{categoria:(v&&v.categoria)||'', valor:(v&&v.valorTotal)||''}]; }
 
 function renderVendas(c){ c.innerHTML=`<div id="vendaFormWrap"></div><div id="vendaMainWrap"></div>`; renderVendasMain(); }
 
@@ -2499,7 +2502,7 @@ function renderVendasMain(){
   const totalBase=base.reduce((s,v)=>s+(Number(v.valorTotal)||0),0);
   const comissaoBase=base.reduce((s,v)=>s+(Number(v.comissaoTotal)||0),0);
   const periodoLabel=(vendaDateFrom&&vendaDateTo)?(fmtDateBR(vendaDateFrom)+' a '+fmtDateBR(vendaDateTo)):vendaDateFrom?('a partir de '+fmtDateBR(vendaDateFrom)):vendaDateTo?('até '+fmtDateBR(vendaDateTo)):'';
-  const porCat={}; base.forEach(v=>{ const cat=v.categoria||'outros'; porCat[cat]=(porCat[cat]||0)+(Number(v.valorTotal)||0); });
+  const porCat={}; base.forEach(v=>{ vendaItens(v).forEach(it=>{ const cat=it.categoria||'outros'; porCat[cat]=(porCat[cat]||0)+(Number(it.valor)||0); }); });
   const catsComValor=VENDA_CATS.filter(c=>porCat[c.id]>0);
   const legenda=catsComValor.map(c=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0"><span style="width:12px;height:12px;border-radius:3px;background:${c.cor};flex-shrink:0"></span><span style="flex:1;font-size:13px;color:var(--text-soft)">${c.nome}</span><strong style="font-size:13px;color:var(--text)">${fmtBRL(porCat[c.id])}</strong></div>`).join('');
   const graficoHTML = catsComValor.length
@@ -2545,9 +2548,11 @@ function renderVendaTable(){
   const _mLabel=monthLabelBR(_mo).replace(/^./,c=>c.toUpperCase());
   const _mesBadge=!temP?`<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:${vendaMesSoAtual?'var(--brand-blue)':'var(--text-mute)'};background:${vendaMesSoAtual?'rgba(59,130,246,.08)':'var(--surface-alt)'};padding:5px 12px;border-radius:20px;border:1.5px solid ${vendaMesSoAtual?'rgba(59,130,246,.25)':'var(--border)'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;flex-shrink:0"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>${_mLabel}<button onclick="vendaMesSoAtual=!vendaMesSoAtual;renderVendasMain()" style="background:none;border:none;color:${vendaMesSoAtual?'var(--brand-blue)':'var(--text-mute)'};cursor:pointer;font-size:11px;padding:0;margin-left:4px;text-decoration:underline;text-underline-offset:2px">${vendaMesSoAtual?'Ver todos':'Só este mês'}</button></span>`:'';
   const linhas = list.map(v=>{
-    const cat=vendaCat(v.categoria); const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'—';
+    const catIds=[...new Set(vendaItens(v).map(it=>it.categoria).filter(Boolean))];
+    const catBadges=(catIds.length?catIds:['']).map(id=>{ const c=vendaCat(id); return `<span class="badge neutral" style="background:${c.cor}22;color:${c.cor};border:none">${c.nome}</span>`; }).join(' ');
+    const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'—';
     const status=v.preLancada?`<span class="badge warning">Pré-lançada</span>`:`<span class="badge success">Lançada</span>`;
-    return `<tr><td>${v.dataVenda?fmtDateBR(v.dataVenda):'—'}</td><td><strong>${escapeHtml(tit)}</strong></td><td><span class="badge neutral" style="background:${cat.cor}22;color:${cat.cor};border:none">${cat.nome}</span></td><td>${escapeHtml(v.fornecedor||'—')}</td>${isGestao?`<td>${escapeHtml(v.owner||'—')}</td>`:''}<td>${escapeHtml(v.destino||'—')}</td><td class="num">${v.valorTotal?fmtBRL(v.valorTotal):'—'}</td><td class="num">${v.comissaoTotal?fmtBRL(v.comissaoTotal):'—'}</td><td>${status}</td><td class="num"><button class="btn-icon" title="Editar/completar" onclick="editVenda('${v.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="btn-icon" title="Excluir" onclick="deleteVenda('${v.id}')" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></td></tr>`;
+    return `<tr><td>${v.dataVenda?fmtDateBR(v.dataVenda):'—'}</td><td><strong>${escapeHtml(tit)}</strong></td><td><div style="display:flex;flex-wrap:wrap;gap:4px">${catBadges}</div></td><td>${escapeHtml(v.fornecedor||'—')}</td>${isGestao?`<td>${escapeHtml(v.owner||'—')}</td>`:''}<td>${escapeHtml(v.destino||'—')}</td><td class="num">${v.valorTotal?fmtBRL(v.valorTotal):'—'}</td><td class="num">${v.comissaoTotal?fmtBRL(v.comissaoTotal):'—'}</td><td>${status}</td><td class="num"><button class="btn-icon" title="Editar/completar" onclick="editVenda('${v.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="btn-icon" title="Excluir" onclick="deleteVenda('${v.id}')" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></td></tr>`;
   }).join('');
   wrap.innerHTML=`<div class="card"><div class="card-header"><h3 class="card-title">Vendas registradas</h3><div style="display:flex;align-items:center;gap:8px">${_mesBadge}<span class="badge neutral">${list.length}${filtrando?' no filtro':''}</span></div></div>${list.length===0?`<div class="empty">${(!filtrando&&vendaMesSoAtual&&!temP)?'Nenhuma venda em '+_mLabel+'.':filtrando?'Nenhuma venda encontrada para esse filtro.':'Nenhuma venda ainda.'}</div>`:`<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Data</th><th>Titular</th><th>Categoria</th><th>Fornecedor</th>${isGestao?'<th>Consultor(a)</th>':''}<th>Destino</th><th class="num">Valor total</th><th class="num">Comissão</th><th>Status</th><th class="num">Ações</th></tr></thead><tbody>${linhas}</tbody></table></div>`}</div>`;
 }
@@ -2556,15 +2561,19 @@ function monthLabelBR(ym){ const _m=['janeiro','fevereiro','março','abril','mai
 function openVendaForm(id){
   currentVenda = id ? JSON.parse(JSON.stringify((state.vendas||[]).find(v=>v.id===id)||blankVenda())) : blankVenda();
   if(!currentVenda.passageiros||!currentVenda.passageiros.length) currentVenda.passageiros=[{nome:'',nascimento:''}];
+  if(!currentVenda.itens||!currentVenda.itens.length) currentVenda.itens=vendaItens(currentVenda).map(it=>({categoria:it.categoria||'',valor:it.valor||''}));
   const main=document.getElementById('vendaMainWrap'); if(main) main.style.display='none';
   const fw=document.getElementById('vendaFormWrap'); if(!fw) return;
   const v=currentVenda;
-  const catOpts=`<option value="">Selecione…</option>`+VENDA_CATS.filter(c=>c.id!=='outros').map(c=>`<option value="${c.id}" ${v.categoria===c.id?'selected':''}>${c.nome}</option>`).join('');
   fw.innerHTML=`<div class="card">
     <div class="card-header"><h3 class="card-title">${id?'Editar venda':'Nova venda'}${v.preLancada?' <span class="badge warning" style="vertical-align:middle">pré-lançada do orçamento</span>':''}</h3><div style="display:flex;gap:8px"><button class="btn btn-success btn-sm" onclick="saveVendaForm()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Salvar</button><button class="btn btn-ghost btn-sm" onclick="closeVendaForm()">Cancelar</button></div></div>
     <h4 style="margin:14px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Dados da venda</h4>
-    <div class="field-row"><div class="field"><label>Data da venda</label><input id="vd_dataVenda" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataVenda)}"></div><div class="field"><label>Categoria</label><select id="vd_categoria">${catOpts}</select></div><div class="field"><label>Fornecedor</label><input id="vd_fornecedor" value="${escapeHtml(v.fornecedor)}"></div></div>
-    <div class="field-row"><div class="field"><label>Âmbito</label><select id="vd_ambito"><option value="" ${!v.ambito?'selected':''}>Selecione…</option><option value="nacional" ${v.ambito==='nacional'?'selected':''}>Nacional</option><option value="internacional" ${v.ambito==='internacional'?'selected':''}>Internacional</option></select></div><div class="field"><label>Valor total da venda (R$)</label><input id="vd_valorTotal" type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(v.valorTotal)}" oninput="voaMoneyMask(this)"></div><div class="field"><label>Número da reserva</label><input id="vd_numReserva" value="${escapeHtml(v.numReserva)}"></div></div>
+    <div class="field-row"><div class="field"><label>Data da venda</label><input id="vd_dataVenda" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataVenda)}"></div><div class="field"><label>Fornecedor</label><input id="vd_fornecedor" value="${escapeHtml(v.fornecedor)}"></div></div>
+    <div class="field-row"><div class="field"><label>Âmbito</label><select id="vd_ambito"><option value="" ${!v.ambito?'selected':''}>Selecione…</option><option value="nacional" ${v.ambito==='nacional'?'selected':''}>Nacional</option><option value="internacional" ${v.ambito==='internacional'?'selected':''}>Internacional</option></select></div><div class="field"><label>Número da reserva</label><input id="vd_numReserva" value="${escapeHtml(v.numReserva)}"></div></div>
+    <h4 style="margin:18px 0 4px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Itens da venda <span style="font-weight:400;color:var(--text-mute);font-size:11px">(marque uma categoria e o valor de cada item — ex.: Pacote R$3.000 + Chip R$50. O total é a soma dos itens.)</span></h4>
+    <div id="vd_itensWrap"></div>
+    <button class="btn btn-ghost btn-sm" onclick="vendaAddItem()">+ Adicionar item</button>
+    <div id="vd_itensTotal" style="margin-top:10px;font-size:14px;font-weight:700;color:var(--brand-blue)"></div>
     <h4 style="margin:18px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Viagem</h4>
     <div class="field-row"><div class="field"><label>Início da viagem</label><input id="vd_dataInicio" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataInicio)}"></div><div class="field"><label>Fim da viagem</label><input id="vd_dataFim" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataFim)}"></div></div>
     <div class="field-row"><div class="field"><label>Origem</label><input id="vd_origem" value="${escapeHtml(v.origem)}"></div><div class="field"><label>Destino</label><input id="vd_destino" value="${escapeHtml(v.destino)}"></div></div>
@@ -2584,7 +2593,7 @@ function openVendaForm(id){
     <h4 style="margin:18px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Observações</h4>
     <div class="field"><textarea id="vd_observacoes" placeholder="Informações relevantes desta reserva">${escapeHtml(v.observacoes)}</textarea></div>
   </div>`;
-  renderVendaPax(); renderVendaVouchers(); vendaUpdateComissaoTotal(); vendaCarregarClientes();
+  renderVendaItens(); renderVendaPax(); renderVendaVouchers(); vendaUpdateComissaoTotal(); vendaCarregarClientes();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function renderVendaPax(){
@@ -2594,6 +2603,20 @@ function renderVendaPax(){
 function _vendaReadPax(){ currentVenda.passageiros=[...document.querySelectorAll('#vd_paxWrap .vd-pax-row')].map(row=>({ nome:(row.querySelector('.vd-pax-nome').value||'').trim(), nascimento:_brToISO(row.querySelector('.vd-pax-nasc').value) })); if(!currentVenda.passageiros.length) currentVenda.passageiros=[{nome:'',nascimento:''}]; }
 function vendaAddPax(){ _vendaReadPax(); currentVenda.passageiros.push({nome:'',nascimento:''}); renderVendaPax(); }
 function vendaRemovePax(i){ _vendaReadPax(); currentVenda.passageiros.splice(i,1); if(!currentVenda.passageiros.length) currentVenda.passageiros=[{nome:'',nascimento:''}]; renderVendaPax(); }
+function renderVendaItens(){
+  const wrap=document.getElementById('vd_itensWrap'); if(!wrap) return;
+  const itens=(currentVenda.itens&&currentVenda.itens.length)?currentVenda.itens:[{categoria:'',valor:''}];
+  currentVenda.itens=itens;
+  wrap.innerHTML=itens.map((it,i)=>{
+    const opts=`<option value="">Selecione…</option>`+VENDA_CATS.filter(c=>c.id!=='outros').map(c=>`<option value="${c.id}" ${it.categoria===c.id?'selected':''}>${c.nome}</option>`).join('');
+    return `<div class="vd-item-row" style="display:flex;gap:8px;align-items:flex-end;margin-bottom:8px"><div class="field" style="flex:1;margin:0"><label>Categoria</label><select class="vd-item-cat" onchange="_vendaReadItens()">${opts}</select></div><div class="field" style="width:150px;margin:0"><label>Valor (R$)</label><input class="vd-item-valor" type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(it.valor)}" oninput="voaMoneyMask(this);vendaItensTotalUpdate()"></div>${itens.length>1?`<button class="btn-icon" title="Remover item" onclick="vendaRemoveItem(${i})" style="color:var(--danger);margin-bottom:6px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`:''}</div>`;
+  }).join('');
+  vendaItensTotalUpdate();
+}
+function _vendaReadItens(){ const rows=[...document.querySelectorAll('#vd_itensWrap .vd-item-row')]; if(rows.length){ currentVenda.itens=rows.map(r=>({ categoria:r.querySelector('.vd-item-cat').value, valor:moneyBRToNum(r.querySelector('.vd-item-valor').value)||'' })); } if(!currentVenda.itens||!currentVenda.itens.length) currentVenda.itens=[{categoria:'',valor:''}]; }
+function vendaItensTotalUpdate(){ const rows=[...document.querySelectorAll('#vd_itensWrap .vd-item-row')]; const tot=rows.reduce((s,r)=>s+(moneyBRToNum(r.querySelector('.vd-item-valor').value)||0),0); const el=document.getElementById('vd_itensTotal'); if(el) el.textContent='Total da venda: '+fmtBRL(tot); }
+function vendaAddItem(){ _vendaReadItens(); currentVenda.itens.push({categoria:'',valor:''}); renderVendaItens(); }
+function vendaRemoveItem(i){ _vendaReadItens(); currentVenda.itens.splice(i,1); if(!currentVenda.itens.length) currentVenda.itens=[{categoria:'',valor:''}]; renderVendaItens(); }
 
 async function vendaPickVouchers(input){
   const files=[...(input.files||[])]; if(!files.length) return;
@@ -2614,10 +2637,11 @@ function _vendaReadForm(){
   const g=id=>{ const e=document.getElementById(id); return e?e.value:''; };
   _vendaReadPax();
   currentVenda.dataVenda=_brToISO(g('vd_dataVenda'));
-  currentVenda.categoria=g('vd_categoria');
+  _vendaReadItens();
+  currentVenda.valorTotal=(currentVenda.itens||[]).reduce((s,it)=>s+(Number(it.valor)||0),0)||'';
+  currentVenda.categoria=(currentVenda.itens[0]&&currentVenda.itens[0].categoria)||'';
   currentVenda.fornecedor=g('vd_fornecedor').trim();
   currentVenda.ambito=g('vd_ambito');
-  currentVenda.valorTotal=moneyBRToNum(g('vd_valorTotal'))||'';
   currentVenda.numReserva=g('vd_numReserva').trim();
   currentVenda.dataInicio=_brToISO(g('vd_dataInicio'));
   currentVenda.dataFim=_brToISO(g('vd_dataFim'));
@@ -2638,7 +2662,13 @@ async function mesAtualServidor(){
 async function saveVendaForm(){
   _vendaReadForm();
   const v=currentVenda;
-  if(!v.categoria){ toast('Selecione a CATEGORIA da venda.','warning'); return; }
+  const itens=(v.itens||[]).filter(it=>it.categoria||(Number(it.valor)>0));
+  if(!itens.length){ toast('Adicione ao menos um ITEM (categoria + valor) na venda.','warning'); return; }
+  if(itens.some(it=>!it.categoria)){ toast('Todo item precisa de uma CATEGORIA.','warning'); return; }
+  if(itens.some(it=>!(Number(it.valor)>0))){ toast('Todo item precisa de um VALOR maior que zero.','warning'); return; }
+  v.itens=itens;
+  v.valorTotal=itens.reduce((s,it)=>s+(Number(it.valor)||0),0);
+  v.categoria=itens[0].categoria;
   if(!v.ambito){ toast('Selecione o ÂMBITO da venda (Nacional ou Internacional).','warning'); return; }
   const mesVenda=(v.dataVenda||'').slice(0,7);
   if(mesVenda && !v.preLancada){
@@ -2689,6 +2719,7 @@ function _vendaDeOrcamento(o){
   v.voosDetalhes=_voosOrcParaTexto(o.voos);   // migra os voos do orçamento para a venda
   const d0=(o.datas&&o.datas[0])||{}; v.dataInicio=d0.inicio||''; v.dataFim=d0.fim||'';
   v.valorTotal=(o.investimento&&o.investimento.valor)||'';
+  v.itens=[{categoria:'', valor:(o.investimento&&o.investimento.valor)||''}];   // 1 item com o valor; a categoria é escolhida ao completar
   v.comissaoAgencia=(o.venda&&o.venda.comissaoAgencia)||'';
   v.comissaoFornecedor=(o.venda&&o.venda.comissaoFornecedor)||'';
   v.comissaoTotal=o.comissao||'';
