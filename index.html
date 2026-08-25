@@ -2552,10 +2552,65 @@ function renderVendaTable(){
     const catBadges=(catIds.length?catIds:['']).map(id=>{ const c=vendaCat(id); return `<span class="badge neutral" style="background:${c.cor}22;color:${c.cor};border:none">${c.nome}</span>`; }).join(' ');
     const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'—';
     const status=v.preLancada?`<span class="badge warning">Pré-lançada</span>`:`<span class="badge success">Lançada</span>`;
-    return `<tr><td>${v.dataVenda?fmtDateBR(v.dataVenda):'—'}</td><td><strong>${escapeHtml(tit)}</strong></td><td><div style="display:flex;flex-wrap:wrap;gap:4px">${catBadges}</div></td><td>${escapeHtml(v.fornecedor||'—')}</td>${isGestao?`<td>${escapeHtml(v.owner||'—')}</td>`:''}<td>${escapeHtml(v.destino||'—')}</td><td class="num">${v.valorTotal?fmtBRL(v.valorTotal):'—'}</td><td class="num">${v.comissaoTotal?fmtBRL(v.comissaoTotal):'—'}</td><td>${status}</td><td class="num"><button class="btn-icon" title="Editar/completar" onclick="editVenda('${v.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="btn-icon" title="Excluir" onclick="deleteVenda('${v.id}')" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></td></tr>`;
+    return `<tr><td>${v.dataVenda?fmtDateBR(v.dataVenda):'—'}</td><td><strong>${escapeHtml(tit)}</strong></td><td><div style="display:flex;flex-wrap:wrap;gap:4px">${catBadges}</div></td><td>${escapeHtml(v.fornecedor||'—')}</td>${isGestao?`<td>${escapeHtml(v.owner||'—')}</td>`:''}<td>${escapeHtml(v.destino||'—')}</td><td class="num">${v.valorTotal?fmtBRL(v.valorTotal):'—'}</td><td class="num">${v.comissaoTotal?fmtBRL(v.comissaoTotal):'—'}</td><td>${status}</td><td class="num"><button class="btn-icon" title="Visualizar (só leitura)" onclick="visualizarVenda('${v.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="btn-icon" title="Editar/completar" onclick="editVenda('${v.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="btn-icon" title="Excluir" onclick="deleteVenda('${v.id}')" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></td></tr>`;
   }).join('');
   wrap.innerHTML=`<div class="card"><div class="card-header"><h3 class="card-title">Vendas registradas</h3><div style="display:flex;align-items:center;gap:8px">${_mesBadge}<span class="badge neutral">${list.length}${filtrando?' no filtro':''}</span></div></div>${list.length===0?`<div class="empty">${(!filtrando&&vendaMesSoAtual&&!temP)?'Nenhuma venda em '+_mLabel+'.':filtrando?'Nenhuma venda encontrada para esse filtro.':'Nenhuma venda ainda.'}</div>`:`<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Data</th><th>Titular</th><th>Categoria</th><th>Fornecedor</th>${isGestao?'<th>Consultor(a)</th>':''}<th>Destino</th><th class="num">Valor total</th><th class="num">Comissão</th><th>Status</th><th class="num">Ações</th></tr></thead><tbody>${linhas}</tbody></table></div>`}</div>`;
 }
+// Quadro SÓ-LEITURA de uma venda (sem risco de editar). Mostra itens (localizador,
+// fornecedor, comissões, datas), passageiros, vouchers, voos e observações.
+function visualizarVenda(id){
+  const v=(state.vendas||[]).find(x=>x.id===id); if(!v) return;
+  const isGestao=(currentRole()==='admin'||currentRole()==='gerente');
+  const its=vendaItens(v);
+  const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'—';
+  const status=v.preLancada?`<span class="badge warning">Pré-lançada</span>`:`<span class="badge success">Lançada</span>`;
+  const _lbl='font-size:11px;font-weight:700;color:var(--text-mute);text-transform:uppercase;letter-spacing:.04em';
+  const _val='font-size:14px;color:var(--text)';
+  const dado=(l,x)=>`<div><div style="${_lbl}">${l}</div><div style="${_val}">${x||'—'}</div></div>`;
+  const ambitoTxt=v.ambito==='internacional'?'Internacional':v.ambito==='nacional'?'Nacional':'—';
+  const itensHTML=its.map((it,i)=>{ const c=vendaCat(it.categoria); return `<tr>
+      <td><span class="badge neutral" style="background:${c.cor}22;color:${c.cor};border:none">${c.nome}</span></td>
+      <td>${escapeHtml(it.fornecedor||'—')}</td>
+      <td><strong>${escapeHtml(it.numReserva||'—')}</strong></td>
+      <td class="num">${it.valor?fmtBRL(it.valor):'—'}</td>
+      <td class="num">${it.comissaoFornecedor?fmtBRL(it.comissaoFornecedor):'—'}</td>
+      <td>${it.dataRecebFornecedor?fmtDateBR(it.dataRecebFornecedor):'—'}</td>
+    </tr>`; }).join('');
+  const paxHTML=(v.passageiros||[]).filter(p=>p&&(p.nome||'').trim()).map(p=>`<li style="${_val};margin-bottom:2px">${escapeHtml(p.nome)}${p.nascimento?` <span style="color:var(--text-mute);font-size:12px">· nasc. ${fmtDateBR(p.nascimento)}</span>`:''}</li>`).join('')||`<li style="color:var(--text-mute)">—</li>`;
+  const vouchersHTML=(v.vouchers&&v.vouchers.length)?`<div style="display:flex;flex-wrap:wrap;gap:8px">${v.vouchers.map((d,i)=>`<button type="button" onclick="verVendaVoucher('${v.id}',${i})" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:6px 12px;border:1px solid var(--border);border-radius:999px;background:var(--surface-alt);color:var(--brand-blue);cursor:pointer">📎 ${escapeHtml(d.name||'arquivo')}</button>`).join('')}</div>`:`<span style="font-size:12px;color:var(--text-mute)">Nenhum voucher anexado.</span>`;
+  openModal(`<div class="modal-head"><h3>Detalhes da venda ${status}</h3><button class="btn-icon" onclick="closeModal()">×</button></div>
+    <div class="modal-body" style="max-height:70vh;overflow-y:auto">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:16px">
+        ${dado('Titular','<strong>'+escapeHtml(tit)+'</strong>')}
+        ${dado('Data da venda',v.dataVenda?fmtDateBR(v.dataVenda):'')}
+        ${dado('Âmbito',ambitoTxt)}
+        ${isGestao?dado('Consultor(a)',escapeHtml(v.owner||'')):''}
+      </div>
+      <div style="${_lbl};margin:6px 0 6px;color:var(--brand-blue)">Itens da venda</div>
+      <div style="overflow-x:auto"><table class="tbl" style="font-size:13px"><thead><tr><th>Categoria</th><th>Fornecedor</th><th>Nº reserva</th><th class="num">Valor</th><th class="num">Comissão a receber</th><th>Data receb.</th></tr></thead><tbody>${itensHTML}</tbody></table></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:16px 0">
+        ${dado('Valor total da venda','<strong>'+(v.valorTotal?fmtBRL(v.valorTotal):'—')+'</strong>')}
+        ${dado('Comissão recebida na agência',v.comissaoAgencia?fmtBRL(v.comissaoAgencia):'—')}
+        ${dado('Comissão total','<strong>'+(v.comissaoTotal?fmtBRL(v.comissaoTotal):'—')+'</strong>')}
+      </div>
+      <div style="${_lbl};margin:6px 0 6px;color:var(--brand-blue)">Viagem</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:10px">
+        ${dado('Início',v.dataInicio?fmtDateBR(v.dataInicio):'')}
+        ${dado('Fim',v.dataFim?fmtDateBR(v.dataFim):'')}
+        ${dado('Origem',escapeHtml(v.origem||''))}
+        ${dado('Destino',escapeHtml(v.destino||''))}
+      </div>
+      ${v.voosDetalhes?`<div style="margin-bottom:12px">${dado('Detalhes dos voos','<span style="white-space:pre-wrap">'+escapeHtml(v.voosDetalhes)+'</span>')}</div>`:''}
+      <div style="${_lbl};margin:6px 0 6px;color:var(--brand-blue)">Passageiros</div>
+      <ul style="margin:0 0 6px;padding-left:18px">${paxHTML}</ul>
+      ${v.titularContato?`<div style="margin-bottom:12px">${dado('Contato do titular',escapeHtml(v.titularContato))}</div>`:''}
+      <div style="${_lbl};margin:12px 0 6px;color:var(--brand-blue)">Vouchers da reserva</div>
+      ${vouchersHTML}
+      ${v.observacoes?`<div style="${_lbl};margin:14px 0 6px;color:var(--brand-blue)">Observações</div><div style="${_val};white-space:pre-wrap">${escapeHtml(v.observacoes)}</div>`:''}
+    </div>
+    <div class="modal-foot"><button class="btn btn-primary" onclick="closeModal()">Fechar</button></div>`);
+}
+function verVendaVoucher(vendaId,i){ const v=(state.vendas||[]).find(x=>x.id===vendaId); const d=v&&(v.vouchers||[])[i]; if(!d||!d.path){ toast('Voucher indisponível.','warning'); return; } cloudGetVendaDocUrl(d.path).then(url=>{ if(url) window.open(url,'_blank'); else toast('Não foi possível abrir o voucher.','danger'); }); }
 function monthLabelBR(ym){ const _m=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro']; const p=String(ym).split('-'); return (_m[Number(p[1])-1]||p[1])+' de '+p[0]; }
 
 function openVendaForm(id){
