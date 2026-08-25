@@ -4511,7 +4511,7 @@ function Dashboard({reservations, onOpen}){
             const lim=new Date(); lim.setDate(lim.getDate()-30);
             const lista=computed.filter(x=>x.r.preEmbarqueData)
               .filter(({c,r})=>{ if(c.preStatus!=="Concluído") return true; const d=new Date(r.preEmbarqueData+"T00:00"); return d>=lim; })
-              .sort((a,b)=>{ const ra=rank(a.c.preStatus), rb=rank(b.c.preStatus); if(ra!==rb) return ra-rb; const cmp=a.r.preEmbarqueData.localeCompare(b.r.preEmbarqueData); return ra===2?-cmp:cmp; });
+              .sort((a,b)=>a.r.preEmbarqueData.localeCompare(b.r.preEmbarqueData));
             if(!lista.length) return <p className="text-sm opacity-60">Nenhuma reunião pendente ou recente.</p>;
             return lista.map(({r,c})=>(
               <div key={r.id} onClick={()=>onOpen(r.id)} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800 cursor-pointer">
