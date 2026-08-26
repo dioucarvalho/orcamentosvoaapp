@@ -2122,6 +2122,9 @@ async function reconciliarVendasPosvenda(){
   const baseSet=new Set(controle.baseline||[]);
   const linkados=new Set(); const reservaIds=new Set();
   dados.forEach(r=>{ if(r&&r.origemVendaId) linkados.add(String(r.origemVendaId)); if(r&&r.id) reservaIds.add(String(r.id)); });
+  const vById=new Map(vendas.map(v=>[String(v.id),v]));
+  // Referência dos vouchers da venda (bucket vendas-docs) — sem re-subir o arquivo.
+  const _vouchersDaVenda = v => (((v&&v.vouchers)||[]).filter(d=>d&&d.path).map(d=>({ name:d.name||'arquivo', path:d.path, bucket:'vendas-docs' })));
   const novos=[];
   vendas.forEach(v=>{
     if(baseSet.has(v.id) || linkados.has(String(v.id))) return;
@@ -2135,22 +2138,29 @@ async function reconciliarVendasPosvenda(){
       dataIda: v.dataInicio||'', horaIda:'', dataVolta: v.dataFim||'', horaVolta:'',
       voos: v.voosDetalhes||'',
       preEmbarqueData:'', preEmbarqueHora:'', preEmbarqueRealizadaData:'',
-      servicos:[], passageiros: pax.length?pax:[{id:uid(),nome:tit,nascimento:'',email:'',telefone:v.titularContato||'',docs:[]}],
+      servicos:[], vouchersVenda:_vouchersDaVenda(v), passageiros: pax.length?pax:[{id:uid(),nome:tit,nascimento:'',email:'',telefone:v.titularContato||'',docs:[]}],
       tripStatus:'Confirmada', checks:{}, observacoes:[], tarefas:[]
     });
   });
-  if(!novos.length) return;
-  // 2) Relê fresco imediatamente antes de gravar e filtra duplicados que possam ter
-  //    surgido no meio-tempo — depois grava só acrescentando (add-only).
+  // Relê fresco imediatamente antes de gravar. Acrescenta as novas (add-only) E
+  // sincroniza/preenche (backfill) os vouchers da venda nas reservas automáticas já criadas.
   try{
     const { data:fresh } = await sb.from('posvenda_dados').select('dados').eq('id',1).maybeSingle();
     const base = Array.isArray(fresh&&fresh.dados)?fresh.dados:dados;
+    let mudouExist=false;
+    base.forEach(r=>{
+      if(!r||!r.origemVendaId) return;
+      const v=vById.get(String(r.origemVendaId)); if(!v) return;
+      const want=_vouchersDaVenda(v);
+      const cur=Array.isArray(r.vouchersVenda)?r.vouchersVenda:[];
+      if(JSON.stringify(cur.map(d=>d&&d.path))!==JSON.stringify(want.map(d=>d.path))){ r.vouchersVenda=want; mudouExist=true; }
+    });
     const jaLink=new Set(base.filter(r=>r&&r.origemVendaId).map(r=>String(r.origemVendaId)));
     const jaId=new Set(base.filter(r=>r&&r.id).map(r=>String(r.id)));
     const add=novos.filter(n=>!jaLink.has(String(n.origemVendaId)) && !jaId.has(String(n.id)));
-    if(!add.length) return;
+    if(!add.length && !mudouExist) return;
     await sb.from('posvenda_dados').update({ dados: base.concat(add), atualizado_em:new Date().toISOString() }).eq('id',1);
-    if(typeof toast==='function') toast(add.length+' reserva(s) criada(s) no Pós-Venda a partir das vendas.','info');
+    if(add.length && typeof toast==='function') toast(add.length+' reserva(s) criada(s) no Pós-Venda a partir das vendas.','info');
   }catch(e){ console.error('posvenda reconc save',e); }
 }
 let _posvendaSrcCache=null;
@@ -4278,8 +4288,10 @@ function monthOf(dateStr){ return dateStr ? dateStr.slice(0,7) : ""; } // "YYYY-
 async function openPosvendaDoc(doc){
   if(!doc) return;
   if(!doc.path){ alert("Este anexo é antigo e não tem o arquivo salvo na nuvem (só o nome foi guardado). Por favor, anexe o arquivo novamente."); return; }
-  if(!(window.parent && window.parent.cloudGetPosvendaDocUrl)){ alert("Conexão com a nuvem indisponível. Recarregue a página."); return; }
-  const url=await window.parent.cloudGetPosvendaDocUrl(doc.path);
+  // Vouchers vindos da venda ficam no bucket 'vendas-docs'; os demais no de pós-venda.
+  const getter = (doc.bucket==='vendas-docs') ? (window.parent && window.parent.cloudGetVendaDocUrl) : (window.parent && window.parent.cloudGetPosvendaDocUrl);
+  if(!getter){ alert("Conexão com a nuvem indisponível. Recarregue a página."); return; }
+  const url=await getter(doc.path);
   if(url){ window.open(url, "_blank"); }
   else { alert('Não foi possível abrir "'+(doc.name||'arquivo')+'". Tente novamente em instantes.'); }
 }
@@ -5080,6 +5092,12 @@ function ReservationDetail({res, onUpdate, onBack, onEdit}){
             </div>
             <div className="mt-3 text-sm whitespace-pre-wrap opacity-90">{res.voos||"—"}</div>
             {res.servicos?.length>0 && <div className="mt-3 flex flex-wrap gap-2">{res.servicos.map((s,i)=>(<Badge key={i} tone="blue">{s}</Badge>))}</div>}
+            {(res.vouchersVenda||[]).length>0 && <div className="mt-3">
+              <div className="opacity-60 text-xs mb-1">📎 Vouchers da venda (AVV)</div>
+              <div className="flex flex-wrap gap-2">{res.vouchersVenda.map((d,i)=>(
+                <button key={i} type="button" onClick={()=>openPosvendaDoc(d)} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 hover:underline" title="Abrir voucher anexado na venda">📎 {d.name}</button>
+              ))}</div>
+            </div>}
           </Card>
 
           <Card className="p-4">
