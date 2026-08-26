@@ -2852,25 +2852,33 @@ let finTab='pagar';
 let finCursor=(()=>{ const d=new Date(); return {y:d.getFullYear(), m:d.getMonth()}; })();
 function finShift(d){ let m=finCursor.m+d, y=finCursor.y; while(m<0){ m+=12; y--; } while(m>11){ m-=12; y++; } finCursor={y:y,m:m}; renderFinanceiroMain(); }
 function finHoje(){ const d=new Date(); finCursor={y:d.getFullYear(), m:d.getMonth()}; renderFinanceiroMain(); }
-function blankFin(tipo){ return { id:'f'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), tipo:tipo||'pagar', descricao:'', categoria:'', valor:'', recorrente:false, vencimento:todayISO(), diaVenc:String(new Date().getDate()), inicioRec:currentMonth(), origem:'', obs:'', pago:false, dataPago:'', baixas:{}, createdAt:localNowISO() }; }
+function blankFin(tipo){ return { id:'f'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), tipo:tipo||'pagar', descricao:'', categoria:'', valor:'', modo:'unica', recorrente:false, parcelas:'', fimRec:'', vencimento:todayISO(), diaVenc:String(new Date().getDate()), inicioRec:currentMonth(), origem:'', obs:'', pago:false, dataPago:'', baixas:{}, createdAt:localNowISO() }; }
+// Modo do lançamento: 'unica' | 'parcelada' | 'recorrente'. Compatível com itens antigos
+// (que só tinham o booleano "recorrente").
+function _finModo(item){ if(item&&item.modo) return item.modo; return (item&&item.recorrente)?'recorrente':'unica'; }
+function _finYmBR(ym){ const p=String(ym||'').split('-'); return p.length>=2?(p[1]+'/'+p[0]):String(ym||''); }
 function monthAdd(ym,n){ let p=String(ym).split('-'); let y=Number(p[0]), m=Number(p[1])+n; while(m<1){ m+=12; y--; } while(m>12){ m-=12; y++; } return y+'-'+String(m).padStart(2,'0'); }
 // Gera as ocorrências de um lançamento dentro da janela [fromYM, toYM].
 function finInstances(item, fromYM, toYM){
   const out=[];
-  if(item.recorrente){
-    const inicio=item.inicioRec||fromYM;
-    let ym=(fromYM<inicio)?inicio:fromYM;
-    while(ym<=toYM){
-      const p=ym.split('-'); const y=Number(p[0]), m=Number(p[1]);
-      const dd=Math.min(parseInt(item.diaVenc)||1, new Date(y,m,0).getDate());
-      const data=ym+'-'+String(dd).padStart(2,'0');
-      const b=(item.baixas||{})[ym];
-      out.push({ item, mesRef:ym, data, valor:Number((b&&b.valor)||item.valor)||0, feito:!!b, dataFeito:(b&&b.data)||'' });
-      ym=monthAdd(ym,1);
-    }
-  } else {
+  const modo=_finModo(item);
+  if(modo==='unica'){
     out.push({ item, mesRef:'', data:item.vencimento||'', valor:Number(item.valor)||0, feito:!!item.pago, dataFeito:item.dataPago||'' });
+    return out;
   }
+  const inicio=item.inicioRec||fromYM;
+  const mk=(ym,extra)=>{ const p=ym.split('-'); const y=Number(p[0]), m=Number(p[1]); const dd=Math.min(parseInt(item.diaVenc)||1, new Date(y,m,0).getDate()); const data=ym+'-'+String(dd).padStart(2,'0'); const b=(item.baixas||{})[ym]; return Object.assign({ item, mesRef:ym, data, valor:Number((b&&b.valor)||item.valor)||0, feito:!!b, dataFeito:(b&&b.data)||'' }, extra||{}); };
+  if(modo==='parcelada'){
+    const N=Math.max(1, parseInt(item.parcelas)||1);
+    let ym=inicio;
+    for(let k=1;k<=N;k++){ if(ym>=fromYM && ym<=toYM){ out.push(mk(ym,{parcela:k, parcelasTot:N})); } ym=monthAdd(ym,1); }
+    return out;
+  }
+  // recorrente (opcionalmente com término em item.fimRec = 'YYYY-MM')
+  let ym=(fromYM<inicio)?inicio:fromYM;
+  const fim=item.fimRec||'';
+  const limite=(fim && fim<toYM)?fim:toYM;
+  while(ym<=limite){ out.push(mk(ym)); ym=monthAdd(ym,1); }
   return out;
 }
 
@@ -3051,8 +3059,8 @@ function renderFinanceiroMain(c){
   const saldo=Number(state.finSaldo)||0; const proj30=saldo+entr30-said30;
   const _ed=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
   const _tr=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>`;
-  const linhaPend=x=>{ const it=x.item; const atras=x.data&&x.data<hoje; const tp=it.recorrente?`<span class="badge neutral">Mensal · dia ${escapeHtml(String(it.diaVenc||''))}</span>`:`<span class="badge neutral">Única</span>`; return `<tr><td><strong>${escapeHtml(it.descricao||'—')}</strong>${it.origem?`<div style="font-size:11px;color:var(--text-mute)">${escapeHtml(it.origem)}</div>`:''}</td><td>${escapeHtml(it.categoria||'—')}</td><td>${tp}</td><td style="${atras?'color:var(--danger);font-weight:600':''}">${x.data?fmtDateBR(x.data):'—'}${atras?' · vencida':''}</td><td class="num">${fmtBRL(x.valor)}</td><td class="num"><div style="display:inline-flex;gap:4px;align-items:center"><button class="btn btn-success btn-sm" onclick="finBaixar('${it.id}','${x.mesRef||''}')">${it.tipo==='pagar'?'Marcar paga':'Recebido'}</button><button class="btn-icon" title="Editar" onclick="openFinForm('${it.id}')">${_ed}</button><button class="btn-icon" title="Excluir" onclick="finExcluir('${it.id}')" style="color:var(--danger)">${_tr}</button></div></td></tr>`; };
-  const linhaFeita=x=>{ const it=x.item; const bd=it.tipo==='pagar'?`<span class="badge danger">Pago</span>`:`<span class="badge success">Recebido</span>`; return `<tr><td><strong>${escapeHtml(it.descricao||'—')}</strong></td><td>${bd}${it.recorrente?` <span class="badge neutral">${escapeHtml(x.mesRef||'')}</span>`:''}</td><td>${x.dataFeito?fmtDateBR(x.dataFeito):'—'}</td><td class="num">${fmtBRL(x.valor)}</td><td class="num"><div style="display:inline-flex;gap:4px;align-items:center"><button class="btn btn-ghost btn-sm" onclick="finDesfazer('${it.id}','${x.mesRef||''}')">Desfazer</button><button class="btn-icon" title="Excluir" onclick="finExcluir('${it.id}')" style="color:var(--danger)">${_tr}</button></div></td></tr>`; };
+  const linhaPend=x=>{ const it=x.item; const atras=x.data&&x.data<hoje; const _md=_finModo(it); const tp=_md==='parcelada'?`<span class="badge neutral">Parcela ${x.parcela||'?'}/${x.parcelasTot||it.parcelas||'?'}</span>`:(_md==='recorrente'?`<span class="badge neutral">Mensal · dia ${escapeHtml(String(it.diaVenc||''))}${it.fimRec?(' · até '+_finYmBR(it.fimRec)):''}</span>`:`<span class="badge neutral">Única</span>`); return `<tr><td><strong>${escapeHtml(it.descricao||'—')}</strong>${it.origem?`<div style="font-size:11px;color:var(--text-mute)">${escapeHtml(it.origem)}</div>`:''}</td><td>${escapeHtml(it.categoria||'—')}</td><td>${tp}</td><td style="${atras?'color:var(--danger);font-weight:600':''}">${x.data?fmtDateBR(x.data):'—'}${atras?' · vencida':''}</td><td class="num">${fmtBRL(x.valor)}</td><td class="num"><div style="display:inline-flex;gap:4px;align-items:center"><button class="btn btn-success btn-sm" onclick="finBaixar('${it.id}','${x.mesRef||''}')">${it.tipo==='pagar'?'Marcar paga':'Recebido'}</button><button class="btn-icon" title="Editar" onclick="openFinForm('${it.id}')">${_ed}</button><button class="btn-icon" title="Excluir" onclick="finExcluir('${it.id}')" style="color:var(--danger)">${_tr}</button></div></td></tr>`; };
+  const linhaFeita=x=>{ const it=x.item; const bd=it.tipo==='pagar'?`<span class="badge danger">Pago</span>`:`<span class="badge success">Recebido</span>`; const _md=_finModo(it); const _tag=_md==='parcelada'?` <span class="badge neutral">Parcela ${x.parcela||'?'}/${x.parcelasTot||it.parcelas||'?'}</span>`:(_md==='recorrente'?` <span class="badge neutral">${escapeHtml(_finYmBR(x.mesRef))}</span>`:''); return `<tr><td><strong>${escapeHtml(it.descricao||'—')}</strong></td><td>${bd}${_tag}</td><td>${x.dataFeito?fmtDateBR(x.dataFeito):'—'}</td><td class="num">${fmtBRL(x.valor)}</td><td class="num"><div style="display:inline-flex;gap:4px;align-items:center"><button class="btn btn-ghost btn-sm" onclick="finDesfazer('${it.id}','${x.mesRef||''}')">Desfazer</button><button class="btn-icon" title="Excluir" onclick="finExcluir('${it.id}')" style="color:var(--danger)">${_tr}</button></div></td></tr>`; };
   const selMonth=finCursor.y+'-'+String(finCursor.m+1).padStart(2,'0');
   const atrPagar=pagarPend.filter(x=>x.data&&x.data<hoje).length, atrReceber=receberPend.filter(x=>x.data&&x.data<hoje).length;
   const _nav=`<div style="display:flex;align-items:center;gap:8px;justify-content:center;margin:2px 0 16px;flex-wrap:wrap"><button class="btn-icon" onclick="finShift(-1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button><strong style="min-width:150px;text-align:center;font-family:Poppins;color:var(--brand-blue);font-size:15px">${monthLabelBR(selMonth)}</strong><button class="btn-icon" onclick="finShift(1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button><button class="btn btn-ghost btn-sm" onclick="finHoje()">Mês atual</button></div>`;
@@ -3120,19 +3128,25 @@ function openFinForm(id){
   window._finEdit=item;
   const cats=[...FIN_CAT_PAGAR, ...FIN_CAT_RECEBER];
   const inicioBR=item.inicioRec?(item.inicioRec.split('-')[1]+'/'+item.inicioRec.split('-')[0]):'';
+  const fimBR=item.fimRec?(item.fimRec.split('-')[1]+'/'+item.fimRec.split('-')[0]):'';
+  const modo=_finModo(item);
   openModal(`<div class="modal-head"><h3>${id?'Editar lançamento':'Novo lançamento'}</h3><button class="btn-icon" onclick="closeModal()">×</button></div>
   <div class="modal-body">
-    <div class="field-row"><div class="field"><label>Tipo</label><select id="fin_tipo"><option value="pagar" ${item.tipo==='pagar'?'selected':''}>Conta a pagar</option><option value="receber" ${item.tipo==='receber'?'selected':''}>Recebimento (a receber)</option></select></div><div class="field"><label>Valor (R$)</label><input id="fin_valor" type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(item.valor)}" oninput="voaMoneyMask(this)"></div></div>
+    <div class="field-row"><div class="field"><label>Tipo</label><select id="fin_tipo"><option value="pagar" ${item.tipo==='pagar'?'selected':''}>Conta a pagar</option><option value="receber" ${item.tipo==='receber'?'selected':''}>Recebimento (a receber)</option></select></div><div class="field"><label>Valor (R$)</label><input id="fin_valor" type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(item.valor)}" oninput="voaMoneyMask(this);finParcTotal()"></div></div>
     <div class="field"><label>Descrição</label><input id="fin_desc" placeholder="Ex.: Aluguel da agência" value="${escapeHtml(item.descricao)}"></div>
     <div class="field-row"><div class="field"><label>Categoria</label><input id="fin_cat" list="finCatList" value="${escapeHtml(item.categoria)}"><datalist id="finCatList">${cats.map(c=>`<option value="${escapeHtml(c)}"></option>`).join('')}</datalist></div><div class="field"><label>Origem (fornecedor / cliente)</label><input id="fin_origem" placeholder="Opcional" value="${escapeHtml(item.origem)}"></div></div>
-    <div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0"><input type="checkbox" id="fin_rec" ${item.recorrente?'checked':''} onchange="finFormRec(this.checked)" style="width:16px;height:16px;accent-color:var(--brand-blue)"> Recorrente (repete todo mês)</label></div>
-    <div id="fin_unicaWrap" class="field" style="${item.recorrente?'display:none':''}"><label>Data de vencimento</label><input id="fin_venc" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(item.vencimento)}"></div>
-    <div id="fin_recWrap" class="field-row" style="${item.recorrente?'':'display:none'}"><div class="field"><label>Dia do vencimento</label><input id="fin_dia" type="number" min="1" max="31" placeholder="1 a 31" value="${item.diaVenc||''}"></div><div class="field"><label>A partir de (mm/aaaa)</label><input id="fin_inicio" inputmode="numeric" placeholder="mm/aaaa" maxlength="7" value="${inicioBR}"></div></div>
+    <div class="field"><label>Repetição</label><select id="fin_modo" onchange="finFormModo(this.value)"><option value="unica" ${modo==='unica'?'selected':''}>Única (uma vez)</option><option value="parcelada" ${modo==='parcelada'?'selected':''}>Parcelada (nº fixo de vezes)</option><option value="recorrente" ${modo==='recorrente'?'selected':''}>Recorrente (todo mês)</option></select></div>
+    <div id="fin_unicaWrap" class="field" style="${modo==='unica'?'':'display:none'}"><label>Data de vencimento</label><input id="fin_venc" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(item.vencimento)}"></div>
+    <div id="fin_multiWrap" class="field-row" style="${modo!=='unica'?'':'display:none'}"><div class="field"><label>Dia do vencimento</label><input id="fin_dia" type="number" min="1" max="31" placeholder="1 a 31" value="${item.diaVenc||''}"></div><div class="field"><label>Início (mm/aaaa)</label><input id="fin_inicio" inputmode="numeric" placeholder="mm/aaaa" maxlength="7" value="${inicioBR}"></div></div>
+    <div id="fin_parcWrap" class="field" style="${modo==='parcelada'?'':'display:none'}"><label>Número de parcelas</label><input id="fin_parcelas" type="number" min="1" max="360" placeholder="Ex.: 6" value="${item.parcelas||''}" oninput="finParcTotal()"><div id="fin_parcTotal" style="font-size:12px;color:var(--brand-blue);font-weight:600;margin-top:6px"></div></div>
+    <div id="fin_fimWrap" class="field" style="${modo==='recorrente'?'':'display:none'}"><label>Repetir até (mm/aaaa) <span style="font-weight:400;color:var(--text-mute);font-size:11px;text-transform:none;letter-spacing:0">— deixe em branco para sem fim</span></label><input id="fin_fim" inputmode="numeric" placeholder="mm/aaaa (opcional)" maxlength="7" value="${fimBR}"></div>
     <div class="field"><label>Observações</label><textarea id="fin_obs">${escapeHtml(item.obs)}</textarea></div>
   </div>
   <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="finSalvarForm('${id||''}')">Salvar</button></div>`);
+  finParcTotal();
 }
-function finFormRec(ch){ const u=document.getElementById('fin_unicaWrap'), r=document.getElementById('fin_recWrap'); if(u) u.style.display=ch?'none':''; if(r) r.style.display=ch?'':'none'; }
+function finFormModo(modo){ const show=(id,on)=>{ const e=document.getElementById(id); if(e) e.style.display=on?'':'none'; }; show('fin_unicaWrap', modo==='unica'); show('fin_multiWrap', modo!=='unica'); show('fin_parcWrap', modo==='parcelada'); show('fin_fimWrap', modo==='recorrente'); finParcTotal(); }
+function finParcTotal(){ const n=parseInt((document.getElementById('fin_parcelas')||{}).value)||0; const v=moneyBRToNum((document.getElementById('fin_valor')||{}).value)||0; const el=document.getElementById('fin_parcTotal'); if(el) el.textContent=(n>0&&v>0)?('Total: '+fmtBRL(n*v)+'  ('+n+'× de '+fmtBRL(v)+')'):''; }
 async function finSalvarForm(id){
   const g=i=>{ const e=document.getElementById(i); return e?e.value:''; };
   const item = id ? (state.financeiro||[]).find(x=>x.id===id) : blankFin('pagar');
@@ -3143,10 +3157,17 @@ async function finSalvarForm(id){
   item.categoria=g('fin_cat').trim();
   item.origem=g('fin_origem').trim();
   item.obs=g('fin_obs');
-  item.recorrente=document.getElementById('fin_rec').checked;
-  if(item.recorrente){ item.diaVenc=String(Math.min(Math.max(parseInt(g('fin_dia'))||1,1),31)); const iv=g('fin_inicio').replace(/[^\d]/g,''); item.inicioRec=(iv.length>=6)?(iv.slice(2,6)+'-'+iv.slice(0,2)):(item.inicioRec||currentMonth()); }
-  else { item.vencimento=_brToISO(g('fin_venc'))||todayISO(); }
+  item.modo=g('fin_modo')||'unica';
+  item.recorrente=(item.modo!=='unica'); // mantém compatível com o resto do sistema
+  if(item.modo==='unica'){ item.vencimento=_brToISO(g('fin_venc'))||todayISO(); item.parcelas=''; item.fimRec=''; }
+  else {
+    item.diaVenc=String(Math.min(Math.max(parseInt(g('fin_dia'))||1,1),31));
+    const iv=g('fin_inicio').replace(/[^\d]/g,''); item.inicioRec=(iv.length>=6)?(iv.slice(2,6)+'-'+iv.slice(0,2)):(item.inicioRec||currentMonth());
+    if(item.modo==='parcelada'){ item.parcelas=String(Math.max(1, parseInt(g('fin_parcelas'))||1)); item.fimRec=''; }
+    else { item.parcelas=''; const fv=g('fin_fim').replace(/[^\d]/g,''); item.fimRec=(fv.length>=6)?(fv.slice(2,6)+'-'+fv.slice(0,2)):''; }
+  }
   if(!item.descricao || !item.valor){ toast('Preencha a descrição e o valor.','warning'); return; }
+  if(item.modo==='parcelada' && !(parseInt(item.parcelas)>0)){ toast('Informe o número de parcelas.','warning'); return; }
   if(!id){ state.financeiro=state.financeiro||[]; state.financeiro.unshift(item); }
   closeModal(); renderFinanceiroMain();
   const ok=await cloudSaveFinanceiro(item); toast(ok?'Lançamento salvo':'Salvo localmente, mas a nuvem não confirmou.',ok?'success':'warning');
