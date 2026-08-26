@@ -2846,8 +2846,8 @@ async function importarOrcamentosFechados(){
    Lançamentos ÚNICOS ou RECORRENTES (mensais). Recorrente = 1 registro que gera
    ocorrências mensais; cada mês pode ser marcado como pago/recebido (mapa "baixas").
    ============================================================================ */
-const FIN_CAT_PAGAR=['Aluguel','Salários','Fornecedores','Impostos','Marketing','Sistemas/Serviços','Contador','Energia/Água/Internet','Pró-labore','Outros'];
-const FIN_CAT_RECEBER=['Comissão de fornecedor','Pagamento de cliente','Outros'];
+const FIN_CAT_PAGAR=['Aluguel','Salários','13º salário','Pró-labore','Vale refeição','Repasse ao fornecedor','Impostos','IPTU','Cartão de crédito','Marketing','Brindes','Sistemas/Serviços','Contador','Energia/Água/Internet','Investimento','Outros'];
+const FIN_CAT_RECEBER=['Comissão de fornecedor','Pagamento de cliente'];
 let finTab='pagar';
 let finCursor=(()=>{ const d=new Date(); return {y:d.getFullYear(), m:d.getMonth()}; })();
 function finShift(d){ let m=finCursor.m+d, y=finCursor.y; while(m<0){ m+=12; y--; } while(m>11){ m-=12; y++; } finCursor={y:y,m:m}; renderFinanceiroMain(); }
