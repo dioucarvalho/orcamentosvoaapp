@@ -2849,10 +2849,20 @@ async function importarOrcamentosFechados(){
 const FIN_CAT_PAGAR=['Aluguel','Condomínio','Salários','13º salário','Pró-labore','Vale refeição','Repasse ao fornecedor','Impostos','IPTU','Cartão de crédito','Marketing','Brindes','Sistemas/Serviços','Contador','Energia','Água e esgoto','Internet','Investimento','Outros'];
 const FIN_CAT_RECEBER=['Comissão de fornecedor','Pagamento de cliente'];
 let finTab='pagar';
+let finContaSel=''; // '' = todas as contas; senão o id da conta selecionada
 let finCursor=(()=>{ const d=new Date(); return {y:d.getFullYear(), m:d.getMonth()}; })();
 function finShift(d){ let m=finCursor.m+d, y=finCursor.y; while(m<0){ m+=12; y--; } while(m>11){ m-=12; y++; } finCursor={y:y,m:m}; renderFinanceiroMain(); }
 function finHoje(){ const d=new Date(); finCursor={y:d.getFullYear(), m:d.getMonth()}; renderFinanceiroMain(); }
-function blankFin(tipo){ return { id:'f'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), tipo:tipo||'pagar', descricao:'', categoria:'', valor:'', modo:'unica', recorrente:false, parcelas:'', fimRec:'', vencimento:todayISO(), diaVenc:String(new Date().getDate()), inicioRec:currentMonth(), origem:'', obs:'', pago:false, dataPago:'', baixas:{}, createdAt:localNowISO() }; }
+function blankFin(tipo){ return { id:'f'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), tipo:tipo||'pagar', descricao:'', categoria:'', valor:'', contaId:'', modo:'unica', recorrente:false, parcelas:'', fimRec:'', vencimento:todayISO(), diaVenc:String(new Date().getDate()), inicioRec:currentMonth(), origem:'', obs:'', pago:false, dataPago:'', baixas:{}, createdAt:localNowISO() }; }
+// ===== Contas bancárias (várias contas, com uma "padrão" para as automações) =====
+function finContas(){ return (state.contas||[]).slice().sort((a,b)=>((a.ordem||0)-(b.ordem||0)) || String(a.nome||'').localeCompare(String(b.nome||''),'pt-BR')); }
+function finConta(id){ return (state.contas||[]).find(c=>c.id===id)||null; }
+function finContaPadrao(){ const cs=state.contas||[]; return cs.find(c=>c.padrao) || cs[0] || null; }
+function finContaPadraoId(){ const c=finContaPadrao(); return c?c.id:''; }
+function finRecalcSaldo(){ state.finSaldo=(state.contas||[]).reduce((s,c)=>s+(Number(c.saldo)||0),0); }
+function finContaNome(id){ const c=finConta(id); return c?c.nome:''; }
+async function cloudSaveConta(c){ if(!sb||!state.user||!c) return false; try{ const { error }=await sb.from('financeiro').upsert({ id:c.id, user_id:state.user.id, tipo:'conta', data:c }); if(error){ console.error('cloudSaveConta',error); return false; } return true; }catch(e){ console.error('cloudSaveConta',e); return false; } }
+async function _finPersistSaldoCache(){ if(!sb||!state.user) return; try{ await sb.from('financeiro').upsert({ id:'_saldo', user_id:state.user.id, tipo:'saldo', data:{ valor:state.finSaldo, atualizadoEm:localNowISO() } }); }catch(e){ console.error('saldo cache',e); } }
 // Modo do lançamento: 'unica' | 'parcelada' | 'recorrente'. Compatível com itens antigos
 // (que só tinham o booleano "recorrente").
 function _finModo(item){ if(item&&item.modo) return item.modo; return (item&&item.recorrente)?'recorrente':'unica'; }
@@ -2942,6 +2952,16 @@ async function cloudLoadFinanceiro(){
     const saldoRow=rows.find(r=>r.id==='_saldo');
     state.finSaldo = saldoRow ? (Number(saldoRow.data&&saldoRow.data.valor)||0) : (Number(state.finSaldo)||0);
     state.financeiro = rows.filter(r=>r.id!=='_saldo' && (r.tipo==='pagar'||r.tipo==='receber')).map(r=>{ const o=Object.assign({},r.data||{}); o.id=r.id; o.tipo=r.tipo; return o; });
+    // Contas bancárias (tipo 'conta'). Migração: se não houver nenhuma, cria "Conta
+    // principal" já com o saldo único atual — assim nada se perde e ela vira a padrão.
+    state.contas = rows.filter(r=>r.tipo==='conta').map(r=>{ const o=Object.assign({},r.data||{}); o.id=r.id; return o; });
+    if(!state.contas.length){
+      const c={ id:'conta-'+uid(), nome:'Conta principal', saldo:(Number(state.finSaldo)||0), padrao:true, ordem:0, criadoEm:localNowISO() };
+      state.contas=[c];
+      try{ await cloudSaveConta(c); }catch(e){ console.error('migra conta',e); }
+    }
+    if(!state.contas.some(c=>c.padrao) && state.contas[0]){ state.contas[0].padrao=true; try{ await cloudSaveConta(state.contas[0]); }catch(e){} }
+    finRecalcSaldo(); // saldo total = soma das contas (mantém compat com todo o resto)
     // Controle da automação Vendas -> Financeiro (linha de base e ledger de saldo).
     state._vendaBaseline = (rows.find(r=>r.id==='_venda_baseline')||{}).data || null;
     state._vendaLedger   = (rows.find(r=>r.id==='_venda_ledger')||{}).data || null;
@@ -2985,7 +3005,7 @@ async function reconciliarVendasFinanceiro(){
     if(comAg!==L.ag){ saldoDelta+=(comAg-L.ag); L.ag=comAg; ledgerMudou=true; }
     const agE=find('comag-'+v.id);
     if(comAg>0){
-      if(!agE){ const it=Object.assign(blankFin('receber'),{ id:'comag-'+v.id, auto:true, vendaId:v.id, descricao:'Comissão da agência — '+tit+ref, categoria:'Comissão de venda', origem:v.owner||'', valor:comAg, pago:true, dataPago:dataV, vencimento:dataV }); state.financeiro.unshift(it); salvar.push(it); }
+      if(!agE){ const it=Object.assign(blankFin('receber'),{ id:'comag-'+v.id, auto:true, vendaId:v.id, contaId:finContaPadraoId(), descricao:'Comissão da agência — '+tit+ref, categoria:'Comissão de venda', origem:v.owner||'', valor:comAg, pago:true, dataPago:dataV, vencimento:dataV }); state.financeiro.unshift(it); salvar.push(it); }
       else if(Number(agE.valor)!==comAg){ agE.valor=comAg; agE.descricao='Comissão da agência — '+tit+ref; agE.pago=true; salvar.push(agE); }
     } else if(agE){ state.financeiro=state.financeiro.filter(x=>x.id!==agE.id); apagar.push(agE.id); }
 
@@ -3020,7 +3040,7 @@ async function reconciliarVendasFinanceiro(){
 
   // 3) Persiste tudo.
   state._vendaLedger=ledger;
-  if(saldoDelta!==0){ state.finSaldo=(Number(state.finSaldo)||0)+saldoDelta; try{ await sb.from('financeiro').upsert({ id:'_saldo', user_id:state.user.id, tipo:'saldo', data:{ valor:state.finSaldo, atualizadoEm:localNowISO() } }); }catch(e){ console.error('reconc saldo',e); } }
+  if(saldoDelta!==0){ const pad=finContaPadrao(); if(pad){ pad.saldo=(Number(pad.saldo)||0)+saldoDelta; finRecalcSaldo(); await cloudSaveConta(pad); await _finPersistSaldoCache(); } else { state.finSaldo=(Number(state.finSaldo)||0)+saldoDelta; await _finPersistSaldoCache(); } }
   if(ledgerMudou){ try{ await sb.from('financeiro').upsert({ id:'_venda_ledger', user_id:state.user.id, tipo:'ledger', data:ledger }); }catch(e){ console.error('reconc ledger',e); } }
   for(const it of salvar){ try{ await cloudSaveFinanceiro(it); }catch(e){ console.error(e); } }
   for(const id of apagar){ try{ await cloudDeleteFinanceiro(id); }catch(e){ console.error(e); } }
@@ -3044,7 +3064,10 @@ async function renderFinanceiro(c){
 }
 function renderFinanceiroMain(c){
   c=c||document.getElementById('content'); if(!c) return;
-  const itens=(state.financeiro||[]).filter(x=>x.tipo==='pagar'||x.tipo==='receber');
+  const _padId=finContaPadraoId();
+  if(finContaSel && !finConta(finContaSel)) finContaSel=''; // conta removida -> volta p/ todas
+  const _contaDe=x=>(x.contaId||_padId); // conta efetiva do lançamento (sem conta = padrão)
+  const itens=(state.financeiro||[]).filter(x=>(x.tipo==='pagar'||x.tipo==='receber') && (!finContaSel || _contaDe(x)===finContaSel));
   const hoje=todayISO();
   const fromYM=monthAdd(currentMonth(),-6), toYM=monthAdd(currentMonth(),12);
   const inst=[]; itens.forEach(it=>{ finInstances(it,fromYM,toYM).forEach(x=>inst.push(x)); });
@@ -3056,10 +3079,12 @@ function renderFinanceiroMain(c){
   const somaAte=(arr,lim)=>arr.filter(x=>x.data&&x.data<=lim).reduce((s,x)=>s+x.valor,0);
   const entr15=somaAte(receberPend,h15), entr30=somaAte(receberPend,h30);
   const said15=somaAte(pagarPend,h15), said30=somaAte(pagarPend,h30);
-  const saldo=Number(state.finSaldo)||0; const proj30=saldo+entr30-said30;
+  const _contaAtual=finContaSel?finConta(finContaSel):null;
+  const saldo=_contaAtual?(Number(_contaAtual.saldo)||0):(Number(state.finSaldo)||0); const proj30=saldo+entr30-said30;
+  const _contas=finContas();
   const _ed=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
   const _tr=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>`;
-  const linhaPend=x=>{ const it=x.item; const atras=x.data&&x.data<hoje; const _md=_finModo(it); const tp=_md==='parcelada'?`<span class="badge neutral">Parcela ${x.parcela||'?'}/${x.parcelasTot||it.parcelas||'?'}</span>`:(_md==='recorrente'?`<span class="badge neutral">Mensal · dia ${escapeHtml(String(it.diaVenc||''))}${it.fimRec?(' · até '+_finYmBR(it.fimRec)):''}</span>`:`<span class="badge neutral">Única</span>`); return `<tr><td><strong>${escapeHtml(it.descricao||'—')}</strong>${it.origem?`<div style="font-size:11px;color:var(--text-mute)">${escapeHtml(it.origem)}</div>`:''}</td><td>${escapeHtml(it.categoria||'—')}</td><td>${tp}</td><td style="${atras?'color:var(--danger);font-weight:600':''}">${x.data?fmtDateBR(x.data):'—'}${atras?' · vencida':''}</td><td class="num">${fmtBRL(x.valor)}</td><td class="num"><div style="display:inline-flex;gap:4px;align-items:center"><button class="btn btn-success btn-sm" onclick="finBaixar('${it.id}','${x.mesRef||''}')">${it.tipo==='pagar'?'Marcar paga':'Recebido'}</button><button class="btn-icon" title="Editar" onclick="openFinForm('${it.id}')">${_ed}</button><button class="btn-icon" title="Excluir" onclick="finExcluir('${it.id}')" style="color:var(--danger)">${_tr}</button></div></td></tr>`; };
+  const linhaPend=x=>{ const it=x.item; const atras=x.data&&x.data<hoje; const _md=_finModo(it); const tp=_md==='parcelada'?`<span class="badge neutral">Parcela ${x.parcela||'?'}/${x.parcelasTot||it.parcelas||'?'}</span>`:(_md==='recorrente'?`<span class="badge neutral">Mensal · dia ${escapeHtml(String(it.diaVenc||''))}${it.fimRec?(' · até '+_finYmBR(it.fimRec)):''}</span>`:`<span class="badge neutral">Única</span>`); return `<tr><td><strong>${escapeHtml(it.descricao||'—')}</strong>${it.origem?`<div style="font-size:11px;color:var(--text-mute)">${escapeHtml(it.origem)}</div>`:''}</td><td>${escapeHtml(it.categoria||'—')}</td><td>${tp}</td><td style="${atras?'color:var(--danger);font-weight:600':''}">${x.data?fmtDateBR(x.data):'—'}${atras?' · vencida':''}</td><td class="num">${fmtBRL(x.valor)}</td><td class="num"><div style="display:inline-flex;gap:4px;align-items:center"><button class="btn btn-success btn-sm" onclick="finBaixarPrompt('${it.id}','${x.mesRef||''}')">${it.tipo==='pagar'?'Marcar paga':'Recebido'}</button><button class="btn-icon" title="Editar" onclick="openFinForm('${it.id}')">${_ed}</button><button class="btn-icon" title="Excluir" onclick="finExcluir('${it.id}')" style="color:var(--danger)">${_tr}</button></div></td></tr>`; };
   const linhaFeita=x=>{ const it=x.item; const bd=it.tipo==='pagar'?`<span class="badge danger">Pago</span>`:`<span class="badge success">Recebido</span>`; const _md=_finModo(it); const _tag=_md==='parcelada'?` <span class="badge neutral">Parcela ${x.parcela||'?'}/${x.parcelasTot||it.parcelas||'?'}</span>`:(_md==='recorrente'?` <span class="badge neutral">${escapeHtml(_finYmBR(x.mesRef))}</span>`:''); return `<tr><td><strong>${escapeHtml(it.descricao||'—')}</strong></td><td>${bd}${_tag}</td><td>${x.dataFeito?fmtDateBR(x.dataFeito):'—'}</td><td class="num">${fmtBRL(x.valor)}</td><td class="num"><div style="display:inline-flex;gap:4px;align-items:center"><button class="btn btn-ghost btn-sm" onclick="finDesfazer('${it.id}','${x.mesRef||''}')">Desfazer</button><button class="btn-icon" title="Excluir" onclick="finExcluir('${it.id}')" style="color:var(--danger)">${_tr}</button></div></td></tr>`; };
   const selMonth=finCursor.y+'-'+String(finCursor.m+1).padStart(2,'0');
   const atrPagar=pagarPend.filter(x=>x.data&&x.data<hoje).length, atrReceber=receberPend.filter(x=>x.data&&x.data<hoje).length;
@@ -3079,10 +3104,17 @@ function renderFinanceiroMain(c){
   } else {
     body = feitos.length ? `<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Descrição</th><th>Status</th><th>Baixa em</th><th class="num">Valor</th><th class="num">Ações</th></tr></thead><tbody>${feitos.map(linhaFeita).join('')}</tbody></table></div>` : `<div class="empty">Nada no histórico ainda.</div>`;
   }
+  const _saldoLabel=_contaAtual?('Saldo · '+escapeHtml(_contaAtual.nome)):'Saldo total (todas as contas)';
+  const _saldoSub=_contaAtual?`<button class="btn btn-ghost btn-sm" style="padding:2px 10px" onclick="finEditarSaldoConta('${_contaAtual.id}')">Atualizar saldo</button>`:`${_contas.length} conta(s)`;
+  const _visaoGeral=(!finContaSel && _contas.length>1)?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">${_contas.map(cc=>`<button onclick="setFinConta('${cc.id}')" style="cursor:pointer;background:var(--surface-alt);border:1.5px solid var(--border);border-radius:10px;padding:8px 14px;font-size:12px;color:var(--text-soft)">${escapeHtml(cc.nome)}${cc.padrao?' ⭐':''}: <strong style="color:var(--text)">${fmtBRL(Number(cc.saldo)||0)}</strong></button>`).join('')}</div>`:'';
   c.innerHTML=`
-    <div style="display:flex;justify-content:flex-end;margin-bottom:14px"><button class="btn btn-primary" onclick="openFinForm()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Novo lançamento</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:13px;font-weight:600;color:var(--text-soft)">Conta:</span><select onchange="setFinConta(this.value)" style="padding:9px 12px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;outline:none;cursor:pointer"><option value="" ${!finContaSel?'selected':''}>Todas as contas</option>${_contas.map(cc=>`<option value="${cc.id}" ${finContaSel===cc.id?'selected':''}>${escapeHtml(cc.nome)}${cc.padrao?' ⭐':''}</option>`).join('')}</select><button class="btn btn-ghost btn-sm" onclick="finGerenciarContas()">Gerenciar contas</button></div>
+      <button class="btn btn-primary" onclick="openFinForm()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Novo lançamento</button>
+    </div>
+    ${_visaoGeral}
     <div class="stat-grid" style="margin-bottom:18px">
-      <div class="stat-card blue"><div class="stat-label">Saldo atual em conta</div><div class="stat-value" style="font-size:22px">${fmtBRL(saldo)}</div><div class="stat-sub"><button class="btn btn-ghost btn-sm" style="padding:2px 10px" onclick="finEditarSaldo()">Atualizar saldo</button></div></div>
+      <div class="stat-card blue"><div class="stat-label">${_saldoLabel}</div><div class="stat-value" style="font-size:22px">${fmtBRL(saldo)}</div><div class="stat-sub">${_saldoSub}</div></div>
       <div class="stat-card red"><div class="stat-label">A pagar (até 30 dias)</div><div class="stat-value" style="font-size:22px">${fmtBRL(said30)}</div><div class="stat-sub">${pagarPend.filter(x=>x.data&&x.data<=h30).length} conta(s)</div></div>
       <div class="stat-card green"><div class="stat-label">A receber (até 30 dias)</div><div class="stat-value" style="font-size:22px">${fmtBRL(entr30)}</div><div class="stat-sub">${receberPend.filter(x=>x.data&&x.data<=h30).length} lançamento(s)</div></div>
       <div class="stat-card amber"><div class="stat-label">Saldo projetado (30 dias)</div><div class="stat-value" style="font-size:22px;color:${proj30>=0?'var(--success)':'var(--danger)'}">${fmtBRL(proj30)}</div><div class="stat-sub">saldo + entradas − saídas</div></div>
@@ -3098,28 +3130,43 @@ function renderFinanceiroMain(c){
   updateFinBadge();
 }
 function setFinTab(t){ finTab=t; renderFinanceiroMain(); }
-async function finBaixar(id, mesRef){
+// Pergunta a conta na baixa quando há 2+ contas; com 1 conta, vai direto.
+function finBaixarPrompt(id, mesRef){
+  const item=(state.financeiro||[]).find(x=>x.id===id); if(!item) return;
+  const contas=finContas();
+  if(contas.length<=1){ finBaixar(id, mesRef, (contas[0]&&contas[0].id)||''); return; }
+  const sug=item.contaId||finContaPadraoId();
+  const acao=item.tipo==='pagar'?'Confirmar pagamento':'Confirmar recebimento';
+  const lab=item.tipo==='pagar'?'De qual conta saiu?':'Em qual conta entrou?';
+  openModal(`<div class="modal-head"><h3>${acao}</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><p style="font-size:13px;color:var(--text-soft);margin:0 0 12px"><strong>${escapeHtml(item.descricao||'')}</strong> · ${fmtBRL(Number(item.valor)||0)}</p><div class="field"><label>${lab}</label><select id="fin_baixaConta">${contas.map(c=>`<option value="${c.id}" ${c.id===sug?'selected':''}>${escapeHtml(c.nome)} — ${fmtBRL(Number(c.saldo)||0)}</option>`).join('')}</select></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-success" onclick="_finBaixaConfirm('${id}','${mesRef||''}')">${acao}</button></div>`);
+}
+function _finBaixaConfirm(id, mesRef){ const cid=(document.getElementById('fin_baixaConta')||{}).value||''; closeModal(); finBaixar(id, mesRef, cid); }
+async function finBaixar(id, mesRef, contaId){
   const item=(state.financeiro||[]).find(x=>x.id===id); if(!item) return;
   const d=todayISO();
   const valor=Number(item.valor)||0;
-  if(item.recorrente && mesRef){ item.baixas=item.baixas||{}; item.baixas[mesRef]={ data:d, valor:valor }; }
-  else { item.pago=true; item.dataPago=d; }
-  if(item.tipo==='pagar') state.finSaldo=(Number(state.finSaldo)||0)-valor;
-  else if(item.tipo==='receber') state.finSaldo=(Number(state.finSaldo)||0)+valor;
+  const cid = contaId || item.contaId || finContaPadraoId();
+  if(item.recorrente && mesRef){ item.baixas=item.baixas||{}; item.baixas[mesRef]={ data:d, valor:valor, contaId:cid }; }
+  else { item.pago=true; item.dataPago=d; item.contaPagaId=cid; }
+  const c=finConta(cid)||finContaPadrao();
+  if(c){ c.saldo=(Number(c.saldo)||0)+(item.tipo==='pagar'?-valor:valor); finRecalcSaldo(); }
   renderFinanceiroMain();
   const ok=await cloudSaveFinanceiro(item); if(!ok) toast('Salvo localmente, mas a nuvem não confirmou.','warning');
-  try{ await sb.from('financeiro').upsert({ id:'_saldo', user_id:state.user.id, tipo:'saldo', data:{ valor:state.finSaldo, atualizadoEm:localNowISO() } }); }catch(e){ console.error('finBaixar saldo',e); }
+  if(c) await cloudSaveConta(c);
+  await _finPersistSaldoCache();
 }
 async function finDesfazer(id, mesRef){
   const item=(state.financeiro||[]).find(x=>x.id===id); if(!item) return;
   const valor=Number(item.valor)||0;
-  if(item.recorrente && mesRef){ if(item.baixas) delete item.baixas[mesRef]; }
-  else { item.pago=false; item.dataPago=''; }
-  if(item.tipo==='pagar') state.finSaldo=(Number(state.finSaldo)||0)+valor;
-  else if(item.tipo==='receber') state.finSaldo=(Number(state.finSaldo)||0)-valor;
+  let cid;
+  if(item.recorrente && mesRef){ cid=(item.baixas&&item.baixas[mesRef]&&item.baixas[mesRef].contaId)||item.contaId||finContaPadraoId(); if(item.baixas) delete item.baixas[mesRef]; }
+  else { cid=item.contaPagaId||item.contaId||finContaPadraoId(); item.pago=false; item.dataPago=''; item.contaPagaId=''; }
+  const c=finConta(cid)||finContaPadrao();
+  if(c){ c.saldo=(Number(c.saldo)||0)+(item.tipo==='pagar'?valor:-valor); finRecalcSaldo(); }
   renderFinanceiroMain();
   await cloudSaveFinanceiro(item);
-  try{ await sb.from('financeiro').upsert({ id:'_saldo', user_id:state.user.id, tipo:'saldo', data:{ valor:state.finSaldo, atualizadoEm:localNowISO() } }); }catch(e){ console.error('finDesfazer saldo',e); }
+  if(c) await cloudSaveConta(c);
+  await _finPersistSaldoCache();
 }
 function finExcluir(id){ const it=(state.financeiro||[]).find(x=>x.id===id); if(!it) return; if(!confirm('Excluir o lançamento "'+(it.descricao||'')+'"? Se for recorrente, todas as ocorrências somem.')) return; state.financeiro=(state.financeiro||[]).filter(x=>x.id!==id); renderFinanceiroMain(); cloudDeleteFinanceiro(id).then(ok=>toast(ok?'Lançamento excluído':'Removido localmente, mas a nuvem não confirmou.',ok?'success':'warning')); }
 
@@ -3130,11 +3177,14 @@ function openFinForm(id){
   const inicioBR=item.inicioRec?(item.inicioRec.split('-')[1]+'/'+item.inicioRec.split('-')[0]):'';
   const fimBR=item.fimRec?(item.fimRec.split('-')[1]+'/'+item.fimRec.split('-')[0]):'';
   const modo=_finModo(item);
+  const _contasForm=finContas();
+  const _contaSelForm=item.contaId||finContaPadraoId();
   openModal(`<div class="modal-head"><h3>${id?'Editar lançamento':'Novo lançamento'}</h3><button class="btn-icon" onclick="closeModal()">×</button></div>
   <div class="modal-body">
     <div class="field-row"><div class="field"><label>Tipo</label><select id="fin_tipo"><option value="pagar" ${item.tipo==='pagar'?'selected':''}>Conta a pagar</option><option value="receber" ${item.tipo==='receber'?'selected':''}>Recebimento (a receber)</option></select></div><div class="field"><label>Valor (R$)</label><input id="fin_valor" type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(item.valor)}" oninput="voaMoneyMask(this);finParcTotal()"></div></div>
     <div class="field"><label>Descrição</label><input id="fin_desc" placeholder="Ex.: Aluguel da agência" value="${escapeHtml(item.descricao)}"></div>
     <div class="field-row"><div class="field"><label>Categoria</label><input id="fin_cat" list="finCatList" value="${escapeHtml(item.categoria)}"><datalist id="finCatList">${cats.map(c=>`<option value="${escapeHtml(c)}"></option>`).join('')}</datalist></div><div class="field"><label>Origem (fornecedor / cliente)</label><input id="fin_origem" placeholder="Opcional" value="${escapeHtml(item.origem)}"></div></div>
+    <div class="field"><label>Conta</label><select id="fin_conta">${_contasForm.map(c=>`<option value="${c.id}" ${c.id===_contaSelForm?'selected':''}>${escapeHtml(c.nome)}${c.padrao?' ⭐':''}</option>`).join('')}</select></div>
     <div class="field"><label>Repetição</label><select id="fin_modo" onchange="finFormModo(this.value)"><option value="unica" ${modo==='unica'?'selected':''}>Única (uma vez)</option><option value="parcelada" ${modo==='parcelada'?'selected':''}>Parcelada (nº fixo de vezes)</option><option value="recorrente" ${modo==='recorrente'?'selected':''}>Recorrente (todo mês)</option></select></div>
     <div id="fin_unicaWrap" class="field" style="${modo==='unica'?'':'display:none'}"><label>Data de vencimento</label><input id="fin_venc" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(item.vencimento)}"></div>
     <div id="fin_multiWrap" class="field-row" style="${modo!=='unica'?'':'display:none'}"><div class="field"><label>Dia do vencimento</label><input id="fin_dia" type="number" min="1" max="31" placeholder="1 a 31" value="${item.diaVenc||''}"></div><div class="field"><label>Início (mm/aaaa)</label><input id="fin_inicio" inputmode="numeric" placeholder="mm/aaaa" maxlength="7" value="${inicioBR}"></div></div>
@@ -3157,6 +3207,7 @@ async function finSalvarForm(id){
   item.categoria=g('fin_cat').trim();
   item.origem=g('fin_origem').trim();
   item.obs=g('fin_obs');
+  item.contaId=g('fin_conta')||item.contaId||finContaPadraoId();
   item.modo=g('fin_modo')||'unica';
   item.recorrente=(item.modo!=='unica'); // mantém compatível com o resto do sistema
   if(item.modo==='unica'){ item.vencimento=_brToISO(g('fin_venc'))||todayISO(); item.parcelas=''; item.fimRec=''; }
@@ -3172,8 +3223,15 @@ async function finSalvarForm(id){
   closeModal(); renderFinanceiroMain();
   const ok=await cloudSaveFinanceiro(item); toast(ok?'Lançamento salvo':'Salvo localmente, mas a nuvem não confirmou.',ok?'success':'warning');
 }
-function finEditarSaldo(){ openModal(`<div class="modal-head"><h3>Saldo atual em conta</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><p style="font-size:13px;color:var(--text-soft);margin:0 0 12px">Informe o saldo atual disponível na conta da agência. O sistema usa este valor para projetar o saldo futuro.</p><div class="field"><label>Saldo (R$)</label><input id="fin_saldoInput" type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(state.finSaldo)}" oninput="voaMoneyMask(this)"></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="finSalvarSaldo()">Salvar</button></div>`); setTimeout(()=>{ const e=document.getElementById('fin_saldoInput'); if(e) e.focus(); },50); }
-async function finSalvarSaldo(){ const v=moneyBRToNum((document.getElementById('fin_saldoInput')||{}).value)||0; state.finSaldo=v; closeModal(); renderFinanceiroMain(); try{ await sb.from('financeiro').upsert({ id:'_saldo', user_id:state.user.id, tipo:'saldo', data:{ valor:v, atualizadoEm:localNowISO() } }); toast('Saldo atualizado','success'); }catch(e){ console.error('finSalvarSaldo',e); toast('Falha ao salvar o saldo.','danger'); } }
+function setFinConta(v){ finContaSel=v||''; renderFinanceiroMain(); }
+function finEditarSaldoConta(contaId){ const c=finConta(contaId)||finContaPadrao(); if(!c) return; openModal(`<div class="modal-head"><h3>Saldo · ${escapeHtml(c.nome)}</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><p style="font-size:13px;color:var(--text-soft);margin:0 0 12px">Informe o saldo atual disponível nesta conta.</p><div class="field"><label>Saldo (R$)</label><input id="fin_saldoInput" type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(c.saldo)}" oninput="voaMoneyMask(this)"></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="finSalvarSaldoConta('${c.id}')">Salvar</button></div>`); setTimeout(()=>{ const e=document.getElementById('fin_saldoInput'); if(e){ e.focus(); } },50); }
+async function finSalvarSaldoConta(contaId){ const c=finConta(contaId); if(!c) return; const v=moneyBRToNum((document.getElementById('fin_saldoInput')||{}).value)||0; c.saldo=v; finRecalcSaldo(); closeModal(); renderFinanceiroMain(); await cloudSaveConta(c); await _finPersistSaldoCache(); toast('Saldo atualizado','success'); }
+function finGerenciarContas(){ openModal(`<div class="modal-head"><h3>🏦 Contas bancárias</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body" id="finContasBody"></div><div class="modal-foot"><button class="btn btn-ghost" onclick="finContaAdd()">+ Adicionar conta</button><button class="btn btn-primary" onclick="closeModal()">Concluir</button></div>`); renderFinContasBody(); }
+function renderFinContasBody(){ const body=document.getElementById('finContasBody'); if(!body) return; const cs=finContas(); body.innerHTML=`<p style="font-size:12px;color:var(--text-mute);margin:0 0 12px">A conta ⭐ <strong>padrão</strong> recebe automaticamente a comissão das vendas. Total em todas: <strong>${fmtBRL(state.finSaldo)}</strong></p>`+cs.map(c=>`<div class="rec-item" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div class="rec-body"><div class="rec-texto"><strong>${escapeHtml(c.nome)}</strong>${c.padrao?' <span class="badge success">Padrão ⭐</span>':''}</div><div class="rec-meta">Saldo: <strong>${fmtBRL(Number(c.saldo)||0)}</strong></div></div><div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">${c.padrao?'':`<button class="btn btn-ghost btn-sm" onclick="finContaDefinirPadrao('${c.id}')">Tornar padrão</button>`}<button class="btn btn-ghost btn-sm" onclick="finContaRenomear('${c.id}')">Renomear</button><button class="btn btn-ghost btn-sm" onclick="finEditarSaldoConta('${c.id}')">Ajustar saldo</button>${cs.length>1?`<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="finContaRemover('${c.id}')">Remover</button>`:''}</div></div>`).join(''); }
+function finContaAdd(){ const nome=(prompt('Nome da nova conta (ex.: Nubank PJ):','')||'').trim(); if(!nome) return; const c={ id:'conta-'+uid(), nome, saldo:0, padrao:!(state.contas||[]).length, ordem:(state.contas||[]).length, criadoEm:localNowISO() }; state.contas=state.contas||[]; state.contas.push(c); finRecalcSaldo(); renderFinContasBody(); renderFinanceiroMain(); cloudSaveConta(c); }
+function finContaRenomear(id){ const c=finConta(id); if(!c) return; const nome=(prompt('Novo nome da conta:',c.nome)||'').trim(); if(!nome) return; c.nome=nome; renderFinContasBody(); renderFinanceiroMain(); cloudSaveConta(c); }
+async function finContaDefinirPadrao(id){ const cs=state.contas||[]; cs.forEach(c=>{ c.padrao=(c.id===id); }); renderFinContasBody(); renderFinanceiroMain(); for(const c of cs){ await cloudSaveConta(c); } toast('Conta padrão atualizada','success'); }
+function finContaRemover(id){ const cs=state.contas||[]; if(cs.length<=1){ toast('É preciso ter ao menos uma conta.','warning'); return; } const c=finConta(id); if(!c) return; if(!confirm('Remover a conta "'+c.nome+'"? O saldo dela ('+fmtBRL(Number(c.saldo)||0)+') sairá do total, e os lançamentos ligados a ela passam a usar a conta padrão.')) return; state.contas=cs.filter(x=>x.id!==id); if(!state.contas.some(x=>x.padrao) && state.contas[0]){ state.contas[0].padrao=true; cloudSaveConta(state.contas[0]); } if(finContaSel===id) finContaSel=''; finRecalcSaldo(); renderFinContasBody(); renderFinanceiroMain(); cloudDeleteFinanceiro(id); _finPersistSaldoCache(); }
 
 // Converte data interna (aaaa-mm-dd) para exibição em texto (dd/mm/aaaa).
 function _isoToBR(iso){ if(!iso) return ''; const m=String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/); return m?(m[3]+'/'+m[2]+'/'+m[1]):''; }
