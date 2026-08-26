@@ -3126,7 +3126,7 @@ function finExcluir(id){ const it=(state.financeiro||[]).find(x=>x.id===id); if(
 function openFinForm(id){
   const item = id ? JSON.parse(JSON.stringify((state.financeiro||[]).find(x=>x.id===id)||blankFin('pagar'))) : blankFin('pagar');
   window._finEdit=item;
-  const cats=[...FIN_CAT_PAGAR, ...FIN_CAT_RECEBER];
+  const cats=[...new Set([...FIN_CAT_PAGAR, ...FIN_CAT_RECEBER])].sort((a,b)=>{ if(a==='Outros') return 1; if(b==='Outros') return -1; return a.localeCompare(b,'pt-BR'); });
   const inicioBR=item.inicioRec?(item.inicioRec.split('-')[1]+'/'+item.inicioRec.split('-')[0]):'';
   const fimBR=item.fimRec?(item.fimRec.split('-')[1]+'/'+item.fimRec.split('-')[0]):'';
   const modo=_finModo(item);
