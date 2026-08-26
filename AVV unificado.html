@@ -486,6 +486,10 @@ table.tbl th.num{text-align:right}
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           <span id="solBadge" class="recados-badge" style="display:none">0</span>
         </button>
+        <button id="finBtn" class="recados-btn" title="Contas do dia (vencendo hoje / atrasadas)" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          <span id="finBadge" class="recados-badge" style="display:none">0</span>
+        </button>
         <button id="recadosBtn" class="recados-btn" title="Recados e tarefas da equipe">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           <span id="recadosBadge" class="recados-badge" style="display:none">0</span>
@@ -901,7 +905,7 @@ async function loadProfileAndShow(authUser){
   // seguida e a tela se atualiza sozinha — o usuário não fica esperando.
   _cloudLoading=true;
   showApp();
-  const reRender=()=>{ _cloudLoading=false; const active=document.querySelector('.nav-item.active'); if(active) setView(active.dataset.view); };
+  const reRender=()=>{ _cloudLoading=false; const active=document.querySelector('.nav-item.active'); if(active) setView(active.dataset.view); updateFinBadge(); finLembreteDoDia(); };
   cloudLoadAll().then(reRender).catch(e=>{ console.error('cloudLoadAll(bg)',e); reRender(); });
   initRecados(); // mural de recados da equipe (tempo real)
   initSolicitacoes(); // sininho de pedidos de permissão (tempo real)
@@ -1656,6 +1660,7 @@ function bindNav(){
   document.getElementById('changeNameBtn').addEventListener('click',requestNameChange);
   const recBtn=document.getElementById('recadosBtn'); if(recBtn) recBtn.addEventListener('click',()=>openRecadosPanel());
   const solB=document.getElementById('solBtn'); if(solB) solB.addEventListener('click',()=>openSolicitacoesPanel());
+  const finB=document.getElementById('finBtn'); if(finB) finB.addEventListener('click',()=>openFinAvisoPanel());
   document.getElementById('logoutBtn').addEventListener('click',()=>{ if(confirm('Sair e voltar para a tela de acesso?')) logout(); });
   document.getElementById('changeLogoBtn').addEventListener('click',()=>{ requireAdmin('Para trocar a logo da agência, informe a senha de administrador.',()=>{ document.getElementById('logoFileInput').click(); }); });
   document.getElementById('logoFileInput').addEventListener('change',(e)=>handleLogoUpload(e,()=>{ document.getElementById('sidebarLogo').innerHTML=logoHTML(); const active=document.querySelector('.nav-item.active'); if(active) setView(active.dataset.view); }));
@@ -2865,6 +2870,56 @@ function finInstances(item, fromYM, toYM){
   return out;
 }
 
+// ===== Sino do Financeiro: contas vencendo hoje / atrasadas (a pagar + a receber) =====
+function finPendenciasHoje(){
+  const hoje=todayISO();
+  const fromYM=monthAdd(currentMonth(),-12), toYM=monthAdd(currentMonth(),12);
+  const itens=(state.financeiro||[]).filter(x=>x.tipo==='pagar'||x.tipo==='receber');
+  const inst=[]; itens.forEach(it=>{ finInstances(it,fromYM,toYM).forEach(x=>{ if(!x.feito && x.data) inst.push(x); }); });
+  const venceHoje=inst.filter(x=>x.data===hoje).sort((a,b)=>String(a.item.tipo).localeCompare(String(b.item.tipo)));
+  const atrasadas=inst.filter(x=>x.data<hoje).sort((a,b)=>(a.data||'').localeCompare(b.data||''));
+  return { venceHoje, atrasadas, hoje };
+}
+function updateFinBadge(){
+  const btn=document.getElementById('finBtn'), b=document.getElementById('finBadge');
+  if(!btn||!b) return;
+  if(currentRole()!=='admin'){ btn.style.display='none'; return; }
+  btn.style.display='flex';
+  const { venceHoje, atrasadas }=finPendenciasHoje();
+  const n=venceHoje.length+atrasadas.length;
+  if(n>0){ b.textContent=n>99?'99+':String(n); b.style.display='flex'; } else { b.style.display='none'; }
+}
+function openFinAvisoPanel(){
+  openModal(`<div class="modal-head"><h3>💰 Contas do dia</h3><button class="btn-icon" onclick="fecharFinAviso()">×</button></div><div class="modal-body" id="finAvisoRoot"><div id="finAvisoBody"></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="fecharFinAviso()">Fechar</button><button class="btn btn-primary" onclick="fecharFinAviso(true)">Ver no Financeiro</button></div>`);
+  renderFinAvisoPanel();
+}
+function fecharFinAviso(irFinanceiro){
+  closeModal();
+  if(irFinanceiro){ setView('financeiro'); return; }
+  const active=document.querySelector('.nav-item.active'); if(active) setView(active.dataset.view); // restaura a tela (a baixa pode ter re-renderizado o conteúdo por baixo)
+}
+function renderFinAvisoPanel(){
+  const body=document.getElementById('finAvisoBody'); if(!body) return;
+  const { venceHoje, atrasadas }=finPendenciasHoje();
+  if(!venceHoje.length && !atrasadas.length){ body.innerHTML='<div class="rec-empty">Nenhuma conta vencendo hoje nem atrasada. 🎉</div>'; return; }
+  const linha=(x,atrasada)=>{ const it=x.item; const receber=it.tipo==='receber'; const cor=receber?'var(--success)':'var(--danger)'; const rot=receber?'Receber':'Pagar'; const acao=receber?'Recebido':'Marcar paga'; const quando=atrasada?('venceu '+fmtDateBR(x.data)):'vence hoje'; return `<div class="rec-item" style="display:flex;justify-content:space-between;align-items:center;gap:12px"><div class="rec-body"><div class="rec-texto"><strong>${escapeHtml(it.descricao||'—')}</strong> <span class="badge neutral" style="color:${cor};border-color:${cor}44">${rot}</span></div><div class="rec-meta">${it.origem?escapeHtml(it.origem)+' · ':''}${quando} · <strong>${fmtBRL(x.valor)}</strong></div></div><button class="btn btn-success btn-sm" onclick="finBaixar('${it.id}','${x.mesRef||''}').then(()=>{renderFinAvisoPanel();updateFinBadge();})">${acao}</button></div>`; };
+  let html='';
+  if(atrasadas.length){ const t=atrasadas.reduce((s,x)=>s+x.valor,0); html+=`<div style="font-size:12px;font-weight:700;color:var(--danger);text-transform:uppercase;letter-spacing:.04em;margin:0 0 6px">⚠ Atrasadas — ${atrasadas.length} · ${fmtBRL(t)}</div>`+atrasadas.map(x=>linha(x,true)).join('')+'<div style="height:16px"></div>'; }
+  if(venceHoje.length){ const t=venceHoje.reduce((s,x)=>s+x.valor,0); html+=`<div style="font-size:12px;font-weight:700;color:var(--brand-blue);text-transform:uppercase;letter-spacing:.04em;margin:0 0 6px">Vencendo hoje — ${venceHoje.length} · ${fmtBRL(t)}</div>`+venceHoje.map(x=>linha(x,false)).join(''); }
+  body.innerHTML=html;
+}
+// Aviso automático 1× por dia ao abrir o sistema (admin).
+function finLembreteDoDia(){
+  if(currentRole()!=='admin') return;
+  const hoje=todayISO();
+  let mark=''; try{ mark=localStorage.getItem('finLembreteDia')||''; }catch(e){}
+  if(mark===hoje) return;
+  try{ localStorage.setItem('finLembreteDia',hoje); }catch(e){}
+  const { venceHoje, atrasadas }=finPendenciasHoje();
+  if(!venceHoje.length && !atrasadas.length) return;
+  setTimeout(()=>{ const ov=document.getElementById('modalOverlay'); if(ov&&ov.classList.contains('is-open')) return; openFinAvisoPanel(); }, 900);
+}
+
 // ---- Nuvem ----
 async function cloudLoadFinanceiro(){
   if(!sb) return;
@@ -3028,6 +3083,7 @@ function renderFinanceiroMain(c){
       </div>
       ${body}
     </div>`;
+  updateFinBadge();
 }
 function setFinTab(t){ finTab=t; renderFinanceiroMain(); }
 async function finBaixar(id, mesRef){
