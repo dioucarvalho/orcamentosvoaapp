@@ -905,6 +905,7 @@ async function loadProfileAndShow(authUser){
   // seguida e a tela se atualiza sozinha — o usuário não fica esperando.
   _cloudLoading=true;
   showApp();
+  updateFinBadge(); // mostra o ícone do sino do Financeiro já na abertura (o número entra depois, com os dados) — evita o "piscar"
   const reRender=()=>{ _cloudLoading=false; const active=document.querySelector('.nav-item.active'); if(active) setView(active.dataset.view); updateFinBadge(); finLembreteDoDia(); };
   cloudLoadAll().then(reRender).catch(e=>{ console.error('cloudLoadAll(bg)',e); reRender(); });
   initRecados(); // mural de recados da equipe (tempo real)
