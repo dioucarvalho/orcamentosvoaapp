@@ -1047,6 +1047,9 @@ async function cloudLoadAll(){
     // VENDAS — monta a lista (com a mesma privacidade do admin para quem não é admin).
     state.vendas=((vendasR&&vendasR.data)||[]).map(r=>{ const v=Object.assign({},r.data||{}); v.id=r.id; v.ownerId=r.user_id||v.ownerId||''; v.owner=(r.user_id&&state.profilesById[r.user_id])||r.owner_nome||v.owner||''; v.orcamentoId=r.orcamento_id||v.orcamentoId||''; return v; });
     if(_hideAdmin && (_admIds.size||_admNomes.size)){ state.vendas=state.vendas.filter(v=>!(_admIds.has(v.ownerId)||_admNomes.has(v.owner))); }
+    // Financeiro (admin): carrega já no boot para o sino/aviso de "contas do dia" ter dados
+    // desde a abertura do sistema — sem depender de o usuário entrar na aba Financeiro.
+    if(currentRole()==='admin'){ try{ await cloudLoadFinanceiro(); }catch(e){ console.error('cloudLoadFinanceiro(boot)',e); } }
   }catch(e){ console.error('cloudLoadAll',e); toast('Não foi possível carregar os dados da nuvem.','danger'); }
 }
 
@@ -2912,11 +2915,11 @@ function renderFinAvisoPanel(){
 function finLembreteDoDia(){
   if(currentRole()!=='admin') return;
   const hoje=todayISO();
-  let mark=''; try{ mark=localStorage.getItem('finLembreteDia')||''; }catch(e){}
+  let mark=''; try{ mark=localStorage.getItem('finAvisoDia')||''; }catch(e){}
   if(mark===hoje) return;
-  try{ localStorage.setItem('finLembreteDia',hoje); }catch(e){}
   const { venceHoje, atrasadas }=finPendenciasHoje();
-  if(!venceHoje.length && !atrasadas.length) return;
+  if(!venceHoje.length && !atrasadas.length) return; // nada a mostrar: NÃO marca — tenta de novo no próximo boot
+  try{ localStorage.setItem('finAvisoDia',hoje); }catch(e){} // só marca quando de fato vai avisar
   setTimeout(()=>{ const ov=document.getElementById('modalOverlay'); if(ov&&ov.classList.contains('is-open')) return; openFinAvisoPanel(); }, 900);
 }
 
