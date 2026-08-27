@@ -1944,41 +1944,6 @@ function saleMonthOfOrc(o){
   return monthOf((lv&&lv.dataVenda)||o.closedAt||o.createdAt);
 }
 
-// TEMPORÁRIO: migração ÚNICA das vendas antigas para o Pós-Venda (mesma lógica da
-// automação, mas ignorando a linha de base). Só adiciona; não altera/duplica.
-async function migrarVendasAntigasPosvenda(){
-  if(!sb||!state.user){ toast('Sem conexão.','danger'); return; }
-  if(currentRole()!=='admin'&&currentRole()!=='gerente'){ toast('Só a gestão pode migrar.','warning'); return; }
-  if(!confirm('Migrar as vendas antigas (lançadas antes da integração) para o Pós-Venda?\n\nSó adiciona as que ainda não têm reserva — não altera nada existente.')) return;
-  toast('Migrando… aguarde alguns segundos.','info');
-  try{
-    const { data:row } = await sb.from('posvenda_dados').select('dados').eq('id',1).maybeSingle();
-    const dados = Array.isArray(row&&row.dados)?row.dados:[];
-    const linkados=new Set(), reservaIds=new Set();
-    dados.forEach(r=>{ if(r&&r.origemVendaId) linkados.add(String(r.origemVendaId)); if(r&&r.id) reservaIds.add(String(r.id)); });
-    const vendas=(state.vendas||[]).filter(v=>v&&v.id&&!v.preLancada);
-    const _vd = v => (((v&&v.vouchers)||[]).filter(d=>d&&d.path).map(d=>({ name:d.name||'arquivo', path:d.path, bucket:'vendas-docs' })));
-    const novos=[];
-    vendas.forEach(v=>{
-      if(linkados.has(String(v.id))) return;
-      const resId=(v.numReserva&&String(v.numReserva).trim())||('RES-'+String(v.id).slice(-6).toUpperCase());
-      if(reservaIds.has(String(resId))) return;
-      const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'';
-      const pax=(v.passageiros||[]).filter(p=>p&&(p.nome||'').trim()).map((p,i)=>({ id:uid(), nome:p.nome||'', nascimento:p.nascimento||'', email:'', telefone:i===0?(v.titularContato||''):'', docs:[] }));
-      novos.push({ id:resId, origemVendaId:v.id, _autoDoAVV:true, fornecedor:v.fornecedor||'', destino:v.destino||'', dataIda:v.dataInicio||'', horaIda:'', dataVolta:v.dataFim||'', horaVolta:'', voos:v.voosDetalhes||'', preEmbarqueData:'', preEmbarqueHora:'', preEmbarqueRealizadaData:'', servicos:[], vouchersVenda:_vd(v), passageiros: pax.length?pax:[{id:uid(),nome:tit,nascimento:'',email:'',telefone:v.titularContato||'',docs:[]}], tripStatus:'Confirmada', checks:{}, observacoes:[], tarefas:[] });
-      reservaIds.add(String(resId)); linkados.add(String(v.id));
-    });
-    if(!novos.length){ toast('Nada a migrar: todas as vendas já estão no Pós-Venda. 🎉','success'); return; }
-    const { data:fresh } = await sb.from('posvenda_dados').select('dados').eq('id',1).maybeSingle();
-    const base=Array.isArray(fresh&&fresh.dados)?fresh.dados:dados;
-    const jaLink=new Set(base.filter(r=>r&&r.origemVendaId).map(r=>String(r.origemVendaId)));
-    const jaId=new Set(base.filter(r=>r&&r.id).map(r=>String(r.id)));
-    const add=novos.filter(n=>!jaLink.has(String(n.origemVendaId))&&!jaId.has(String(n.id)));
-    if(!add.length){ toast('Nada a migrar (já estavam lá).','success'); return; }
-    await sb.from('posvenda_dados').update({ dados: base.concat(add), atualizado_em:new Date().toISOString() }).eq('id',1);
-    toast(add.length+' venda(s) antiga(s) migrada(s) para o Pós-Venda! Abra o Pós-Venda → Reservas.','success');
-  }catch(e){ console.error('migrar antigas posvenda',e); toast('Falha na migração. Verifique a conexão e tente de novo.','danger'); }
-}
 async function renderAdmin(c){
   const verR$ = adminPodeVerValores();
   // Privacidade do administrador: só quem é ADMIN vê os dados de um administrador
@@ -2163,12 +2128,6 @@ async function renderAdmin(c){
         <button class="btn btn-primary" id="admApply">Aplicar</button>
       </div>
       ${Backend.mode==='local'?`<p style="font-size:12px;color:var(--warning);margin-top:10px">⚠️ Modo local: este painel mostra os dados deste navegador. Ao ligar o Supabase, ele passa a mostrar <strong>todos os colaboradores</strong> automaticamente.</p>`:''}
-    </div>
-    <!-- TEMPORÁRIO: migração única de vendas antigas -> Pós-Venda (remover depois de usar) -->
-    <div class="card" style="margin-bottom:18px;border:1.5px dashed var(--warning)">
-      <div class="card-header"><h3 class="card-title">Migração única · Vendas antigas → Pós-Venda</h3><span class="badge warning">temporário</span></div>
-      <p style="font-size:13px;color:var(--text-soft);margin:0 0 12px">Traz para o Pós-Venda as vendas lançadas <strong>antes</strong> da integração. Só adiciona as que ainda não têm reserva — <strong>não altera nada existente</strong> e não duplica se rodar de novo.</p>
-      <button class="btn btn-primary" onclick="migrarVendasAntigasPosvenda()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Migrar vendas antigas agora</button>
     </div>
     ${cardsHTML}
     ${rankHTML}
