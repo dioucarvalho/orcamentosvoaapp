@@ -910,6 +910,7 @@ async function loadProfileAndShow(authUser){
   cloudLoadAll().then(reRender).catch(e=>{ console.error('cloudLoadAll(bg)',e); reRender(); });
   initRecados(); // mural de recados da equipe (tempo real)
   initSolicitacoes(); // sininho de pedidos de permissão (tempo real)
+  initVendasRealtime(); // avisa a gestão quando a equipe lança uma venda (tempo real)
 }
 
 /* ============================================================================
@@ -1329,6 +1330,41 @@ function initSolicitacoes(){
   }catch(e){ console.error('solicitacoes realtime',e); }
   if(_solTimer) clearInterval(_solTimer);
   _solTimer=setInterval(()=>{ if(!document.hidden) refreshSolicitacoes(); }, 25000);
+}
+
+// ===== Tempo real: avisa a GESTÃO quando a equipe lança uma venda (e recalcula o
+// Financeiro na hora — nova conta a pagar do repasse/boleto pinga sem precisar dar F5). =====
+let _vendaRtSub=null, _vendaRtPoll=null, _vendaRtCount=null, _vendaRtTimer=null;
+function initVendasRealtime(){
+  if(!sb||!state.user) return;
+  if(currentRole()!=='admin' && currentRole()!=='gerente') return; // só gestão precisa disso
+  try{
+    if(_vendaRtSub){ sb.removeChannel(_vendaRtSub); _vendaRtSub=null; }
+    _vendaRtSub=sb.channel('vendas-rt-'+state.user.id)
+      .on('postgres_changes',{event:'*',schema:'public',table:'vendas'},(payload)=>{ _onVendaRealtime(payload); })
+      .subscribe();
+  }catch(e){ console.error('vendas realtime',e); }
+  if(_vendaRtPoll) clearInterval(_vendaRtPoll);
+  _vendaRtPoll=setInterval(()=>{ if(!document.hidden) _vendaRtPollCheck(); }, 30000); // rede de segurança
+}
+async function _vendaRtPollCheck(){
+  try{ const { count } = await sb.from('vendas').select('id',{count:'exact',head:true}); if(count==null) return; if(_vendaRtCount===null){ _vendaRtCount=count; return; } if(count!==_vendaRtCount){ _vendaRtCount=count; _onVendaRealtime({_poll:true}); } }catch(e){}
+}
+function _onVendaRealtime(payload){
+  if(payload && payload.new && payload.new.user_id===state.user.id && !payload._poll) return; // minha própria venda: já atualizei local
+  if(_vendaRtTimer) clearTimeout(_vendaRtTimer);
+  _vendaRtTimer=setTimeout(async ()=>{
+    try{
+      await cloudLoadAll();
+      try{ const { count } = await sb.from('vendas').select('id',{count:'exact',head:true}); if(count!=null) _vendaRtCount=count; }catch(e){}
+      if(currentRole()==='admin'){ try{ await reconciliarVendasFinanceiro(); }catch(e){ console.error('reconc rt',e); } updateFinBadge(); }
+      const _modalOpen=!!(document.getElementById('modalOverlay')&&document.getElementById('modalOverlay').classList.contains('is-open'));
+      const _fw=document.getElementById('vendaFormWrap'); const _vendaFormOpen=!!(_fw && _fw.innerHTML.trim());
+      if(!_modalOpen && !_vendaFormOpen){ const active=document.querySelector('.nav-item.active'); const vw=active&&active.dataset.view; if(vw==='financeiro'||vw==='vendas'||vw==='administracao'||vw==='agenda'){ setView(vw); } }
+      const nome=(payload&&payload.new&&payload.new.owner_nome)?(' por '+String(payload.new.owner_nome).split(' ')[0]):'';
+      toast('🔔 Nova venda lançada'+nome+' pela equipe.','info');
+    }catch(e){ console.error('venda realtime reload',e); }
+  }, 1200);
 }
 
 async function refreshSolicitacoes(){
