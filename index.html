@@ -5214,8 +5214,19 @@ function ReservationsTable({reservations, onOpen, onNew, onDelete, onUpdate, onI
     const s=(r.id+" "+r.destino+" "+r.fornecedor+" "+r.passageiros.map(p=>p.nome).join(" ")).toLowerCase();
     return s.includes(q.toLowerCase()) && tripTouchesMonth(r, month);
   });
-  // Mais NOVA -> mais antiga, paginado de 10 em 10.
-  const ordered = filtered.slice().reverse();
+  // Embarque mais PRÓXIMO -> mais distante (próximos primeiro, ascendente pela data de
+  // ida). Reservas já embarcadas (passadas) vão para o fim; sem data de ida, por último.
+  const _hojeISO = (new Date()).toISOString().slice(0,10);
+  const ordered = filtered.slice().sort((a,b)=>{
+    const da=a.dataIda||"", db=b.dataIda||"";
+    if(!da && !db) return 0;
+    if(!da) return 1;
+    if(!db) return -1;
+    const fa=da>=_hojeISO, fb=db>=_hojeISO;
+    if(fa && fb) return da.localeCompare(db);   // ambos futuros: mais próximo primeiro
+    if(!fa && !fb) return db.localeCompare(da);  // ambos passados: mais recente primeiro
+    return fa ? -1 : 1;                          // futuro antes de passado
+  });
   const PER_PAGE = 10;
   const totalPages = Math.max(1, Math.ceil(ordered.length / PER_PAGE));
   const pageSafe = Math.min(Math.max(page, 0), totalPages - 1);
