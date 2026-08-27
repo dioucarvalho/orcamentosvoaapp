@@ -3319,6 +3319,11 @@ async function reconciliarVendasFinanceiro(){
       if(repOutE && !repOutE.pago){ state.financeiro=state.financeiro.filter(x=>x.id!==repOutE.id); apagar.push(repOutE.id); }
     }
 
+    // ---- COMPROVANTE À VISTA: espelha o anexo da venda nos recebidos gerados (comissão
+    // da agência e valor à vista), pra clicar no olhinho do Financeiro e abrir o mesmo PIX. ----
+    const _comprov=v.comprovantesAvista||[];
+    [find('comag-'+v.id), find('repin-'+v.id)].forEach(e=>{ if(!e) return; const cur=JSON.stringify((e.anexos||[]).map(d=>d&&d.path)); const want=JSON.stringify(_comprov.map(d=>d&&d.path)); if(cur!==want){ e.anexos=_comprov.slice(); if(salvar.indexOf(e)<0) salvar.push(e); } });
+
     ledger[v.id]=L;
   }
 
