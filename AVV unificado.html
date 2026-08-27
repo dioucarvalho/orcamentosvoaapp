@@ -1470,6 +1470,14 @@ async function _executarSolicitacao(sol){
       if(okc){ state.orcamentos=(state.orcamentos||[]).filter(x=>x.id!==p.id); _deletedIds.add(p.id); }
       return okc;
     }
+    if(sol.acao_key==='excluir_contato'){
+      if(!Array.isArray(state.clientes)) await cloudLoadClientes();
+      const cli=(state.clientes||[]).find(x=>x.id===p.id);
+      if(cli){ (cli.docs||[]).forEach(d=>{ if(d&&d.path) cloudDeleteClienteDoc(d.path); }); }
+      const okc=await cloudDeleteCliente(p.id);
+      if(okc) state.clientes=(state.clientes||[]).filter(x=>x.id!==p.id);
+      return okc;
+    }
     return false;
   }catch(e){ console.error('_executarSolicitacao',e); return false; }
 }
@@ -2611,7 +2619,7 @@ function renderContatosList(){
   const pageItems=lista.slice((contatoPage-1)*_PER, contatoPage*_PER);
   const _lim180=(()=>{ const d=new Date(); d.setDate(d.getDate()+180); return ymd(d); })();
   const _idade=iso=>{ if(!iso) return ''; const d=new Date(iso); if(isNaN(d)) return ''; const t=new Date(); let a=t.getFullYear()-d.getFullYear(); const m=t.getMonth()-d.getMonth(); if(m<0||(m===0&&t.getDate()<d.getDate())) a--; return (a>=0&&a<130)?(a+' anos'):''; };
-  const linhas=pageItems.map(x=>{ const idade=_idade(x.nascimento); const passVenc=(x.passaporteValidade&&x.passaporteValidade<=_lim180)?` <span class="badge warning" style="font-size:10px" title="Passaporte vence em ${fmtDateBR(x.passaporteValidade)}">passaporte</span>`:''; const nDocs=(x.docs&&x.docs.length)||0; return `<tr onclick="openContatoForm('${x.id}')" style="cursor:pointer"><td><strong>${escapeHtml(x.nome||'—')}</strong>${passVenc}${nDocs?` <span class="badge neutral" style="font-size:10px">📎 ${nDocs}</span>`:''}</td><td>${x.cpf?escapeHtml(_cpfFmt(x.cpf)):'—'}</td><td>${escapeHtml(x.telefone||'—')}</td><td>${idade||(x.nascimento?fmtDateBR(x.nascimento):'—')}</td><td class="num" onclick="event.stopPropagation()"><button class="btn-icon" title="Ver/editar" onclick="openContatoForm('${x.id}')">${_ed}</button>${isGestao?`<button class="btn-icon" title="Excluir" onclick="deleteContato('${x.id}')" style="color:var(--danger)">${_tr}</button>`:''}</td></tr>`; }).join('');
+  const linhas=pageItems.map(x=>{ const idade=_idade(x.nascimento); const passVenc=(x.passaporteValidade&&x.passaporteValidade<=_lim180)?` <span class="badge warning" style="font-size:10px" title="Passaporte vence em ${fmtDateBR(x.passaporteValidade)}">passaporte</span>`:''; const nDocs=(x.docs&&x.docs.length)||0; return `<tr onclick="openContatoForm('${x.id}')" style="cursor:pointer"><td><strong>${escapeHtml(x.nome||'—')}</strong>${passVenc}${nDocs?` <span class="badge neutral" style="font-size:10px">📎 ${nDocs}</span>`:''}</td><td>${x.cpf?escapeHtml(_cpfFmt(x.cpf)):'—'}</td><td>${escapeHtml(x.telefone||'—')}</td><td>${idade||(x.nascimento?fmtDateBR(x.nascimento):'—')}</td><td class="num" onclick="event.stopPropagation()"><button class="btn-icon" title="Ver/editar" onclick="openContatoForm('${x.id}')">${_ed}</button><button class="btn-icon" title="${isGestao?'Excluir':'Solicitar exclusão ao administrador'}" onclick="deleteContato('${x.id}')" style="color:var(--danger)">${_tr}</button></td></tr>`; }).join('');
   const cnt=document.getElementById('contatosCount'); if(cnt) cnt.textContent=lista.length+(q?' no filtro':'');
   wrap.innerHTML=lista.length===0?`<div class="empty">${q?'Nenhum contato encontrado.':'Nenhum contato cadastrado ainda. Clique em "Novo contato".'}</div>`:`<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Idade</th><th class="num">Ações</th></tr></thead><tbody>${linhas}</tbody></table></div>${totalPg>1?`<div style="display:flex;justify-content:center;align-items:center;gap:12px;margin-top:14px"><button class="btn btn-ghost btn-sm" onclick="if(contatoPage>1){contatoPage--;renderContatosList()}" ${contatoPage<=1?'disabled':''}>‹ Anterior</button><span style="font-size:13px;color:var(--text-soft)">Página ${contatoPage} de ${totalPg}</span><button class="btn btn-ghost btn-sm" onclick="if(contatoPage<${totalPg}){contatoPage++;renderContatosList()}" ${contatoPage>=totalPg?'disabled':''}>Próxima ›</button></div>`:''}`;
 }
@@ -2663,7 +2671,22 @@ async function saveContatoForm(id){
   closeModal(); renderContatosMain();
   const ok=await cloudSaveCliente(v); toast(ok?'Contato salvo':'Salvo localmente, mas a nuvem não confirmou.',ok?'success':'warning');
 }
-function deleteContato(id){ const c=(state.clientes||[]).find(x=>x.id===id); if(!c) return; if(!confirm('Excluir o contato "'+(c.nome||'')+'"? Os documentos anexados também serão removidos.')) return; (c.docs||[]).forEach(d=>{ if(d&&d.path) cloudDeleteClienteDoc(d.path); }); state.clientes=(state.clientes||[]).filter(x=>x.id!==id); renderContatosMain(); cloudDeleteCliente(id).then(ok=>toast(ok?'Contato excluído':'Removido localmente, mas a nuvem não confirmou (só a gestão pode excluir).',ok?'success':'warning')); }
+// Segurança: só a GESTÃO (admin/gerente) exclui direto. Consultora envia um pedido
+// pelo sininho e o administrador executa a exclusão ao aprovar (mesmo fluxo de vendas).
+function deleteContato(id){
+  const c=(state.clientes||[]).find(x=>x.id===id); if(!c) return; const nome=c.nome||'este contato';
+  if(currentRole()==='admin'||currentRole()==='gerente'){
+    if(!confirm('Excluir o contato "'+nome+'"? Os documentos anexados também serão removidos.')) return;
+    _doDeleteContato(id);
+  } else {
+    pedirPermissao({ acaoKey:'excluir_contato', descricao:'Excluir o contato "'+nome+'"', payload:{id:id,nome:nome} });
+  }
+}
+function _doDeleteContato(id){
+  const c=(state.clientes||[]).find(x=>x.id===id); if(c){ (c.docs||[]).forEach(d=>{ if(d&&d.path) cloudDeleteClienteDoc(d.path); }); }
+  state.clientes=(state.clientes||[]).filter(x=>x.id!==id); renderContatosList();
+  cloudDeleteCliente(id).then(ok=>toast(ok?'Contato excluído':'Removido localmente, mas a nuvem não confirmou.',ok?'success':'warning'));
+}
 async function contatosMesclarDuplicados(){
   const cs=(state.clientes||[]); if(!cs.length){ toast('Nenhum contato ainda.','info'); return; }
   const groups={}; cs.forEach(x=>{ const cpf=_cpfDigits(x.cpf); const key=cpf?('cpf:'+cpf):('nn:'+_clienteNorm(x.nome)+'|'+(x.nascimento||'')); (groups[key]=groups[key]||[]).push(x); });
