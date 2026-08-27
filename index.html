@@ -2535,6 +2535,31 @@ function vendaPaxNomeChange(i, valor){
   if(i===0 && c.telefone){ const t=document.getElementById('vd_titularContato'); if(t && !t.value) t.value=c.telefone; }
   toast('Cliente "'+(c.nome||'')+'" já cadastrado — dados preenchidos.','success');
 }
+// Autocomplete PRÓPRIO (não depende do <datalist> nativo, que varia por navegador).
+function _vendaClientesMatch(q){
+  const n=_clienteNorm(q); if(!n) return [];
+  const list=(state.clientes||[]); const starts=[], contains=[];
+  for(const c of list){ const cn=_clienteNorm(c.nome); if(!cn) continue; if(cn.startsWith(n)) starts.push(c); else if(cn.includes(n)) contains.push(c); }
+  return starts.concat(contains).slice(0,8);
+}
+function vendaPaxSuggest(i, el){
+  const box=document.getElementById('vd_sugg_'+i); if(!box) return;
+  const q=(el.value||'').trim();
+  const matches=q.length>=1?_vendaClientesMatch(q):[];
+  if(!matches.length){ box.style.display='none'; box.innerHTML=''; return; }
+  box.innerHTML=matches.map(c=>`<div onmousedown="event.preventDefault();vendaPaxPick(${i},'${c.id}')" style="padding:9px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface-alt)'" onmouseout="this.style.background=''"><strong>${escapeHtml(c.nome||'')}</strong>${c.nascimento?`<span style="color:var(--text-mute);font-size:11px"> · nasc. ${_isoToBR(c.nascimento)}</span>`:''}${c.telefone?`<span style="color:var(--text-mute);font-size:11px"> · ${escapeHtml(c.telefone)}</span>`:''}</div>`).join('');
+  box.style.display='block';
+}
+function vendaPaxSuggestHide(i){ setTimeout(()=>{ const box=document.getElementById('vd_sugg_'+i); if(box) box.style.display='none'; }, 150); }
+function vendaPaxPick(i, id){
+  const box=document.getElementById('vd_sugg_'+i); if(box){ box.style.display='none'; box.innerHTML=''; }
+  const c=(state.clientes||[]).find(x=>x.id===id); if(!c) return;
+  const rows=[...document.querySelectorAll('#vd_paxWrap .vd-pax-row')]; const row=rows[i]; if(!row) return;
+  const nomeEl=row.querySelector('.vd-pax-nome'); if(nomeEl) nomeEl.value=c.nome||'';
+  const nascEl=row.querySelector('.vd-pax-nasc'); if(nascEl) nascEl.value=c.nascimento?_isoToBR(c.nascimento):'';
+  if(i===0 && c.telefone){ const t=document.getElementById('vd_titularContato'); if(t && !t.value) t.value=c.telefone; }
+  toast('Cliente "'+(c.nome||'')+'" preenchido.','success');
+}
 // IMPORTAÇÃO ÚNICA (admin): salva na agenda os clientes das vendas já lançadas.
 async function importarClientesDasVendas(){
   if(!sb){ toast('Sem conexão com a nuvem.','danger'); return; }
@@ -2898,7 +2923,7 @@ function openVendaForm(id){
 }
 function renderVendaPax(){
   const wrap=document.getElementById('vd_paxWrap'); if(!wrap) return;
-  wrap.innerHTML=(currentVenda.passageiros||[]).map((p,i)=>`<div class="vd-pax-row" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;font-weight:700;color:var(--text-soft);text-transform:uppercase;letter-spacing:.04em">Passageiro ${i+1}</span>${(currentVenda.passageiros.length>1)?`<button class="btn-icon" title="Remover" onclick="vendaRemovePax(${i})" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`:''}</div><div class="field-row"><div class="field"><label>Nome completo do cliente</label><input class="vd-pax-nome" list="vd_clientesList" autocomplete="off" placeholder="Digite o nome…" value="${escapeHtml(p.nome||'')}" onchange="vendaPaxNomeChange(${i}, this.value)"></div><div class="field" style="max-width:170px"><label>Nascimento</label><input class="vd-pax-nasc" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(p.nascimento)}"></div></div></div>`).join('');
+  wrap.innerHTML=(currentVenda.passageiros||[]).map((p,i)=>`<div class="vd-pax-row" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;font-weight:700;color:var(--text-soft);text-transform:uppercase;letter-spacing:.04em">Passageiro ${i+1}</span>${(currentVenda.passageiros.length>1)?`<button class="btn-icon" title="Remover" onclick="vendaRemovePax(${i})" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`:''}</div><div class="field-row"><div class="field" style="position:relative"><label>Nome completo do cliente</label><input class="vd-pax-nome" autocomplete="off" placeholder="Digite o nome…" value="${escapeHtml(p.nome||'')}" oninput="vendaPaxSuggest(${i},this)" onfocus="vendaPaxSuggest(${i},this)" onblur="vendaPaxSuggestHide(${i})" onchange="vendaPaxNomeChange(${i}, this.value)"><div id="vd_sugg_${i}" style="display:none;position:absolute;z-index:60;left:0;right:0;top:100%;margin-top:4px;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;box-shadow:0 10px 26px rgba(13,42,85,.16);max-height:220px;overflow-y:auto"></div></div><div class="field" style="max-width:170px"><label>Nascimento</label><input class="vd-pax-nasc" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(p.nascimento)}"></div></div></div>`).join('');
 }
 function _vendaReadPax(){ currentVenda.passageiros=[...document.querySelectorAll('#vd_paxWrap .vd-pax-row')].map(row=>({ nome:(row.querySelector('.vd-pax-nome').value||'').trim(), nascimento:_brToISO(row.querySelector('.vd-pax-nasc').value) })); if(!currentVenda.passageiros.length) currentVenda.passageiros=[{nome:'',nascimento:''}]; }
 function vendaAddPax(){ _vendaReadPax(); currentVenda.passageiros.push({nome:'',nascimento:''}); renderVendaPax(); }
