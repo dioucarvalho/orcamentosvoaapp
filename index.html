@@ -5125,7 +5125,8 @@ function Dashboard({reservations, onOpen}){
   const [filter, setFilter] = useState(null);
   const labels={emViagem:"Clientes em viagem",viajaAmanha:"Viajam amanhã",preEmbarqueAmanha:"Pré-embarques amanhã",checkinIda:"Check-ins de ida pendentes",checkinVolta:"Check-ins de volta pendentes",retornaHoje:"Retornam hoje (disparar pós-venda)"};
 
-  const allAlerts = computed.flatMap(x => x.c.alerts.map(a=>({...a, res:x.r})));
+  const allAlerts = computed.flatMap(x => x.c.alerts.map(a=>({...a, res:x.r})))
+    .sort((a,b)=>{ const da=a.res.dataIda||"", db=b.res.dataIda||""; if(!da&&!db) return 0; if(!da) return 1; if(!db) return -1; return da.localeCompare(db); }); // embarque mais próximo primeiro
 
   return (
     <div className="space-y-6 fade-in">
