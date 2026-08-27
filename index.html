@@ -2713,7 +2713,7 @@ async function contatosMesclarDuplicados(){
   toast(removidos+' duplicado(s) mesclados.','success');
 }
 
-function blankVenda(){ return { id:'v'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), ownerId:(state.user&&state.user.id)||'', owner:(state.user&&state.user.name)||'', orcamentoId:'', dataVenda:todayISO(), categoria:'', itens:[{categoria:'',valor:'',fornecedor:'',numReserva:'',comissaoFornecedor:'',dataRecebFornecedor:''}], fornecedor:'', ambito:'', dataInicio:'', dataFim:'', origem:'', destino:'', voosDetalhes:'', numReserva:'', valorTotal:'', passageiros:[{nome:'',nascimento:''}], titularContato:'', vouchers:[], comissaoAgencia:'', formaPagamento:'', valorAvista:'', comissaoFornecedor:'', comissaoTotal:'', dataRecebFornecedor:'', observacoes:'', preLancada:false, createdAt:localNowISO() }; }
+function blankVenda(){ return { id:'v'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), ownerId:(state.user&&state.user.id)||'', owner:(state.user&&state.user.name)||'', orcamentoId:'', dataVenda:todayISO(), categoria:'', itens:[{categoria:'',valor:'',fornecedor:'',numReserva:'',comissaoFornecedor:'',dataRecebFornecedor:''}], fornecedor:'', ambito:'', dataInicio:'', dataFim:'', origem:'', destino:'', voosDetalhes:'', numReserva:'', valorTotal:'', passageiros:[{nome:'',nascimento:''}], titularContato:'', vouchers:[], comissaoAgencia:'', formaPagamento:'', valorAvista:'', comprovantesAvista:[], comissaoFornecedor:'', comissaoTotal:'', dataRecebFornecedor:'', observacoes:'', preLancada:false, createdAt:localNowISO() }; }
 // Itens da venda (categoria + valor). Compatível com vendas antigas: se não houver
 // "itens", deriva um item único a partir da categoria/valorTotal salvos antes.
 function vendaItens(v){ if(v && Array.isArray(v.itens) && v.itens.length) return v.itens; return [{categoria:(v&&v.categoria)||'', valor:(v&&v.valorTotal)||'', fornecedor:(v&&v.fornecedor)||'', numReserva:(v&&v.numReserva)||'', comissaoFornecedor:(v&&v.comissaoFornecedor)||'', dataRecebFornecedor:(v&&v.dataRecebFornecedor)||''}]; }
@@ -2813,6 +2813,7 @@ function visualizarVenda(id){
     </tr>`; }).join('');
   const paxHTML=(v.passageiros||[]).filter(p=>p&&(p.nome||'').trim()).map(p=>`<li style="${_val};margin-bottom:2px">${escapeHtml(p.nome)}${p.nascimento?` <span style="color:var(--text-mute);font-size:12px">· nasc. ${fmtDateBR(p.nascimento)}</span>`:''}</li>`).join('')||`<li style="color:var(--text-mute)">—</li>`;
   const vouchersHTML=(v.vouchers&&v.vouchers.length)?`<div style="display:flex;flex-wrap:wrap;gap:8px">${v.vouchers.map((d,i)=>`<button type="button" onclick="verVendaVoucher('${v.id}',${i})" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:6px 12px;border:1px solid var(--border);border-radius:999px;background:var(--surface-alt);color:var(--brand-blue);cursor:pointer">📎 ${escapeHtml(d.name||'arquivo')}</button>`).join('')}</div>`:`<span style="font-size:12px;color:var(--text-mute)">Nenhum voucher anexado.</span>`;
+  const comprovAvistaHTML=(v.comprovantesAvista&&v.comprovantesAvista.length)?`<div style="display:flex;flex-wrap:wrap;gap:8px">${v.comprovantesAvista.map((d,i)=>`<button type="button" onclick="verVendaComprovAvista('${v.id}',${i})" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:6px 12px;border:1px solid var(--border);border-radius:999px;background:var(--surface-alt);color:var(--brand-blue);cursor:pointer">📎 ${escapeHtml(d.name||'arquivo')}</button>`).join('')}</div>`:'';
   openModal(`<div class="modal-head"><h3>Detalhes da venda ${status}</h3><button class="btn-icon" onclick="closeModal()">×</button></div>
     <div class="modal-body" style="max-height:70vh;overflow-y:auto">
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:16px">
@@ -2844,11 +2845,13 @@ function visualizarVenda(id){
       ${v.titularContato?`<div style="margin-bottom:12px">${dado('Contato do titular',escapeHtml(v.titularContato))}</div>`:''}
       <div style="${_lbl};margin:12px 0 6px;color:var(--brand-blue)">Vouchers da reserva</div>
       ${vouchersHTML}
+      ${comprovAvistaHTML?`<div style="${_lbl};margin:14px 0 6px;color:var(--brand-blue)">Comprovante do recebimento à vista</div>${comprovAvistaHTML}`:''}
       ${v.observacoes?`<div style="${_lbl};margin:14px 0 6px;color:var(--brand-blue)">Observações</div><div style="${_val};white-space:pre-wrap">${escapeHtml(v.observacoes)}</div>`:''}
     </div>
     <div class="modal-foot"><button class="btn btn-primary" onclick="closeModal()">Fechar</button></div>`);
 }
 function verVendaVoucher(vendaId,i){ const v=(state.vendas||[]).find(x=>x.id===vendaId); const d=v&&(v.vouchers||[])[i]; if(!d||!d.path){ toast('Voucher indisponível.','warning'); return; } cloudGetVendaDocUrl(d.path).then(url=>{ if(url) window.open(url,'_blank'); else toast('Não foi possível abrir o voucher.','danger'); }); }
+function verVendaComprovAvista(vendaId,i){ const v=(state.vendas||[]).find(x=>x.id===vendaId); const d=v&&(v.comprovantesAvista||[])[i]; if(!d||!d.path){ toast('Comprovante indisponível.','warning'); return; } cloudGetVendaDocUrl(d.path).then(url=>{ if(url) window.open(url,'_blank'); else toast('Não foi possível abrir o comprovante.','danger'); }); }
 function monthLabelBR(ym){ const _m=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro']; const p=String(ym).split('-'); return (_m[Number(p[1])-1]||p[1])+' de '+p[0]; }
 
 function openVendaForm(id){
@@ -2869,7 +2872,7 @@ function openVendaForm(id){
     <h4 style="margin:18px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Viagem</h4>
     <div class="field-row"><div class="field"><label>Início da viagem</label><input id="vd_dataInicio" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataInicio)}"></div><div class="field"><label>Fim da viagem</label><input id="vd_dataFim" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataFim)}"></div></div>
     <div class="field-row"><div class="field"><label>Origem</label><input id="vd_origem" value="${escapeHtml(v.origem)}"></div><div class="field"><label>Destino</label><input id="vd_destino" value="${escapeHtml(v.destino)}"></div></div>
-    <div class="field"><label>Detalhes dos voos <span style="font-weight:400;color:var(--text-mute);font-size:11px">(cia, localizador, horários, trechos — migra do orçamento e depois para o pós-venda)</span></label><textarea id="vd_voosDetalhes" rows="3" placeholder="Ex.: LATAM · GRU → MCO · Saída 08:30 · Chegada 16:40 · Bagagem 23kg">${escapeHtml(v.voosDetalhes||'')}</textarea></div>
+    <div class="field"><label>Detalhes dos voos <span style="font-weight:400;color:var(--text-mute);font-size:11px">(cia, localizador, horários, trechos)</span></label><textarea id="vd_voosDetalhes" rows="3" placeholder="Ex.: LATAM · GRU → MCO · Saída 08:30 · Chegada 16:40 · Bagagem 23kg">${escapeHtml(v.voosDetalhes||'')}</textarea></div>
     <h4 style="margin:18px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Passageiros</h4>
     <datalist id="vd_clientesList"></datalist>
     <div id="vd_paxWrap"></div>
@@ -2884,16 +2887,17 @@ function openVendaForm(id){
     <div class="field" style="max-width:340px"><label>Forma de pagamento <span style="font-weight:400;color:var(--text-mute);font-size:11px">(da comissão recebida na agência)</span></label><select id="vd_formaPagamento">${_formaOpts(v.formaPagamento)}</select></div>
     <div class="field" style="max-width:420px"><label>Total recebido à vista na conta da agência (R$) <span style="font-weight:400;color:var(--text-mute);font-size:11px">(opcional — se o cliente pagou parte à vista na sua conta, incluindo a parte do fornecedor)</span></label><input id="vd_valorAvista" type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(v.valorAvista)}" oninput="voaMoneyMask(this);vendaUpdateRepasse()"></div>
     <div id="vd_repasseInfo" style="font-size:12px;color:var(--brand-blue);font-weight:600;margin:-2px 0 0"></div>
+    <div class="field" style="max-width:420px;margin-top:12px"><label>Comprovante do recebimento à vista <span style="font-weight:400;color:var(--text-mute);font-size:11px">(PIX, PDF ou imagem — opcional)</span></label><input type="file" id="vd_comprovAvistaInput" multiple accept=".pdf,image/*" onchange="vendaPickComprovAvista(this)" style="font-size:13px"><span id="vd_comprovAvistaStatus" style="font-size:12px;color:var(--warning);margin-left:8px"></span><div id="vd_comprovAvistaWrap" style="margin-top:8px"></div></div>
     <p style="font-size:11px;color:var(--text-mute);margin:2px 0 0">A comissão <strong>a receber de cada fornecedor</strong> (e a data de recebimento) é lançada em cada item acima — vira uma conta a receber por fornecedor no Financeiro.</p>
     <h4 style="margin:18px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Observações</h4>
     <div class="field"><textarea id="vd_observacoes" placeholder="Informações relevantes desta reserva">${escapeHtml(v.observacoes)}</textarea></div>
   </div>`;
-  renderVendaItens(); renderVendaPax(); renderVendaVouchers(); vendaUpdateComissaoTotal(); vendaUpdateRepasse(); vendaCarregarClientes();
+  renderVendaItens(); renderVendaPax(); renderVendaVouchers(); renderVendaComprovAvista(); vendaUpdateComissaoTotal(); vendaUpdateRepasse(); vendaCarregarClientes();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function renderVendaPax(){
   const wrap=document.getElementById('vd_paxWrap'); if(!wrap) return;
-  wrap.innerHTML=(currentVenda.passageiros||[]).map((p,i)=>`<div class="vd-pax-row" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;font-weight:700;color:var(--text-soft);text-transform:uppercase;letter-spacing:.04em">Passageiro ${i+1}</span>${(currentVenda.passageiros.length>1)?`<button class="btn-icon" title="Remover" onclick="vendaRemovePax(${i})" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`:''}</div><div class="field-row"><div class="field"><label>Nome completo do cliente <span style="font-weight:400;color:var(--text-mute);font-size:11px">(se já for cliente, aparece a sugestão para completar)</span></label><input class="vd-pax-nome" list="vd_clientesList" autocomplete="off" placeholder="Digite o nome…" value="${escapeHtml(p.nome||'')}" onchange="vendaPaxNomeChange(${i}, this.value)"></div><div class="field" style="max-width:170px"><label>Nascimento</label><input class="vd-pax-nasc" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(p.nascimento)}"></div></div></div>`).join('');
+  wrap.innerHTML=(currentVenda.passageiros||[]).map((p,i)=>`<div class="vd-pax-row" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;font-weight:700;color:var(--text-soft);text-transform:uppercase;letter-spacing:.04em">Passageiro ${i+1}</span>${(currentVenda.passageiros.length>1)?`<button class="btn-icon" title="Remover" onclick="vendaRemovePax(${i})" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`:''}</div><div class="field-row"><div class="field"><label>Nome completo do cliente</label><input class="vd-pax-nome" list="vd_clientesList" autocomplete="off" placeholder="Digite o nome…" value="${escapeHtml(p.nome||'')}" onchange="vendaPaxNomeChange(${i}, this.value)"></div><div class="field" style="max-width:170px"><label>Nascimento</label><input class="vd-pax-nasc" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(p.nascimento)}"></div></div></div>`).join('');
 }
 function _vendaReadPax(){ currentVenda.passageiros=[...document.querySelectorAll('#vd_paxWrap .vd-pax-row')].map(row=>({ nome:(row.querySelector('.vd-pax-nome').value||'').trim(), nascimento:_brToISO(row.querySelector('.vd-pax-nasc').value) })); if(!currentVenda.passageiros.length) currentVenda.passageiros=[{nome:'',nascimento:''}]; }
 function vendaAddPax(){ _vendaReadPax(); currentVenda.passageiros.push({nome:'',nascimento:''}); renderVendaPax(); }
@@ -2928,6 +2932,20 @@ function renderVendaVouchers(){
 }
 async function openVendaVoucher(i){ const d=(currentVenda.vouchers||[])[i]; if(!d||!d.path) return; const url=await cloudGetVendaDocUrl(d.path); if(url) window.open(url,'_blank'); else toast('Não foi possível abrir o voucher.','danger'); }
 async function vendaRemoveVoucher(i){ const d=(currentVenda.vouchers||[])[i]; if(!d) return; if(d.path) cloudDeleteVendaDoc(d.path); currentVenda.vouchers.splice(i,1); renderVendaVouchers(); }
+// Comprovante do recebimento à vista (PIX/PDF/imagem) — anexo financeiro da venda.
+async function vendaPickComprovAvista(input){
+  const files=[...(input.files||[])]; if(!files.length) return;
+  const st=document.getElementById('vd_comprovAvistaStatus'); if(st) st.textContent='⏳ Enviando…';
+  for(const f of files){ const doc=await cloudUploadVendaDoc(f); if(doc){ currentVenda.comprovantesAvista=currentVenda.comprovantesAvista||[]; currentVenda.comprovantesAvista.push(doc); } else { toast('Falha ao enviar '+(f.name||'arquivo'),'danger'); } }
+  if(st) st.textContent=''; input.value=''; renderVendaComprovAvista();
+}
+function renderVendaComprovAvista(){
+  const wrap=document.getElementById('vd_comprovAvistaWrap'); if(!wrap) return;
+  const docs=currentVenda.comprovantesAvista||[];
+  wrap.innerHTML=docs.length?`<div style="display:flex;flex-wrap:wrap;gap:8px">${docs.map((d,i)=>`<span style="display:inline-flex;align-items:center;gap:8px;font-size:12px;padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--surface-alt)"><button type="button" onclick="openVendaComprovAvista(${i})" style="background:none;border:none;color:var(--brand-blue);cursor:pointer">📎 ${escapeHtml(d.name||'arquivo')}</button><button type="button" onclick="vendaRemoveComprovAvista(${i})" title="Remover" style="background:none;border:none;color:var(--text-mute);cursor:pointer">×</button></span>`).join('')}</div>`:`<span style="font-size:12px;color:var(--text-mute)">Nenhum comprovante anexado.</span>`;
+}
+async function openVendaComprovAvista(i){ const d=(currentVenda.comprovantesAvista||[])[i]; if(!d||!d.path) return; const url=await cloudGetVendaDocUrl(d.path); if(url) window.open(url,'_blank'); else toast('Não foi possível abrir o comprovante.','danger'); }
+async function vendaRemoveComprovAvista(i){ const d=(currentVenda.comprovantesAvista||[])[i]; if(!d) return; if(d.path) cloudDeleteVendaDoc(d.path); currentVenda.comprovantesAvista.splice(i,1); renderVendaComprovAvista(); }
 function vendaUpdateComissaoTotal(){ const a=moneyBRToNum((document.getElementById('vd_comAgencia')||{}).value)||0; const b=[...document.querySelectorAll('#vd_itensWrap .vd-item-comfn')].reduce((s,el)=>s+(moneyBRToNum(el.value)||0),0); const t=document.getElementById('vd_comTotal'); if(t) t.value=moneyToBR(a+b); }
 function vendaUpdateRepasse(){ const av=moneyBRToNum((document.getElementById('vd_valorAvista')||{}).value)||0; const cm=moneyBRToNum((document.getElementById('vd_comAgencia')||{}).value)||0; const rep=Math.max(0,av-cm); const el=document.getElementById('vd_repasseInfo'); if(!el) return; el.textContent = rep>0 ? ('→ Repasse ao fornecedor: '+fmtBRL(rep)) : ((av>0&&av<cm) ? '⚠ O valor à vista está menor que a comissão — confira.' : ''); }
 
