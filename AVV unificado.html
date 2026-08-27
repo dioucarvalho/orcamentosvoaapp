@@ -4903,6 +4903,15 @@ function computeReservation(r){
   else if(preDT && preDT < n) preStatus = "Atrasado";
   if(preStatus==="Atrasado") alerts.push({type:"preembarque", level:"danger", msg:"Reunião de pré-embarque ATRASADA — sem confirmação"});
 
+  // Embarque nos próximos 40 dias e checklist ainda incompleto
+  if(idaDT && r.tripStatus!=="Cancelada" && !allDone){
+    const dias = Math.ceil(hoursBetween(n, idaDT)/24);
+    if(dias >= 0 && dias <= 40){
+      const faltam = CHECK_DEFS.length - concluded;
+      alerts.push({type:"checklist", level: dias<=7?"danger":"warning", msg:`Embarque ${dias<=0?"HOJE":"em "+dias+" dia(s)"} · ${faltam} item(ns) do checklist pendente(s)`});
+    }
+  }
+
   // Documentação do destino
   const requiredDocs = getDocsForDestination(r.destino);
 
