@@ -2576,7 +2576,7 @@ function renderContatosMain(c){
   c.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
       <div style="position:relative;flex:1;min-width:220px;max-width:420px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-mute)"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="contatoSearchInput" placeholder="Buscar por nome, CPF, telefone ou e-mail…" value="${escapeHtml(contatoSearch)}" oninput="contatoSearch=this.value;contatoPage=1;renderContatosList()" style="width:100%;padding:10px 12px 10px 36px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;outline:none"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">${isGestao?`<button class="btn btn-ghost" onclick="contatosMesclarDuplicados()">Mesclar duplicados</button>`:''}<button class="btn btn-primary" onclick="openContatoForm()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Novo contato</button></div>
+      <button class="btn btn-primary" onclick="openContatoForm()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Novo contato</button>
     </div>
     <div class="card"><div class="card-header"><h3 class="card-title">Clientes</h3><span class="badge neutral" id="contatosCount"></span></div><div id="contatosListWrap"></div></div>`;
   renderContatosList();
