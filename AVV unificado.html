@@ -422,6 +422,10 @@ table.tbl th.num{text-align:right}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         Vendas
       </div>
+      <div class="nav-item" data-view="contatos" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Contatos
+      </div>
       <div class="nav-item" data-view="financeiro" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg>
         Financeiro
@@ -1650,9 +1654,9 @@ async function handleLogoUpload(ev,onDone){
 /* ===== PAPÉIS DE ACESSO (espelham os roles do Supabase: admin/gerente/consultora) ===== */
 const ROLE_LABELS = { consultora:'Consultor(a)', gerente:'Gerente', admin:'Administrador' };
 const ROLE_MENUS = {
-  consultora: ['dashboard','orcamentos','vendas','controle','agenda','relatorios'],
-  gerente:    ['administracao','vendas','posvenda','voaapp'],
-  admin:      ['administracao','orcamentos','vendas','financeiro','controle','agenda','relatorios','posvenda','voaapp','liberarespaco']
+  consultora: ['dashboard','orcamentos','vendas','contatos','controle','agenda','relatorios'],
+  gerente:    ['administracao','vendas','contatos','posvenda','voaapp'],
+  admin:      ['administracao','orcamentos','vendas','contatos','financeiro','controle','agenda','relatorios','posvenda','voaapp','liberarespaco']
 };
 function userSlug(name){ return String(name||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'user'; }
 function currentRole(){ return (state.user&&state.user.role)||'consultora'; }
@@ -1693,7 +1697,7 @@ function requestNameChange(){
 }
 async function confirmNameChange(){ const pass=document.getElementById('adminPass').value; const newName=document.getElementById('newName').value.trim(); if(pass!==ADMIN_PASS){ toast('Senha incorreta','danger'); return; } if(!newName){ toast('Informe um novo nome','warning'); return; } state.user.name=newName; save(STORE.USER,state.user); document.getElementById('userName').textContent=newName; document.getElementById('topUserName').textContent=newName.split(' ')[0]; document.getElementById('userInitial').textContent=newName[0].toUpperCase(); closeModal(); const cloudOk=await cloudSaveNome(newName); toast(cloudOk?'Nome atualizado na nuvem':'Falhou ao confirmar na nuvem. Verifique a conexão e salve de novo.',cloudOk?'success':'warning'); }
 
-const VIEW_META = { administracao:{title:'Administração',sub:'Visão consolidada da equipe e da operação'}, dashboard:{title:'Dashboard',sub:'Visão geral do desempenho'}, orcamentos:{title:'Orçamentos',sub:'Gere, gerencie e acompanhe propostas de viagem'}, vendas:{title:'Vendas',sub:'Registro financeiro das vendas da agência'}, financeiro:{title:'Financeiro',sub:'Contas a pagar, a receber e saldo da agência'}, controle:{title:'Controle Diário',sub:'Rotina, metas e métricas do mês'}, agenda:{title:'Agenda de Viajantes',sub:'Calendário de embarques e oportunidades de upsell'}, relatorios:{title:'Relatórios',sub:'Exportação consolidada de desempenho em PDF'}, posvenda:{title:'Pós-Venda TZ Viagens',sub:'Painel gerencial de controle de viajantes'}, voaapp:{title:'VOA',sub:'Itinerário de viagem · TZ Viagens'}, liberarespaco:{title:'Liberar espaço',sub:'Apaga apenas fotos e PDFs antigos para liberar espaço na nuvem'} };
+const VIEW_META = { administracao:{title:'Administração',sub:'Visão consolidada da equipe e da operação'}, dashboard:{title:'Dashboard',sub:'Visão geral do desempenho'}, orcamentos:{title:'Orçamentos',sub:'Gere, gerencie e acompanhe propostas de viagem'}, vendas:{title:'Vendas',sub:'Registro financeiro das vendas da agência'}, contatos:{title:'Contatos',sub:'Cadastro e consulta dos clientes da agência'}, financeiro:{title:'Financeiro',sub:'Contas a pagar, a receber e saldo da agência'}, controle:{title:'Controle Diário',sub:'Rotina, metas e métricas do mês'}, agenda:{title:'Agenda de Viajantes',sub:'Calendário de embarques e oportunidades de upsell'}, relatorios:{title:'Relatórios',sub:'Exportação consolidada de desempenho em PDF'}, posvenda:{title:'Pós-Venda TZ Viagens',sub:'Painel gerencial de controle de viajantes'}, voaapp:{title:'VOA',sub:'Itinerário de viagem · TZ Viagens'}, liberarespaco:{title:'Liberar espaço',sub:'Apaga apenas fotos e PDFs antigos para liberar espaço na nuvem'} };
 function bindNav(){
   document.querySelectorAll('.nav-item').forEach(el=>{ el.addEventListener('click',()=>setView(el.dataset.view)); });
   document.getElementById('menuToggle').addEventListener('click',()=>{ document.getElementById('sidebar').classList.toggle('is-open'); });
@@ -1717,6 +1721,7 @@ function setView(view){
   if(view==='dashboard') renderDashboard(c);
   if(view==='orcamentos') renderOrcamentos(c);
   if(view==='vendas') renderVendas(c);
+  if(view==='contatos') renderContatos(c);
   if(view==='financeiro') renderFinanceiro(c);
   if(view==='controle') renderControle(c);
   if(view==='agenda') renderAgenda(c);
@@ -2531,6 +2536,131 @@ async function importarClientesDasVendas(){
   }
   state.clientes=Object.values(byId);
   toast(ok+' cliente(s) salvos/atualizados na agenda.',ok?'success':'warning');
+}
+
+// ============================================================================
+// MENU CONTATOS — CRM de clientes (lista, busca, cadastro, anexos de documento,
+// anti-duplicado por CPF / nome+nascimento). Compartilhado (todos veem); só a
+// gestão exclui (regra do banco). Reaproveita a tabela "clientes".
+// ============================================================================
+const CLIENTES_BUCKET='clientes-docs';
+let currentContato=null, contatoSearch='', contatoPage=1;
+function blankContato(){ return { id:'cli-'+uid(), nome:'', cpf:'', nascimento:'', sexo:'', nacionalidade:'', rg:'', passaporte:'', passaporteValidade:'', vistoTipo:'', vistoValidade:'', telefone:'', email:'', cidade:'', estado:'', pais:'', obs:'', docs:[], criadoEm:localNowISO(), atualizadoEm:localNowISO() }; }
+function _cpfDigits(s){ return String(s||'').replace(/\D/g,''); }
+function _cpfFmt(s){ const d=_cpfDigits(s).slice(0,11); if(!d) return ''; return d.replace(/^(\d{3})(\d)/,'$1.$2').replace(/^(\d{3})\.(\d{3})(\d)/,'$1.$2.$3').replace(/\.(\d{3})(\d{1,2})$/,'.$1-$2'); }
+function cpfMask(el){ el.value=_cpfFmt(el.value); }
+// Já existe um cliente igual? (por CPF; senão por nome+nascimento). Ignora o próprio id.
+function _clienteDuplicado(c, excludeId){
+  const cpf=_cpfDigits(c.cpf); const nomeN=_clienteNorm(c.nome), nasc=(c.nascimento||'');
+  return (state.clientes||[]).find(x=>{ if(!x||x.id===excludeId) return false;
+    if(cpf && _cpfDigits(x.cpf)===cpf) return true;
+    if(!cpf && !_cpfDigits(x.cpf) && _clienteNorm(x.nome)===nomeN && (x.nascimento||'')===nasc) return true;
+    return false; });
+}
+async function cloudDeleteCliente(id){ if(!sb) return false; try{ const { error }=await sb.from('clientes').delete().eq('id',id); if(error){ console.error('cloudDeleteCliente',error); return false; } return true; }catch(e){ console.error(e); return false; } }
+async function cloudUploadClienteDoc(file){ if(!sb||!state.user) return null; try{ const ext=(file.name||'arq').split('.').pop(); const path=state.user.id+'/'+Date.now()+'-'+Math.random().toString(36).slice(2,7)+'.'+ext; const { error }=await sb.storage.from(CLIENTES_BUCKET).upload(path, file, { contentType:file.type||'application/octet-stream', upsert:false }); if(error){ console.error('cloudUploadClienteDoc',error); return null; } return { name:file.name||'arquivo', path }; }catch(e){ console.error('cloudUploadClienteDoc',e); return null; } }
+async function cloudGetClienteDocUrl(path){ if(!sb||!path) return null; try{ const { data, error }=await sb.storage.from(CLIENTES_BUCKET).createSignedUrl(path,300); if(error){ console.error(error); return null; } return (data&&data.signedUrl)||null; }catch(e){ console.error(e); return null; } }
+async function cloudDeleteClienteDoc(path){ if(!sb||!path) return false; try{ const { error }=await sb.storage.from(CLIENTES_BUCKET).remove([path]); if(error){ console.error(error); return false; } return true; }catch(e){ console.error(e); return false; } }
+
+async function renderContatos(c){
+  c=c||document.getElementById('content'); if(!c) return;
+  c.innerHTML='<div class="card" style="text-align:center;padding:40px 24px"><div class="empty">Carregando contatos…</div></div>';
+  await cloudLoadClientes();
+  renderContatosMain(c);
+}
+function renderContatosMain(c){
+  c=c||document.getElementById('content'); if(!c) return;
+  const isGestao=(currentRole()==='admin'||currentRole()==='gerente');
+  const _ed=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+  const _tr=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>`;
+  const q=(contatoSearch||'').trim().toLowerCase(); const qd=q.replace(/\D/g,'');
+  let lista=(state.clientes||[]).slice().sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||''),'pt-BR'));
+  if(q){ lista=lista.filter(x=> String(x.nome||'').toLowerCase().includes(q) || (qd && _cpfDigits(x.cpf).includes(qd)) || String(x.telefone||'').toLowerCase().includes(q) || String(x.email||'').toLowerCase().includes(q) ); }
+  const _PER=10; const totalPg=Math.max(1,Math.ceil(lista.length/_PER)); if(contatoPage>totalPg) contatoPage=totalPg; if(contatoPage<1) contatoPage=1;
+  const pageItems=lista.slice((contatoPage-1)*_PER, contatoPage*_PER);
+  const _lim180=(()=>{ const d=new Date(); d.setDate(d.getDate()+180); return ymd(d); })();
+  const _idade=iso=>{ if(!iso) return ''; const d=new Date(iso); if(isNaN(d)) return ''; const t=new Date(); let a=t.getFullYear()-d.getFullYear(); const m=t.getMonth()-d.getMonth(); if(m<0||(m===0&&t.getDate()<d.getDate())) a--; return (a>=0&&a<130)?(a+' anos'):''; };
+  const linhas=pageItems.map(x=>{ const idade=_idade(x.nascimento); const passVenc=(x.passaporteValidade&&x.passaporteValidade<=_lim180)?` <span class="badge warning" style="font-size:10px" title="Passaporte vence em ${fmtDateBR(x.passaporteValidade)}">passaporte</span>`:''; const nDocs=(x.docs&&x.docs.length)||0; return `<tr onclick="openContatoForm('${x.id}')" style="cursor:pointer"><td><strong>${escapeHtml(x.nome||'—')}</strong>${passVenc}${nDocs?` <span class="badge neutral" style="font-size:10px">📎 ${nDocs}</span>`:''}</td><td>${x.cpf?escapeHtml(_cpfFmt(x.cpf)):'—'}</td><td>${escapeHtml(x.telefone||'—')}</td><td>${idade||(x.nascimento?fmtDateBR(x.nascimento):'—')}</td><td class="num" onclick="event.stopPropagation()"><button class="btn-icon" title="Ver/editar" onclick="openContatoForm('${x.id}')">${_ed}</button>${isGestao?`<button class="btn-icon" title="Excluir" onclick="deleteContato('${x.id}')" style="color:var(--danger)">${_tr}</button>`:''}</td></tr>`; }).join('');
+  c.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+      <div style="position:relative;flex:1;min-width:220px;max-width:420px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-mute)"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input placeholder="Buscar por nome, CPF, telefone ou e-mail…" value="${escapeHtml(contatoSearch)}" oninput="contatoSearch=this.value;contatoPage=1;renderContatosMain()" style="width:100%;padding:10px 12px 10px 36px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;outline:none"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${isGestao?`<button class="btn btn-ghost" onclick="contatosMesclarDuplicados()">Mesclar duplicados</button>`:''}<button class="btn btn-primary" onclick="openContatoForm()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Novo contato</button></div>
+    </div>
+    <div class="card"><div class="card-header"><h3 class="card-title">Clientes</h3><span class="badge neutral">${lista.length}${q?' no filtro':''}</span></div>${lista.length===0?`<div class="empty">${q?'Nenhum contato encontrado.':'Nenhum contato cadastrado ainda. Clique em "Novo contato".'}</div>`:`<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Idade</th><th class="num">Ações</th></tr></thead><tbody>${linhas}</tbody></table></div>${totalPg>1?`<div style="display:flex;justify-content:center;align-items:center;gap:12px;margin-top:14px"><button class="btn btn-ghost btn-sm" onclick="if(contatoPage>1){contatoPage--;renderContatosMain()}" ${contatoPage<=1?'disabled':''}>‹ Anterior</button><span style="font-size:13px;color:var(--text-soft)">Página ${contatoPage} de ${totalPg}</span><button class="btn btn-ghost btn-sm" onclick="if(contatoPage<${totalPg}){contatoPage++;renderContatosMain()}" ${contatoPage>=totalPg?'disabled':''}>Próxima ›</button></div>`:''}`}</div>`;
+}
+function openContatoForm(id){
+  const existing = id ? (state.clientes||[]).find(x=>x.id===id) : null;
+  currentContato = existing ? Object.assign(blankContato(), JSON.parse(JSON.stringify(existing))) : blankContato();
+  if(!Array.isArray(currentContato.docs)) currentContato.docs=[];
+  const v=currentContato;
+  const _h='margin:16px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins';
+  const sexoOpts=['','Masculino','Feminino','Outro'].map(s=>`<option value="${s}" ${v.sexo===s?'selected':''}>${s||'—'}</option>`).join('');
+  openModal(`<div class="modal-head"><h3>${id?'Editar contato':'Novo contato'}</h3><button class="btn-icon" onclick="closeModal()">×</button></div>
+    <div class="modal-body" style="max-height:72vh;overflow-y:auto">
+      <h4 style="${_h};margin-top:2px">Identificação</h4>
+      <div class="field"><label>Nome completo *</label><input id="cli_nome" value="${escapeHtml(v.nome)}"></div>
+      <div class="field-row"><div class="field"><label>CPF</label><input id="cli_cpf" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" value="${escapeHtml(_cpfFmt(v.cpf))}" oninput="cpfMask(this)"></div><div class="field" style="max-width:180px"><label>Nascimento</label><input id="cli_nasc" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.nascimento)}"></div></div>
+      <div class="field-row"><div class="field" style="max-width:200px"><label>Sexo</label><select id="cli_sexo">${sexoOpts}</select></div><div class="field"><label>Nacionalidade</label><input id="cli_nac" placeholder="Ex.: Brasileira" value="${escapeHtml(v.nacionalidade)}"></div></div>
+      <h4 style="${_h}">Documentos</h4>
+      <div class="field-row"><div class="field"><label>RG</label><input id="cli_rg" value="${escapeHtml(v.rg)}"></div><div class="field"><label>Passaporte (número)</label><input id="cli_pass" value="${escapeHtml(v.passaporte)}"></div><div class="field" style="max-width:180px"><label>Validade do passaporte</label><input id="cli_passval" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.passaporteValidade)}"></div></div>
+      <div class="field-row"><div class="field"><label>Visto (tipo)</label><input id="cli_visto" placeholder="Ex.: B1/B2, Schengen…" value="${escapeHtml(v.vistoTipo)}"></div><div class="field" style="max-width:180px"><label>Validade do visto</label><input id="cli_vistoval" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.vistoValidade)}"></div></div>
+      <div class="field"><label>Documentos anexados <span style="font-weight:400;color:var(--text-mute);font-size:11px">(foto do RG / passaporte)</span></label><input type="file" id="cli_docInput" multiple accept=".pdf,image/*" onchange="contatoPickDocs(this)" style="font-size:13px"><span id="cli_docStatus" style="font-size:12px;color:var(--warning);margin-left:8px"></span><div id="cli_docsWrap" style="margin-top:8px"></div></div>
+      <h4 style="${_h}">Contato</h4>
+      <div class="field-row"><div class="field"><label>Telefone / WhatsApp</label><input id="cli_tel" value="${escapeHtml(v.telefone)}"></div><div class="field"><label>E-mail</label><input id="cli_email" value="${escapeHtml(v.email)}"></div></div>
+      <div class="field-row"><div class="field"><label>Cidade</label><input id="cli_cidade" value="${escapeHtml(v.cidade)}"></div><div class="field" style="max-width:110px"><label>UF</label><input id="cli_estado" maxlength="2" value="${escapeHtml(v.estado)}"></div><div class="field"><label>País</label><input id="cli_pais" value="${escapeHtml(v.pais)}"></div></div>
+      <h4 style="${_h}">Observações / gostos do cliente</h4>
+      <div class="field"><textarea id="cli_obs" rows="3" placeholder="Preferências, gostos, restrições, datas especiais — tudo que ajuda a atender melhor.">${escapeHtml(v.obs)}</textarea></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveContatoForm('${id||''}')">Salvar</button></div>`);
+  renderContatoDocs();
+}
+async function contatoPickDocs(input){ const files=[...(input.files||[])]; if(!files.length||!currentContato) return; const st=document.getElementById('cli_docStatus'); if(st) st.textContent='Enviando…'; for(const f of files){ const doc=await cloudUploadClienteDoc(f); if(doc){ currentContato.docs=currentContato.docs||[]; currentContato.docs.push(doc); } else toast('Falha ao enviar '+(f.name||'arquivo'),'danger'); } if(st) st.textContent=''; input.value=''; renderContatoDocs(); }
+function renderContatoDocs(){ const wrap=document.getElementById('cli_docsWrap'); if(!wrap) return; const docs=(currentContato&&currentContato.docs)||[]; wrap.innerHTML=docs.length?`<div style="display:flex;flex-wrap:wrap;gap:8px">${docs.map((d,i)=>`<span style="display:inline-flex;align-items:center;gap:8px;font-size:12px;padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--surface-alt)"><button type="button" onclick="openContatoDoc(${i})" style="background:none;border:none;color:var(--brand-blue);cursor:pointer">📎 ${escapeHtml(d.name||'arquivo')}</button><button type="button" onclick="contatoRemoveDoc(${i})" title="Remover" style="background:none;border:none;color:var(--text-mute);cursor:pointer">×</button></span>`).join('')}</div>`:`<span style="font-size:12px;color:var(--text-mute)">Nenhum documento anexado.</span>`; }
+async function openContatoDoc(i){ const d=((currentContato&&currentContato.docs)||[])[i]; if(!d||!d.path) return; const url=await cloudGetClienteDocUrl(d.path); if(url) window.open(url,'_blank'); else toast('Não foi possível abrir o documento.','danger'); }
+async function contatoRemoveDoc(i){ const d=((currentContato&&currentContato.docs)||[])[i]; if(!d) return; if(d.path) cloudDeleteClienteDoc(d.path); currentContato.docs.splice(i,1); renderContatoDocs(); }
+async function saveContatoForm(id){
+  const g=i=>{ const e=document.getElementById(i); return e?e.value:''; };
+  const v=currentContato; if(!v) return;
+  v.nome=g('cli_nome').trim(); v.cpf=_cpfDigits(g('cli_cpf')); v.nascimento=_brToISO(g('cli_nasc'));
+  v.sexo=g('cli_sexo'); v.nacionalidade=g('cli_nac').trim();
+  v.rg=g('cli_rg').trim(); v.passaporte=g('cli_pass').trim(); v.passaporteValidade=_brToISO(g('cli_passval'));
+  v.vistoTipo=g('cli_visto').trim(); v.vistoValidade=_brToISO(g('cli_vistoval'));
+  v.telefone=g('cli_tel').trim(); v.email=g('cli_email').trim();
+  v.cidade=g('cli_cidade').trim(); v.estado=g('cli_estado').trim().toUpperCase(); v.pais=g('cli_pais').trim();
+  v.obs=g('cli_obs'); v.atualizadoEm=localNowISO();
+  if(!v.nome){ toast('Informe o nome do cliente.','warning'); return; }
+  const dup=_clienteDuplicado(v, v.id);
+  if(dup){ toast('Já existe um contato com esse '+(_cpfDigits(v.cpf)?'CPF':'nome e nascimento')+': "'+(dup.nome||'')+'". Não foi duplicado.','warning'); return; }
+  const idx=(state.clientes||[]).findIndex(x=>x.id===v.id);
+  if(idx>=0) state.clientes[idx]=v; else { state.clientes=state.clientes||[]; state.clientes.push(v); }
+  closeModal(); renderContatosMain();
+  const ok=await cloudSaveCliente(v); toast(ok?'Contato salvo':'Salvo localmente, mas a nuvem não confirmou.',ok?'success':'warning');
+}
+function deleteContato(id){ const c=(state.clientes||[]).find(x=>x.id===id); if(!c) return; if(!confirm('Excluir o contato "'+(c.nome||'')+'"? Os documentos anexados também serão removidos.')) return; (c.docs||[]).forEach(d=>{ if(d&&d.path) cloudDeleteClienteDoc(d.path); }); state.clientes=(state.clientes||[]).filter(x=>x.id!==id); renderContatosMain(); cloudDeleteCliente(id).then(ok=>toast(ok?'Contato excluído':'Removido localmente, mas a nuvem não confirmou (só a gestão pode excluir).',ok?'success':'warning')); }
+async function contatosMesclarDuplicados(){
+  const cs=(state.clientes||[]); if(!cs.length){ toast('Nenhum contato ainda.','info'); return; }
+  const groups={}; cs.forEach(x=>{ const cpf=_cpfDigits(x.cpf); const key=cpf?('cpf:'+cpf):('nn:'+_clienteNorm(x.nome)+'|'+(x.nascimento||'')); (groups[key]=groups[key]||[]).push(x); });
+  const dups=Object.values(groups).filter(g=>g.length>1);
+  if(!dups.length){ toast('Nenhum duplicado encontrado. 🎉','success'); return; }
+  const totalExtra=dups.reduce((s,g)=>s+(g.length-1),0);
+  if(!confirm('Encontrei '+dups.length+' cliente(s) com duplicados ('+totalExtra+' registro(s) a mais). Mesclar cada grupo num só (mantém o mais completo e junta dados/anexos)?')) return;
+  toast('Mesclando duplicados…','info');
+  const score=x=>['cpf','nascimento','telefone','email','rg','passaporte','obs'].reduce((s,k)=>s+((x[k]&&String(x[k]).trim())?1:0),0)+(((x.docs&&x.docs.length))||0);
+  let removidos=0;
+  for(const g of dups){
+    g.sort((a,b)=>score(b)-score(a)); const main=g[0];
+    for(let i=1;i<g.length;i++){ const o=g[i];
+      ['cpf','nascimento','sexo','nacionalidade','rg','passaporte','passaporteValidade','vistoTipo','vistoValidade','telefone','email','cidade','estado','pais'].forEach(k=>{ if((!main[k]||!String(main[k]).trim()) && o[k]) main[k]=o[k]; });
+      if(o.obs && String(main.obs||'').indexOf(o.obs)<0) main.obs=(main.obs?main.obs+'\n':'')+o.obs;
+      main.docs=(main.docs||[]).concat(o.docs||[]);
+      state.clientes=state.clientes.filter(x=>x.id!==o.id);
+      try{ await cloudDeleteCliente(o.id); }catch(e){}
+      removidos++;
+    }
+    main.atualizadoEm=localNowISO(); try{ await cloudSaveCliente(main); }catch(e){}
+  }
+  renderContatosMain();
+  toast(removidos+' duplicado(s) mesclados.','success');
 }
 
 function blankVenda(){ return { id:'v'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), ownerId:(state.user&&state.user.id)||'', owner:(state.user&&state.user.name)||'', orcamentoId:'', dataVenda:todayISO(), categoria:'', itens:[{categoria:'',valor:'',fornecedor:'',numReserva:'',comissaoFornecedor:'',dataRecebFornecedor:''}], fornecedor:'', ambito:'', dataInicio:'', dataFim:'', origem:'', destino:'', voosDetalhes:'', numReserva:'', valorTotal:'', passageiros:[{nome:'',nascimento:''}], titularContato:'', vouchers:[], comissaoAgencia:'', formaPagamento:'', valorAvista:'', comissaoFornecedor:'', comissaoTotal:'', dataRecebFornecedor:'', observacoes:'', preLancada:false, createdAt:localNowISO() }; }
