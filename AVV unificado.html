@@ -2767,7 +2767,7 @@ function renderVendasMain(){
   const periodoLabel=(vendaDateFrom&&vendaDateTo)?(fmtDateBR(vendaDateFrom)+' a '+fmtDateBR(vendaDateTo)):vendaDateFrom?('a partir de '+fmtDateBR(vendaDateFrom)):vendaDateTo?('até '+fmtDateBR(vendaDateTo)):'';
   const porCat={}; base.forEach(v=>{ vendaItens(v).forEach(it=>{ const cat=it.categoria||'outros'; porCat[cat]=(porCat[cat]||0)+(Number(it.valor)||0); }); });
   const catsComValor=VENDA_CATS.filter(c=>porCat[c.id]>0);
-  const legenda=catsComValor.map(c=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0"><span style="width:12px;height:12px;border-radius:3px;background:${c.cor};flex-shrink:0"></span><span style="flex:1;font-size:13px;color:var(--text-soft)">${c.nome}</span><strong style="font-size:13px;color:var(--text)">${fmtBRL(porCat[c.id])}</strong></div>`).join('');
+  const legenda=catsComValor.map(c=>`<div onclick="vendasCatDetalhe('${c.id}')" title="Ver as vendas desta categoria" style="display:flex;align-items:center;gap:8px;padding:6px;cursor:pointer;border-radius:6px" onmouseover="this.style.background='var(--surface-alt)'" onmouseout="this.style.background=''"><span style="width:12px;height:12px;border-radius:3px;background:${c.cor};flex-shrink:0"></span><span style="flex:1;font-size:13px;color:var(--text-soft)">${c.nome}</span><strong style="font-size:13px;color:var(--text)">${fmtBRL(porCat[c.id])}</strong></div>`).join('');
   const graficoHTML = catsComValor.length
     ? `<div style="display:grid;grid-template-columns:minmax(0,260px) 1fr;gap:18px;align-items:center" class="vendas-graf"><div style="position:relative;height:240px"><canvas id="vendasChart"></canvas></div><div>${legenda}</div></div>`
     : `<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 21H3V3"/><path d="M7 14l4-4 3 3 5-6"/></svg>${temP?'Nenhuma venda no período.':'Ainda não há vendas lançadas. Clique em "Nova venda" para começar.'}</div>`;
@@ -2790,12 +2790,29 @@ function renderVendasMain(){
   if(catsComValor.length && window.Chart){
     const ctx=document.getElementById('vendasChart');
     if(ctx){ if(window._vendasChart&&typeof window._vendasChart.destroy==='function') window._vendasChart.destroy();
-      window._vendasChart=new Chart(ctx,{type:'doughnut',data:{labels:catsComValor.map(c=>c.nome),datasets:[{data:catsComValor.map(c=>porCat[c.id]),backgroundColor:catsComValor.map(c=>c.cor),borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{display:false},tooltip:{callbacks:{label:(ctx)=>' '+ctx.label+': '+fmtBRL(ctx.parsed)}}}}});
+      window._vendasChart=new Chart(ctx,{type:'doughnut',data:{labels:catsComValor.map(c=>c.nome),datasets:[{data:catsComValor.map(c=>porCat[c.id]),backgroundColor:catsComValor.map(c=>c.cor),borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',onClick:(ev,els)=>{ if(els&&els.length){ const c=catsComValor[els[0].index]; if(c) vendasCatDetalhe(c.id); } },onHover:(ev,els)=>{ if(ev&&ev.native&&ev.native.target) ev.native.target.style.cursor=(els&&els.length)?'pointer':'default'; },plugins:{legend:{display:false},tooltip:{callbacks:{label:(ctx)=>' '+ctx.label+': '+fmtBRL(ctx.parsed)}}}}});
     }
   }
   renderVendaTable();
 }
 function vendaDateFilter(el,which){ vendaDateMask(el); const iso=_brToISO(el.value); if(which==='from') vendaDateFrom=iso; else vendaDateTo=iso; renderVendaTable(); }
+// Drill-down da pizza de Vendas: clicar numa categoria abre a lista de itens que a compõem.
+function vendasCatDetalhe(catId){
+  const vendasAll=(state.vendas||[]).slice();
+  const vendas=vendaOwnerFiltro?vendasAll.filter(v=>v.owner===vendaOwnerFiltro):vendasAll;
+  const temP=!!(vendaDateFrom||vendaDateTo);
+  const efectivoMes=!temP&&vendaMesSoAtual;
+  const base=temP?vendas.filter(v=>{ const d=v.dataVenda||''; if(!d) return false; if(vendaDateFrom&&d<vendaDateFrom) return false; if(vendaDateTo&&d>vendaDateTo) return false; return true; }):(efectivoMes?vendas.filter(v=>monthOf(v.dataVenda)===currentMonth()):vendas);
+  const cat=vendaCat(catId);
+  const linhas=[];
+  base.forEach(v=>{ vendaItens(v).forEach(it=>{ if((it.categoria||'outros')===catId && Number(it.valor)>0){ linhas.push({v, it}); } }); });
+  if(!linhas.length){ toast('Sem vendas nessa categoria no período.','info'); return; }
+  linhas.sort((a,b)=>(b.v.dataVenda||'').localeCompare(a.v.dataVenda||''));
+  const total=linhas.reduce((s,x)=>s+(Number(x.it.valor)||0),0);
+  const rows=linhas.map(x=>{ const v=x.v, it=x.it; const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'—'; return `<tr><td>${v.dataVenda?fmtDateBR(v.dataVenda):'—'}</td><td><strong>${escapeHtml(tit)}</strong></td><td>${escapeHtml(it.fornecedor||v.fornecedor||'—')}</td><td>${escapeHtml(it.numReserva||'—')}</td><td class="num">${fmtBRL(it.valor)}</td></tr>`; }).join('');
+  const per=(vendaDateFrom&&vendaDateTo)?(fmtDateBR(vendaDateFrom)+' a '+fmtDateBR(vendaDateTo)):(efectivoMes?monthLabelBR(currentMonth()):'todas as vendas');
+  openModal(`<div class="modal-head"><h3><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${cat.cor};margin-right:6px;vertical-align:middle"></span>${escapeHtml(cat.nome)}</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body" style="max-height:70vh;overflow-y:auto"><p style="font-size:12px;color:var(--text-mute);margin:0 0 12px">${per}${vendaOwnerFiltro?(' · '+escapeHtml(vendaOwnerFiltro)):''} · <strong>${linhas.length} item(ns)</strong></p><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Data</th><th>Titular</th><th>Fornecedor</th><th>Nº reserva</th><th class="num">Valor</th></tr></thead><tbody>${rows}</tbody><tfoot><tr style="font-weight:700;background:var(--surface-alt)"><td colspan="4">Total</td><td class="num">${fmtBRL(total)}</td></tr></tfoot></table></div></div><div class="modal-foot"><button class="btn btn-primary" onclick="closeModal()">Fechar</button></div>`);
+}
 function renderVendaTable(){
   const wrap=document.getElementById('vendaTableWrap'); if(!wrap) return;
   const isGestao=(currentRole()==='admin'||currentRole()==='gerente');
