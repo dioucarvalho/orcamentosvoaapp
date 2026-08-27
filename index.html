@@ -2426,7 +2426,7 @@ const VENDA_CATS = [
 ];
 function vendaCat(id){ return VENDA_CATS.find(c=>c.id===id)||VENDA_CATS[VENDA_CATS.length-1]; }
 let currentVenda=null;
-let vendaSearch='', vendaDateFrom='', vendaDateTo='', vendaOwnerFiltro='', vendaMesSoAtual=true;
+let vendaSearch='', vendaDateFrom='', vendaDateTo='', vendaOwnerFiltro='', vendaMesSoAtual=true, vendaTablePage=1;
 
 // Datas em texto com máscara (dd/mm/aaaa) e conversão para o formato interno.
 function vendaDateMask(el){ const v=el.value.replace(/[^\d]/g,'').slice(0,8); let out=v.slice(0,2); if(v.length>=3) out=v.slice(0,2)+'/'+v.slice(2,4); if(v.length>=5) out=v.slice(0,2)+'/'+v.slice(2,4)+'/'+v.slice(4,8); el.value=out; }
@@ -2722,6 +2722,7 @@ function renderVendas(c){ c.innerHTML=`<div id="vendaFormWrap"></div><div id="ve
 
 function renderVendasMain(){
   const wrap=document.getElementById('vendaMainWrap'); if(!wrap) return;
+  vendaTablePage=1; // ao filtrar/re-renderizar, volta pra 1ª página da lista
   const fw=document.getElementById('vendaFormWrap'); if(fw) fw.innerHTML='';
   wrap.style.display='';
   const isGestao=(currentRole()==='admin'||currentRole()==='gerente');
@@ -2756,7 +2757,7 @@ function renderVendasMain(){
     </div>
     <div class="card" style="margin-bottom:18px"><div class="card-header"><h3 class="card-title">Quanto a agência vendeu por categoria</h3><span class="badge neutral">${temP?'no período':'total geral'}</span></div>${graficoHTML}</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center">
-      <div style="position:relative;flex:1;min-width:220px;max-width:420px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-mute)"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="vendaSearchInput" placeholder="Buscar por nome do passageiro ou nº da reserva..." value="${escapeHtml(vendaSearch)}" oninput="vendaSearch=this.value;renderVendaTable()" style="width:100%;padding:10px 12px 10px 36px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;outline:none"></div>
+      <div style="position:relative;flex:1;min-width:220px;max-width:420px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-mute)"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="vendaSearchInput" placeholder="Buscar por nome do passageiro ou nº da reserva..." value="${escapeHtml(vendaSearch)}" oninput="vendaSearch=this.value;vendaTablePage=1;renderVendaTable()" style="width:100%;padding:10px 12px 10px 36px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;outline:none"></div>
     </div>
     <div id="vendaTableWrap"></div>`;
   if(catsComValor.length && window.Chart){
@@ -2775,21 +2776,19 @@ function renderVendaTable(){
   if(vendaOwnerFiltro){ list=list.filter(v=>v.owner===vendaOwnerFiltro); }
   const temP=!!(vendaDateFrom||vendaDateTo);
   if(temP){ list=list.filter(v=>{ const d=(v.dataVenda||''); if(!d) return false; if(vendaDateFrom&&d<vendaDateFrom) return false; if(vendaDateTo&&d>vendaDateTo) return false; return true; }); }
-  else if(vendaMesSoAtual){ list=list.filter(v=>monthOf(v.dataVenda)===currentMonth()); }
   const q=(vendaSearch||'').trim().toLowerCase();
   if(q){ list=list.filter(v=> ((v.numReserva||'').toLowerCase().includes(q)) || ((v.id||'').toLowerCase().includes(q)) || ((v.fornecedor||'').toLowerCase().includes(q)) || ((v.destino||'').toLowerCase().includes(q)) || (vendaItens(v).some(it=>((it.numReserva||'').toLowerCase().includes(q))||((it.fornecedor||'').toLowerCase().includes(q)))) || ((v.passageiros||[]).some(p=>(p.nome||'').toLowerCase().includes(q))) ); }
   const filtrando=!!(q||vendaDateFrom||vendaDateTo);
-  const _mo=currentMonth();
-  const _mLabel=monthLabelBR(_mo).replace(/^./,c=>c.toUpperCase());
-  const _mesBadge=!temP?`<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:${vendaMesSoAtual?'var(--brand-blue)':'var(--text-mute)'};background:${vendaMesSoAtual?'rgba(59,130,246,.08)':'var(--surface-alt)'};padding:5px 12px;border-radius:20px;border:1.5px solid ${vendaMesSoAtual?'rgba(59,130,246,.25)':'var(--border)'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;flex-shrink:0"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>${_mLabel}<button onclick="vendaMesSoAtual=!vendaMesSoAtual;renderVendasMain()" style="background:none;border:none;color:${vendaMesSoAtual?'var(--brand-blue)':'var(--text-mute)'};cursor:pointer;font-size:11px;padding:0;margin-left:4px;text-decoration:underline;text-underline-offset:2px">${vendaMesSoAtual?'Ver todos':'Só este mês'}</button></span>`:'';
-  const linhas = list.map(v=>{
+  const _PER=15; const _totalPg=Math.max(1,Math.ceil(list.length/_PER)); if(vendaTablePage>_totalPg) vendaTablePage=_totalPg; if(vendaTablePage<1) vendaTablePage=1;
+  const _pageItems=list.slice((vendaTablePage-1)*_PER, vendaTablePage*_PER);
+  const linhas = _pageItems.map(v=>{
     const catIds=[...new Set(vendaItens(v).map(it=>it.categoria).filter(Boolean))];
     const catBadges=(catIds.length?catIds:['']).map(id=>{ const c=vendaCat(id); return `<span class="badge neutral" style="background:${c.cor}22;color:${c.cor};border:none">${c.nome}</span>`; }).join(' ');
     const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'—';
     const status=v.preLancada?`<span class="badge warning">Pré-lançada</span>`:`<span class="badge success">Lançada</span>`;
     return `<tr><td>${v.dataVenda?fmtDateBR(v.dataVenda):'—'}</td><td><strong>${escapeHtml(tit)}</strong></td><td><div style="display:flex;flex-wrap:wrap;gap:4px">${catBadges}</div></td><td>${escapeHtml(v.fornecedor||'—')}</td>${isGestao?`<td>${escapeHtml(v.owner||'—')}</td>`:''}<td>${escapeHtml(v.destino||'—')}</td><td class="num">${v.valorTotal?fmtBRL(v.valorTotal):'—'}</td><td class="num">${v.comissaoTotal?fmtBRL(v.comissaoTotal):'—'}</td><td>${status}</td><td class="num"><button class="btn-icon" title="Visualizar (só leitura)" onclick="visualizarVenda('${v.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="btn-icon" title="Editar/completar" onclick="editVenda('${v.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="btn-icon" title="Excluir" onclick="deleteVenda('${v.id}')" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></td></tr>`;
   }).join('');
-  wrap.innerHTML=`<div class="card"><div class="card-header"><h3 class="card-title">Vendas registradas</h3><div style="display:flex;align-items:center;gap:8px">${_mesBadge}<span class="badge neutral">${list.length}${filtrando?' no filtro':''}</span></div></div>${list.length===0?`<div class="empty">${(!filtrando&&vendaMesSoAtual&&!temP)?'Nenhuma venda em '+_mLabel+'.':filtrando?'Nenhuma venda encontrada para esse filtro.':'Nenhuma venda ainda.'}</div>`:`<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Data</th><th>Titular</th><th>Categoria</th><th>Fornecedor</th>${isGestao?'<th>Consultor(a)</th>':''}<th>Destino</th><th class="num">Valor total</th><th class="num">Comissão</th><th>Status</th><th class="num">Ações</th></tr></thead><tbody>${linhas}</tbody></table></div>`}</div>`;
+  wrap.innerHTML=`<div class="card"><div class="card-header"><h3 class="card-title">Vendas registradas</h3><span class="badge neutral">${list.length}${filtrando?' no filtro':''}</span></div>${list.length===0?`<div class="empty">${filtrando?'Nenhuma venda encontrada para esse filtro.':'Nenhuma venda ainda.'}</div>`:`<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Data</th><th>Titular</th><th>Categoria</th><th>Fornecedor</th>${isGestao?'<th>Consultor(a)</th>':''}<th>Destino</th><th class="num">Valor total</th><th class="num">Comissão</th><th>Status</th><th class="num">Ações</th></tr></thead><tbody>${linhas}</tbody></table></div>${_totalPg>1?`<div style="display:flex;justify-content:center;align-items:center;gap:12px;margin-top:14px"><button class="btn btn-ghost btn-sm" onclick="if(vendaTablePage>1){vendaTablePage--;renderVendaTable()}" ${vendaTablePage<=1?'disabled':''}>‹ Anterior</button><span style="font-size:13px;color:var(--text-soft)">Página ${vendaTablePage} de ${_totalPg}</span><button class="btn btn-ghost btn-sm" onclick="if(vendaTablePage<${_totalPg}){vendaTablePage++;renderVendaTable()}" ${vendaTablePage>=_totalPg?'disabled':''}>Próxima ›</button></div>`:''}`}</div>`;
 }
 // Quadro SÓ-LEITURA de uma venda (sem risco de editar). Mostra itens (localizador,
 // fornecedor, comissões, datas), passageiros, vouchers, voos e observações.
