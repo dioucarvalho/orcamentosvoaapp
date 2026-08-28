@@ -2908,10 +2908,12 @@ function openVendaForm(id){
   const main=document.getElementById('vendaMainWrap'); if(main) main.style.display='none';
   const fw=document.getElementById('vendaFormWrap'); if(!fw) return;
   const v=currentVenda;
+  const _ehGestao=(currentRole()==='admin'||currentRole()==='gerente');
+  const _vendaNova=!id;
   fw.innerHTML=`<div class="card">
     <div class="card-header"><h3 class="card-title">${id?'Editar venda':'Nova venda'}${v.preLancada?' <span class="badge warning" style="vertical-align:middle">pré-lançada do orçamento</span>':''}</h3><div style="display:flex;gap:8px"><button class="btn btn-success btn-sm" onclick="saveVendaForm()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Salvar</button><button class="btn btn-ghost btn-sm" onclick="closeVendaForm()">Cancelar</button></div></div>
     <h4 style="margin:14px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Dados da venda</h4>
-    <div class="field-row"><div class="field"><label>Data da venda</label><input id="vd_dataVenda" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataVenda)}"></div><div class="field"><label>Âmbito</label><select id="vd_ambito"><option value="" ${!v.ambito?'selected':''}>Selecione…</option><option value="nacional" ${v.ambito==='nacional'?'selected':''}>Nacional</option><option value="internacional" ${v.ambito==='internacional'?'selected':''}>Internacional</option></select></div></div>
+    <div class="field-row"><div class="field"><label>Data da venda</label>${_ehGestao?`<input id="vd_dataVenda" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(v.dataVenda)}">`:`<input id="vd_dataVenda" value="${_isoToBR(v.dataVenda)}" readonly title="A data é travada no dia atual. Apenas a gestão pode alterar." style="background:var(--surface-alt);cursor:not-allowed"><div style="font-size:11px;color:var(--text-mute);margin-top:4px">🔒 Travada no dia atual — apenas a gestão pode alterar</div>`}</div><div class="field"><label>Âmbito</label><select id="vd_ambito"><option value="" ${!v.ambito?'selected':''}>Selecione…</option><option value="nacional" ${v.ambito==='nacional'?'selected':''}>Nacional</option><option value="internacional" ${v.ambito==='internacional'?'selected':''}>Internacional</option></select></div></div>
     <h4 style="margin:18px 0 4px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Itens da venda <span style="font-weight:400;color:var(--text-mute);font-size:11px">(cada item tem sua categoria, valor, fornecedor e comissão a receber — ex.: Pacote na operadora X + Seguro na seguradora Y. O total é a soma dos itens.)</span></h4>
     <div id="vd_itensWrap"></div>
     <button class="btn btn-ghost btn-sm" onclick="vendaAddItem()">+ Adicionar item</button>
@@ -2941,6 +2943,7 @@ function openVendaForm(id){
     <div class="field"><textarea id="vd_observacoes" placeholder="Informações relevantes desta reserva">${escapeHtml(v.observacoes)}</textarea></div>
   </div>`;
   renderVendaItens(); renderVendaPax(); renderVendaVouchers(); renderVendaComprovAvista(); vendaUpdateComissaoTotal(); vendaUpdateRepasse(); vendaCarregarClientes();
+  if(!_ehGestao && _vendaNova){ dataAtualServidor().then(d=>{ if(currentVenda){ currentVenda.dataVenda=d; } const el=document.getElementById('vd_dataVenda'); if(el) el.value=_isoToBR(d); }); }
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function renderVendaPax(){
@@ -3072,9 +3075,23 @@ async function mesAtualServidor(){
   try{ const { data }=await sb.rpc('mes_atual_servidor'); return data||currentMonth(); }
   catch(e){ return currentMonth(); }
 }
+// Data (dia) do SERVIDOR — fonte de verdade imune ao relógio do PC. Usada para travar a
+// data da venda das consultoras. Requer a função SQL 'data_atual_servidor' (migração).
+async function dataAtualServidor(){
+  try{ const { data, error }=await sb.rpc('data_atual_servidor'); if(!error && data){ return String(data).slice(0,10); } }
+  catch(e){ console.warn('data_atual_servidor indisponível — usando relógio local (rode a migração)'); }
+  return todayISO();
+}
 async function saveVendaForm(){
   _vendaReadForm();
   const v=currentVenda;
+  // SEGURANÇA: só a gestão pode escolher a data. Consultora tem a data travada no dia do
+  // SERVIDOR (imune a mudar o relógio do PC). Em edição, mantém a data original da venda.
+  if(!(currentRole()==='admin'||currentRole()==='gerente')){
+    const _ex=(state.vendas||[]).find(x=>x.id===v.id);
+    if(_ex){ v.dataVenda=_ex.dataVenda||v.dataVenda; }
+    else { v.dataVenda=await dataAtualServidor(); }
+  }
   const itens=(v.itens||[]).filter(it=>it.categoria||(Number(it.valor)>0));
   if(!itens.length){ toast('Adicione ao menos um ITEM (categoria + valor) na venda.','warning'); return; }
   if(itens.some(it=>!it.categoria)){ toast('Todo item precisa de uma CATEGORIA.','warning'); return; }
