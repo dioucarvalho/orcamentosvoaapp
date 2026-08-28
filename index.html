@@ -3150,6 +3150,49 @@ function setFinChartTipo(t){ finChartTipo=t; renderFinanceiroMain(); }
 function finChartShift(n){ finChartMes=monthAdd(finChartMes||currentMonth(),n); finChartFrom=''; finChartTo=''; renderFinanceiroMain(); }
 function finChartHoje(){ finChartMes=currentMonth(); finChartFrom=''; finChartTo=''; renderFinanceiroMain(); }
 function finChartLimparPeriodo(){ finChartFrom=''; finChartTo=''; renderFinanceiroMain(); }
+
+// ---- Gráfico "De onde veio o dinheiro" — comissões por FORNECEDOR (período próprio) ----
+let finComMes='', finComFrom='', finComTo='';
+function finComShift(n){ finComMes=monthAdd(finComMes||currentMonth(),n); finComFrom=''; finComTo=''; renderFinanceiroMain(); }
+function finComHoje(){ finComMes=currentMonth(); finComFrom=''; finComTo=''; renderFinanceiroMain(); }
+function finComLimparPeriodo(){ finComFrom=''; finComTo=''; renderFinanceiroMain(); }
+function _finComVendas(){
+  const mes=finComMes||currentMonth();
+  const usaInterv=!!(finComFrom&&finComTo);
+  const perFrom=usaInterv?finComFrom:(mes+'-01');
+  const perTo=usaInterv?finComTo:ultimoDia(mes);
+  return (state.vendas||[]).filter(v=>{ const d=(v.dataVenda||'').slice(0,10); if(!d) return false; return d>=perFrom && d<=perTo; });
+}
+// Distribui a comissão TOTAL da venda (agência + fornecedores) entre o(s) fornecedor(es).
+// Peso = comissão de cada item; se não houver comissão por item (só à vista), divide igual.
+function _finComPorFornecedor(v){
+  const its=vendaItens(v);
+  const total=Number(v.comissaoTotal)||((Number(v.comissaoAgencia)||0)+its.reduce((s,it)=>s+(Number(it.comissaoFornecedor)||0),0));
+  if(!(total>0)) return [];
+  const pesos={}; let soma=0;
+  its.forEach(it=>{ const f=(it.fornecedor||'').trim()||'Sem fornecedor'; const c=Number(it.comissaoFornecedor)||0; pesos[f]=(pesos[f]||0)+c; soma+=c; });
+  const forns=Object.keys(pesos);
+  if(!forns.length) return [{fornecedor:'Sem fornecedor', valor:total}];
+  if(soma>0) return forns.map(f=>({fornecedor:f, valor: total*(pesos[f]/soma)}));
+  const q=total/forns.length;
+  return forns.map(f=>({fornecedor:f, valor:q}));
+}
+function _finComAgregado(){
+  const por={};
+  _finComVendas().forEach(v=>{ _finComPorFornecedor(v).forEach(d=>{ por[d.fornecedor]=(por[d.fornecedor]||0)+d.valor; }); });
+  return por;
+}
+function finComDetalhe(fornecedor){
+  const linhas=[];
+  _finComVendas().forEach(v=>{ const d=_finComPorFornecedor(v).find(x=>x.fornecedor===fornecedor); if(d&&d.valor>0){ linhas.push({v, valor:d.valor}); } });
+  if(!linhas.length){ toast('Sem comissão desse fornecedor no período.','info'); return; }
+  linhas.sort((a,b)=>(b.v.dataVenda||'').localeCompare(a.v.dataVenda||''));
+  const total=linhas.reduce((s,x)=>s+x.valor,0);
+  const isGestao=(currentRole()==='admin'||currentRole()==='gerente');
+  const rows=linhas.map(x=>{ const v=x.v; const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'—'; return `<tr><td>${v.dataVenda?fmtDateBR(v.dataVenda):'—'}</td><td><strong>${escapeHtml(tit)}</strong></td>${isGestao?`<td>${escapeHtml(v.owner||'—')}</td>`:''}<td>${escapeHtml(v.destino||'—')}</td><td class="num">${fmtBRL(v.comissaoTotal||0)}</td><td class="num"><strong>${fmtBRL(x.valor)}</strong></td><td class="num"><button class="btn-icon" title="Visualizar (só leitura)" onclick="closeModal();visualizarVenda('${v.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></td></tr>`; }).join('');
+  const per=(finComFrom&&finComTo)?(fmtDateBR(finComFrom)+' a '+fmtDateBR(finComTo)):monthLabelBR(finComMes||currentMonth());
+  openModal(`<div class="modal-head"><h3>${escapeHtml(fornecedor)}</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body" style="max-height:70vh;overflow-y:auto"><p style="font-size:12px;color:var(--text-mute);margin:0 0 12px">Comissões · ${per} · <strong>${linhas.length} venda(s)</strong></p><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Data</th><th>Titular</th>${isGestao?'<th>Consultor(a)</th>':''}<th>Destino</th><th class="num">Comissão da venda</th><th class="num">Deste fornecedor</th><th class="num"></th></tr></thead><tbody>${rows}</tbody><tfoot><tr style="font-weight:700;background:var(--surface-alt)"><td colspan="${isGestao?5:4}">Total</td><td class="num">${fmtBRL(total)}</td><td></td></tr></tfoot></table></div></div><div class="modal-foot"><button class="btn btn-primary" onclick="closeModal()">Fechar</button></div>`);
+}
 // Ocorrências REALIZADAS (pagas/recebidas) no período do gráfico, respeitando conta e tipo.
 function _finChartOcorrencias(){
   const mes=finChartMes||currentMonth();
@@ -3468,6 +3511,15 @@ function renderFinanceiroMain(c){
   const _chartBody=_chartCats.length?`<div style="display:grid;grid-template-columns:minmax(0,240px) 1fr;gap:18px;align-items:center" class="vendas-graf"><div style="position:relative;height:230px"><canvas id="finChart"></canvas></div><div>${_chartLegenda}</div></div><div style="text-align:right;margin-top:10px;font-size:13px;color:var(--text-soft)">Total ${finChartTipo==='pagar'?'gasto':'recebido'} no período: <strong style="color:var(--text)">${fmtBRL(_chartTotal)}</strong></div>`:`<div class="empty">Nenhuma ${finChartTipo==='pagar'?'despesa paga':'receita recebida'} no período selecionado.</div>`;
   const _dcC="padding:7px 9px;border-radius:8px;border:1.5px solid var(--border);font-size:12px;outline:none;width:112px";
   const _chartCard=`<div class="card" style="margin-top:18px"><div class="card-header"><h3 class="card-title">Para onde foi o dinheiro${finContaSel?` <span style="font-weight:400;font-size:12px;color:var(--text-mute)">· ${escapeHtml(finContaNome(finContaSel))}</span>`:''}</h3></div><div style="display:flex;align-items:center;gap:8px;justify-content:center;flex-wrap:wrap;margin:4px 0 14px">${_usaInterv?'':`<button class="btn-icon" onclick="finChartShift(-1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button><strong style="min-width:140px;text-align:center;font-family:Poppins;color:var(--brand-blue);font-size:14px">${monthLabelBR(_mesChart)}</strong><button class="btn-icon" onclick="finChartShift(1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button><button class="btn btn-ghost btn-sm" onclick="finChartHoje()">Mês atual</button><span style="width:1px;height:20px;background:var(--border);margin:0 4px"></span>`}<span style="font-size:12px;font-weight:600;color:var(--text-soft)">De</span><input inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="${_isoToBR(finChartFrom)}" oninput="vendaDateMask(this)" onchange="finChartFrom=_brToISO(this.value);renderFinanceiroMain()" style="${_dcC}"><span style="font-size:12px;font-weight:600;color:var(--text-soft)">Até</span><input inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="${_isoToBR(finChartTo)}" oninput="vendaDateMask(this)" onchange="finChartTo=_brToISO(this.value);renderFinanceiroMain()" style="${_dcC}">${_usaInterv?`<button title="Limpar período" onclick="finChartLimparPeriodo()" style="background:none;border:none;color:var(--text-mute);font-size:18px;cursor:pointer;line-height:1">×</button>`:''}</div>${_chartBody}</div>`;
+  // ---- Gráfico "De onde veio o dinheiro" (comissões por fornecedor no período) ----
+  const _comMes=finComMes||currentMonth();
+  const _comInterv=!!(finComFrom&&finComTo);
+  const _porForn=_finComAgregado();
+  const _comForns=Object.keys(_porForn).filter(k=>_porForn[k]>0).sort((a,b)=>_porForn[b]-_porForn[a]);
+  const _comTotal=_comForns.reduce((s,k)=>s+_porForn[k],0);
+  const _comLegenda=_comForns.map((k,i)=>`<div onclick="finComDetalhe('${_finJs(k)}')" title="Ver as vendas deste fornecedor" style="display:flex;align-items:center;gap:8px;padding:6px;cursor:pointer;border-radius:6px" onmouseover="this.style.background='var(--surface-alt)'" onmouseout="this.style.background=''"><span style="width:12px;height:12px;border-radius:3px;background:${_finPalette[i%_finPalette.length]};flex-shrink:0"></span><span style="flex:1;font-size:13px;color:var(--text-soft)">${escapeHtml(k)}</span><strong style="font-size:13px;color:var(--text)">${fmtBRL(_porForn[k])}</strong><span style="font-size:11px;color:var(--text-mute);min-width:40px;text-align:right">${_comTotal?Math.round(_porForn[k]/_comTotal*100):0}%</span></div>`).join('');
+  const _comBody=_comForns.length?`<div style="display:grid;grid-template-columns:minmax(0,240px) 1fr;gap:18px;align-items:center" class="vendas-graf"><div style="position:relative;height:230px"><canvas id="finComChart"></canvas></div><div>${_comLegenda}</div></div><div style="text-align:right;margin-top:10px;font-size:13px;color:var(--text-soft)">Total de comissões no período: <strong style="color:var(--text)">${fmtBRL(_comTotal)}</strong></div>`:`<div class="empty">Nenhuma comissão de venda no período selecionado.</div>`;
+  const _comCard=`<div class="card" style="margin-top:18px"><div class="card-header"><h3 class="card-title">De onde veio o dinheiro <span style="font-weight:400;font-size:12px;color:var(--text-mute)">· comissões por fornecedor</span></h3></div><div style="display:flex;align-items:center;gap:8px;justify-content:center;flex-wrap:wrap;margin:4px 0 14px">${_comInterv?'':`<button class="btn-icon" onclick="finComShift(-1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button><strong style="min-width:140px;text-align:center;font-family:Poppins;color:var(--brand-blue);font-size:14px">${monthLabelBR(_comMes)}</strong><button class="btn-icon" onclick="finComShift(1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button><button class="btn btn-ghost btn-sm" onclick="finComHoje()">Mês atual</button><span style="width:1px;height:20px;background:var(--border);margin:0 4px"></span>`}<span style="font-size:12px;font-weight:600;color:var(--text-soft)">De</span><input inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="${_isoToBR(finComFrom)}" oninput="vendaDateMask(this)" onchange="finComFrom=_brToISO(this.value);renderFinanceiroMain()" style="${_dcC}"><span style="font-size:12px;font-weight:600;color:var(--text-soft)">Até</span><input inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="${_isoToBR(finComTo)}" oninput="vendaDateMask(this)" onchange="finComTo=_brToISO(this.value);renderFinanceiroMain()" style="${_dcC}">${_comInterv?`<button title="Limpar período" onclick="finComLimparPeriodo()" style="background:none;border:none;color:var(--text-mute);font-size:18px;cursor:pointer;line-height:1">×</button>`:''}</div>${_comBody}</div>`;
   const _saldoLabel=_contaAtual?('Saldo · '+escapeHtml(_contaAtual.nome)):'Saldo total (todas as contas)';
   const _saldoSub=_contaAtual?`<button class="btn btn-ghost btn-sm" style="padding:2px 10px" onclick="finEditarSaldoConta('${_contaAtual.id}')">Atualizar saldo</button>`:`${_contas.length} conta(s)`;
   const _visaoGeral=(!finContaSel && _contas.length>1)?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">${_contas.map(cc=>`<button onclick="setFinConta('${cc.id}')" style="cursor:pointer;background:var(--surface-alt);border:1.5px solid var(--border);border-radius:10px;padding:8px 14px;font-size:12px;color:var(--text-soft)">${escapeHtml(cc.nome)}${cc.padrao?' (Padrão)':''}: <strong style="color:var(--text)">${fmtBRL(Number(cc.saldo)||0)}</strong></button>`).join('')}</div>`:'';
@@ -3491,9 +3543,11 @@ function renderFinanceiroMain(c){
       </div>
       ${body}
     </div>
-    ${_chartCard}`;
+    ${_chartCard}
+    ${_comCard}`;
   updateFinBadge();
   if(_chartCats.length && window.Chart){ const _cx=document.getElementById('finChart'); if(_cx){ if(window._finChart&&typeof window._finChart.destroy==='function') window._finChart.destroy(); window._finChart=new Chart(_cx,{type:'doughnut',data:{labels:_chartCats,datasets:[{data:_chartCats.map(k=>_porCat[k]),backgroundColor:_chartCats.map((k,i)=>_finPalette[i%_finPalette.length]),borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',onClick:(ev,els)=>{ if(els&&els.length){ const cat=_chartCats[els[0].index]; if(cat) finChartDetalhe(cat); } },onHover:(ev,els)=>{ if(ev&&ev.native&&ev.native.target) ev.native.target.style.cursor=(els&&els.length)?'pointer':'default'; },plugins:{legend:{display:false},tooltip:{callbacks:{label:(cc)=>' '+cc.label+': '+fmtBRL(cc.parsed)}}}}}); } }
+  if(_comForns.length && window.Chart){ const _ccx=document.getElementById('finComChart'); if(_ccx){ if(window._finComChart&&typeof window._finComChart.destroy==='function') window._finComChart.destroy(); window._finComChart=new Chart(_ccx,{type:'doughnut',data:{labels:_comForns,datasets:[{data:_comForns.map(k=>_porForn[k]),backgroundColor:_comForns.map((k,i)=>_finPalette[i%_finPalette.length]),borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',onClick:(ev,els)=>{ if(els&&els.length){ const f=_comForns[els[0].index]; if(f) finComDetalhe(f); } },onHover:(ev,els)=>{ if(ev&&ev.native&&ev.native.target) ev.native.target.style.cursor=(els&&els.length)?'pointer':'default'; },plugins:{legend:{display:false},tooltip:{callbacks:{label:(cc)=>' '+cc.label+': '+fmtBRL(cc.parsed)}}}}}); } }
 }
 function setFinTab(t){ finTab=t; renderFinanceiroMain(); }
 // Pergunta a conta na baixa quando há 2+ contas; com 1 conta, vai direto.
