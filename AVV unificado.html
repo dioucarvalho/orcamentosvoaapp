@@ -3430,7 +3430,7 @@ async function reconciliarVendasFinanceiro(){
   const ledger=state._vendaLedger||{};
   const find=id=>state.financeiro.find(x=>x.id===id);
   const vivos=new Set(vendas.map(v=>v.id));
-  let saldoDelta=0, ledgerMudou=false; const salvar=[], apagar=[];
+  let saldoDelta=0, ledgerMudou=false, autoAlvo=0; const salvar=[], apagar=[];
 
   for(const v of vendas){
     if(baseSet.has(v.id)) continue; // venda anterior à automação: ignora
@@ -3442,7 +3442,8 @@ async function reconciliarVendasFinanceiro(){
     const L=ledger[v.id]||{ag:0,fn:null,rep:0};
 
     // ---- AGÊNCIA: entra no saldo (via ledger) e vira lançamento recebido no histórico ----
-    if(comAg!==L.ag){ saldoDelta+=(comAg-L.ag); L.ag=comAg; ledgerMudou=true; }
+    if(comAg!==L.ag){ L.ag=comAg; ledgerMudou=true; }
+    autoAlvo+=comAg; // recompõe o total automático do saldo (idempotente)
     const agE=find('comag-'+v.id);
     if(comAg>0){
       if(!agE){ const it=Object.assign(blankFin('receber'),{ id:'comag-'+v.id, auto:true, vendaId:v.id, contaId:finContaPadraoId(), forma:(v.formaPagamento||''), descricao:'Comissão da agência — '+tit+ref, categoria:'Comissão de venda', origem:v.owner||'', valor:comAg, pago:true, dataPago:dataV, vencimento:dataV }); state.financeiro.unshift(it); salvar.push(it); }
@@ -3474,7 +3475,8 @@ async function reconciliarVendasFinanceiro(){
     const somaRepItens=_repItens.reduce((s,it)=>s+(Number(it.repasse)||0),0);
     const usaSplitRep=somaRepItens>0;
     const repasse = usaSplitRep ? somaRepItens : Math.max(0, (Number(v.valorAvista)||0) - comAg);
-    if((L.rep||0)!==repasse){ saldoDelta+=(repasse-(L.rep||0)); L.rep=repasse; ledgerMudou=true; }
+    if((L.rep||0)!==repasse){ L.rep=repasse; ledgerMudou=true; }
+    autoAlvo+=repasse;
     const repInE=find('repin-'+v.id);
     const repFornDefault=v.fornecedor||(_repItens.map(it=>it.fornecedor).filter(Boolean)[0])||'';
     if(repasse>0){
@@ -3511,8 +3513,9 @@ async function reconciliarVendasFinanceiro(){
 
   // 2) Vendas EXCLUÍDAS: reverte o saldo e remove os lançamentos automáticos órfãos.
   for(const vid of Object.keys(ledger)){
+    if(vid.charAt(0)==='_') continue; // chave reservada (âncora do saldo), não é uma venda
     if(vivos.has(vid)||baseSet.has(vid)) continue;
-    const L=ledger[vid]||{}; if(Number(L.ag)) saldoDelta-=Number(L.ag)||0; if(Number(L.rep)) saldoDelta-=Number(L.rep)||0;
+    const L=ledger[vid]||{}; // saldo NÃO é estornado aqui: o recálculo por autoAlvo já exclui a venda sumida
     const a=find('comag-'+vid); if(a){ state.financeiro=state.financeiro.filter(x=>x.id!==a.id); apagar.push(a.id); }
     const ri=find('repin-'+vid); if(ri){ state.financeiro=state.financeiro.filter(x=>x.id!==ri.id); apagar.push(ri.id); }
     const rokeys=(L.repKeys&&L.repKeys.length)?L.repKeys:['repout-'+vid];
@@ -3521,6 +3524,14 @@ async function reconciliarVendasFinanceiro(){
     fkeys.forEach(k=>{ const f=find(k); if(f&&!f.pago){ state.financeiro=state.financeiro.filter(x=>x.id!==f.id); apagar.push(f.id); } });
     delete ledger[vid]; ledgerMudou=true;
   }
+
+  // 2b) SALDO ROBUSTO (idempotente). O total automático que a reconciliação joga na conta
+  // padrão (comissão da agência já recebida + valor à vista recebido p/ repasse) é RECALCULADO
+  // do zero a cada vez (autoAlvo) e comparado com uma âncora persistida. Só a diferença REAL
+  // entra no saldo. Assim, trocar/duplicar o ID de uma venda não corrompe mais o saldo, e o
+  // "a pagar"/"a receber" continua esperando a baixa manual pra mexer no caixa.
+  if(typeof ledger.__saldoAuto!=='number'){ ledger.__saldoAuto=autoAlvo; ledgerMudou=true; } // 1ª vez: ancora sem mexer no saldo atual
+  else if(autoAlvo!==ledger.__saldoAuto){ saldoDelta+=(autoAlvo-ledger.__saldoAuto); ledger.__saldoAuto=autoAlvo; ledgerMudou=true; }
 
   // 3) Persiste tudo.
   state._vendaLedger=ledger;
