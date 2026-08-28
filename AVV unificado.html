@@ -3159,8 +3159,9 @@ function finComLimparPeriodo(){ finComFrom=''; finComTo=''; renderFinanceiroMain
 function _finComVendas(){
   const mes=finComMes||currentMonth();
   const usaInterv=!!(finComFrom&&finComTo);
+  const _ult=ym=>{ const p=String(ym).split('-'); return ym+'-'+String(new Date(Number(p[0]),Number(p[1]),0).getDate()).padStart(2,'0'); };
   const perFrom=usaInterv?finComFrom:(mes+'-01');
-  const perTo=usaInterv?finComTo:ultimoDia(mes);
+  const perTo=usaInterv?finComTo:_ult(mes);
   return (state.vendas||[]).filter(v=>{ const d=(v.dataVenda||'').slice(0,10); if(!d) return false; return d>=perFrom && d<=perTo; });
 }
 // Distribui a comissão TOTAL da venda (agência + fornecedores) entre o(s) fornecedor(es).
