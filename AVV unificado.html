@@ -1944,56 +1944,6 @@ function saleMonthOfOrc(o){
   return monthOf((lv&&lv.dataVenda)||o.closedAt||o.createdAt);
 }
 
-// TEMPORÁRIO: padroniza os fornecedores escritos à mão nas vendas para as opções
-// fixas (VENDA_FORNECEDORES). Mostra prévia; só aplica ao confirmar; branco fica intacto.
-function _normForn(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]/g,''); }
-function _matchFornCanonico(manual){
-  const m=_normForn(manual); if(!m) return null;
-  const N=VENDA_FORNECEDORES.map(c=>({c, n:_normForn(c)}));
-  let h=N.filter(x=>x.n===m); if(h.length===1) return h[0].c;
-  h=N.filter(x=>x.n.startsWith(m)||m.startsWith(x.n)); if(h.length===1) return h[0].c;
-  h=N.filter(x=>Math.min(x.n.length,m.length)>=4 && (x.n.includes(m)||m.includes(x.n))); if(h.length===1) return h[0].c;
-  return null;
-}
-function _planoFornecedores(){
-  const canon=new Set(VENDA_FORNECEDORES); const mapa={}; const semMatch=new Set();
-  (state.vendas||[]).forEach(v=>{
-    const its=(Array.isArray(v.itens)&&v.itens.length)?v.itens:null;
-    const valores=its?its.map(it=>it.fornecedor):[v.fornecedor];
-    valores.forEach(f=>{ f=(f||'').trim(); if(!f||canon.has(f)) return; if(mapa[f]!==undefined||semMatch.has(f)) return; const to=_matchFornCanonico(f); if(to) mapa[f]=to; else semMatch.add(f); });
-  });
-  return {mapa, semMatch:[...semMatch]};
-}
-function migrarFornecedoresVendas(){
-  if(currentRole()!=='admin'&&currentRole()!=='gerente'){ toast('Só a gestão pode.','warning'); return; }
-  const {mapa,semMatch}=_planoFornecedores();
-  const pares=Object.keys(mapa).sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  if(!pares.length && !semMatch.length){ toast('Todos os fornecedores já estão padronizados. 🎉','success'); return; }
-  const _l='font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em';
-  const mapaHTML=pares.length?`<div style="overflow-x:auto"><table class="tbl" style="font-size:13px"><thead><tr><th>Escrito à mão</th><th></th><th>Vai virar</th></tr></thead><tbody>${pares.map(f=>`<tr><td>${escapeHtml(f)}</td><td style="color:var(--text-mute)">→</td><td><strong>${escapeHtml(mapa[f])}</strong></td></tr>`).join('')}</tbody></table></div>`:`<p style="font-size:13px;color:var(--text-mute)">Nenhum fornecedor a padronizar.</p>`;
-  const semHTML=semMatch.length?`<div style="margin-top:16px"><div style="${_l};color:var(--warning);margin-bottom:6px">Não reconheci (${semMatch.length}) — ficam como estão:</div><div style="display:flex;flex-wrap:wrap;gap:6px">${semMatch.map(s=>`<span class="badge neutral">${escapeHtml(s)}</span>`).join('')}</div></div>`:'';
-  openModal(`<div class="modal-head"><h3>Padronizar fornecedores das vendas</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body" style="max-height:70vh;overflow-y:auto"><p style="font-size:13px;color:var(--text-soft);margin:0 0 12px">Confira antes de aplicar. Só troco os fornecedores escritos à mão que reconheci pela lista oficial. <strong>Branco fica intacto</strong> e nada mais é alterado.</p>${mapaHTML}${semHTML}</div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>${pares.length?`<button class="btn btn-primary" onclick="_aplicarFornecedores()">Aplicar (${pares.length} tipo(s))</button>`:''}</div>`);
-}
-async function _aplicarFornecedores(){
-  const {mapa}=_planoFornecedores(); const canon=new Set(VENDA_FORNECEDORES);
-  let itensAlt=0, vendasAlt=0; const salvar=[];
-  (state.vendas||[]).forEach(v=>{
-    let changed=false;
-    if(Array.isArray(v.itens)&&v.itens.length){
-      v.itens.forEach(it=>{ const f=(it.fornecedor||'').trim(); if(!f||canon.has(f)) return; if(mapa[f]){ it.fornecedor=mapa[f]; changed=true; itensAlt++; } });
-      if(changed){ v.fornecedor=[...new Set(v.itens.map(x=>(x.fornecedor||'').trim()).filter(Boolean))].join(' / '); }
-    } else {
-      const f=(v.fornecedor||'').trim(); if(f && !canon.has(f) && mapa[f]){ v.fornecedor=mapa[f]; changed=true; itensAlt++; }
-    }
-    if(changed){ vendasAlt++; salvar.push(v); }
-  });
-  closeModal();
-  if(!salvar.length){ toast('Nada a atualizar.','info'); return; }
-  toast('Atualizando '+vendasAlt+' venda(s)… aguarde.','info');
-  let ok=0; for(const v of salvar){ try{ if(await cloudSaveVenda(v)) ok++; }catch(e){ console.error('padron forn',e); } }
-  renderVendasMain();
-  toast(ok+' venda(s) atualizadas · '+itensAlt+' fornecedor(es) padronizado(s).','success');
-}
 async function renderAdmin(c){
   const verR$ = adminPodeVerValores();
   // Privacidade do administrador: só quem é ADMIN vê os dados de um administrador
@@ -2179,11 +2129,6 @@ async function renderAdmin(c){
       </div>
       ${Backend.mode==='local'?`<p style="font-size:12px;color:var(--warning);margin-top:10px">⚠️ Modo local: este painel mostra os dados deste navegador. Ao ligar o Supabase, ele passa a mostrar <strong>todos os colaboradores</strong> automaticamente.</p>`:''}
     </div>
-    ${(currentRole()==='admin'||currentRole()==='gerente')?`<div class="card" style="margin-bottom:18px;border:1.5px dashed var(--warning)">
-      <div class="card-header"><h3 class="card-title">Padronizar fornecedores das vendas antigas</h3><span class="badge warning">temporário</span></div>
-      <p style="font-size:13px;color:var(--text-soft);margin:0 0 12px">Analisa todas as vendas já lançadas e troca os fornecedores escritos à mão pela opção oficial correspondente. Mostra uma prévia antes de aplicar; fornecedor em branco fica intacto e nada mais é alterado.</p>
-      <button class="btn btn-primary" onclick="migrarFornecedoresVendas()">Analisar e padronizar</button>
-    </div>`:''}
     ${cardsHTML}
     ${rankHTML}
     ${metasHTML}
@@ -2461,7 +2406,7 @@ function parsePeriodo(text){
    Infográfico interativo (rosca) por categoria + lista + formulário "Nova venda".
    Escopo de acesso garantido pela RLS (consultor: só as próprias; gestão: todas).
    ============================================================================ */
-const VENDA_FORNECEDORES=['BRT Operadora','Orinter','Cativa','FRT','Visual','Sakura','Skyteam','Hero Seguradora','HotelDo','Azul Viagens','GlobeTrotter','TZ Viagens (Serviço Próprio)','Incomum','Schultz','VitalCard'];
+const VENDA_FORNECEDORES=['BRT Operadora','Orinter','Cativa','FRT','Visual','Sakura','Skyteam','Hero Seguradora','HotelDo','Azul Viagens','GlobeTrotter','TZ Viagens (Serviço Próprio)','Incomum','Schultz','VitalCard','MSC Cruzeiros'];
 const VENDA_CATS = [
   {id:'cruzeiro',    nome:'Cruzeiro',            cor:'#0ea5e9'},
   {id:'aereo',       nome:'Passagens / Aéreo',   cor:'#6366f1'},
