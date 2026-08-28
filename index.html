@@ -2741,10 +2741,10 @@ async function contatosMesclarDuplicados(){
   toast(removidos+' duplicado(s) mesclados.','success');
 }
 
-function blankVenda(){ return { id:'v'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), ownerId:(state.user&&state.user.id)||'', owner:(state.user&&state.user.name)||'', orcamentoId:'', dataVenda:todayISO(), categoria:'', itens:[{categoria:'',valor:'',fornecedor:'',numReserva:'',comissaoFornecedor:'',dataRecebFornecedor:''}], fornecedor:'', ambito:'', dataInicio:'', dataFim:'', origem:'', destino:'', voosDetalhes:'', numReserva:'', valorTotal:'', passageiros:[{nome:'',nascimento:''}], titularContato:'', vouchers:[], comissaoAgencia:'', formaPagamento:'', valorAvista:'', comprovantesAvista:[], comissaoFornecedor:'', comissaoTotal:'', dataRecebFornecedor:'', observacoes:'', preLancada:false, createdAt:localNowISO() }; }
+function blankVenda(){ return { id:'v'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), ownerId:(state.user&&state.user.id)||'', owner:(state.user&&state.user.name)||'', orcamentoId:'', dataVenda:todayISO(), categoria:'', itens:[{categoria:'',valor:'',fornecedor:'',numReserva:'',comissaoFornecedor:'',dataRecebFornecedor:'',comissaoAvista:'',repasse:''}], fornecedor:'', ambito:'', dataInicio:'', dataFim:'', origem:'', destino:'', voosDetalhes:'', numReserva:'', valorTotal:'', passageiros:[{nome:'',nascimento:''}], titularContato:'', vouchers:[], comissaoAgencia:'', formaPagamento:'', valorAvista:'', comprovantesAvista:[], comissaoFornecedor:'', comissaoTotal:'', dataRecebFornecedor:'', observacoes:'', preLancada:false, createdAt:localNowISO() }; }
 // Itens da venda (categoria + valor). Compatível com vendas antigas: se não houver
 // "itens", deriva um item único a partir da categoria/valorTotal salvos antes.
-function vendaItens(v){ if(v && Array.isArray(v.itens) && v.itens.length) return v.itens; return [{categoria:(v&&v.categoria)||'', valor:(v&&v.valorTotal)||'', fornecedor:(v&&v.fornecedor)||'', numReserva:(v&&v.numReserva)||'', comissaoFornecedor:(v&&v.comissaoFornecedor)||'', dataRecebFornecedor:(v&&v.dataRecebFornecedor)||''}]; }
+function vendaItens(v){ if(v && Array.isArray(v.itens) && v.itens.length) return v.itens; return [{categoria:(v&&v.categoria)||'', valor:(v&&v.valorTotal)||'', fornecedor:(v&&v.fornecedor)||'', numReserva:(v&&v.numReserva)||'', comissaoFornecedor:(v&&v.comissaoFornecedor)||'', dataRecebFornecedor:(v&&v.dataRecebFornecedor)||'', comissaoAvista:'', repasse:''}]; }
 
 function renderVendas(c){ c.innerHTML=`<div id="vendaFormWrap"></div><div id="vendaMainWrap"></div>`; renderVendasMain(); }
 
@@ -2878,6 +2878,7 @@ function visualizarVenda(id){
         ${(Number(v.valorAvista)>0 && (Number(v.valorAvista)-(Number(v.comissaoAgencia)||0))>0)?dado('Repasse ao fornecedor',fmtBRL(Number(v.valorAvista)-(Number(v.comissaoAgencia)||0))):''}
         ${dado('Comissão total','<strong>'+(v.comissaoTotal?fmtBRL(v.comissaoTotal):'—')+'</strong>')}
       </div>
+      ${(()=>{ const reps=(vendaItens(v)||[]).filter(it=>Number(it.repasse)>0); if(reps.length<=1) return ''; return `<div style="margin:-4px 0 14px"><div style="${_lbl};margin:0 0 6px;color:var(--brand-blue)">Repasse a pagar por fornecedor</div><div style="overflow-x:auto"><table class="tbl" style="font-size:13px"><tbody>${reps.map(it=>`<tr><td>${escapeHtml((it.fornecedor||'').trim()||'—')}</td><td class="num"><strong>${fmtBRL(it.repasse)}</strong></td></tr>`).join('')}</tbody></table></div></div>`; })()}
       <div style="${_lbl};margin:6px 0 6px;color:var(--brand-blue)">Viagem</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:10px">
         ${dado('Início',v.dataInicio?fmtDateBR(v.dataInicio):'')}
@@ -2933,6 +2934,7 @@ function openVendaForm(id){
     <div class="field" style="max-width:340px"><label>Forma de pagamento <span style="font-weight:400;color:var(--text-mute);font-size:11px">(da comissão recebida na agência)</span></label><select id="vd_formaPagamento">${_formaOpts(v.formaPagamento)}</select></div>
     <div class="field" style="max-width:420px"><label>Total recebido à vista na conta da agência (R$) <span style="font-weight:400;color:var(--text-mute);font-size:11px">(opcional — se o cliente pagou parte à vista na sua conta, incluindo a parte do fornecedor)</span></label><input id="vd_valorAvista" type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(v.valorAvista)}" oninput="voaMoneyMask(this);vendaUpdateRepasse()"></div>
     <div id="vd_repasseInfo" style="font-size:12px;color:var(--brand-blue);font-weight:600;margin:-2px 0 0"></div>
+    <div id="vd_splitWrap"></div>
     <div class="field" style="max-width:420px;margin-top:12px"><label>Comprovante do recebimento à vista</label><input type="file" id="vd_comprovAvistaInput" multiple accept=".pdf,image/*" onchange="vendaPickComprovAvista(this)" style="font-size:13px"><span id="vd_comprovAvistaStatus" style="font-size:12px;color:var(--warning);margin-left:8px"></span><div id="vd_comprovAvistaWrap" style="margin-top:8px"></div></div>
     <p style="font-size:11px;color:var(--text-mute);margin:2px 0 0">A comissão <strong>a receber de cada fornecedor</strong> (e a data de recebimento) é lançada em cada item acima — vira uma conta a receber por fornecedor no Financeiro.</p>
     <h4 style="margin:18px 0 8px;color:var(--brand-blue);font-size:14px;font-family:Poppins">Observações</h4>
@@ -2948,7 +2950,7 @@ function renderVendaPax(){
 function _vendaReadPax(){ currentVenda.passageiros=[...document.querySelectorAll('#vd_paxWrap .vd-pax-row')].map(row=>({ nome:(row.querySelector('.vd-pax-nome').value||'').trim().toUpperCase(), nascimento:_brToISO(row.querySelector('.vd-pax-nasc').value) })); if(!currentVenda.passageiros.length) currentVenda.passageiros=[{nome:'',nascimento:''}]; }
 function vendaAddPax(){ _vendaReadPax(); currentVenda.passageiros.push({nome:'',nascimento:''}); renderVendaPax(); }
 function vendaRemovePax(i){ _vendaReadPax(); currentVenda.passageiros.splice(i,1); if(!currentVenda.passageiros.length) currentVenda.passageiros=[{nome:'',nascimento:''}]; renderVendaPax(); }
-function _blankVendaItem(){ return {categoria:'',valor:'',fornecedor:'',numReserva:'',comissaoFornecedor:'',dataRecebFornecedor:''}; }
+function _blankVendaItem(){ return {categoria:'',valor:'',fornecedor:'',numReserva:'',comissaoFornecedor:'',dataRecebFornecedor:'',comissaoAvista:'',repasse:''}; }
 function renderVendaItens(){
   const wrap=document.getElementById('vd_itensWrap'); if(!wrap) return;
   const itens=(currentVenda.itens&&currentVenda.itens.length)?currentVenda.itens:[_blankVendaItem()];
@@ -2957,11 +2959,11 @@ function renderVendaItens(){
     const opts=`<option value="">Selecione…</option>`+VENDA_CATS.filter(c=>c.id!=='outros').slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')).map(c=>`<option value="${c.id}" ${it.categoria===c.id?'selected':''}>${c.nome}</option>`).join('');
     const fornOpts=`<option value="">Selecione…</option>`+((it.fornecedor&&VENDA_FORNECEDORES.indexOf(it.fornecedor)<0)?`<option value="${escapeHtml(it.fornecedor)}" selected>${escapeHtml(it.fornecedor)} (antigo)</option>`:'')+VENDA_FORNECEDORES.slice().sort((a,b)=>a.localeCompare(b,'pt-BR')).map(f=>`<option value="${escapeHtml(f)}" ${it.fornecedor===f?'selected':''}>${escapeHtml(f)}</option>`).join('');
     const rem=itens.length>1?`<button class="btn-icon" title="Remover item" onclick="vendaRemoveItem(${i})" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`:'';
-    return `<div class="vd-item-row" style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-size:12px;font-weight:700;color:var(--text-soft);text-transform:uppercase;letter-spacing:.04em">Item ${i+1}</span>${rem}</div><div class="field-row"><div class="field"><label>Categoria</label><select class="vd-item-cat" onchange="_vendaReadItens()">${opts}</select></div><div class="field" style="max-width:180px"><label>Valor (R$)</label><input class="vd-item-valor" type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(it.valor)}" oninput="voaMoneyMask(this);vendaItensTotalUpdate()"></div></div><div class="field-row"><div class="field"><label>Fornecedor deste item</label><select class="vd-item-forn" onchange="_vendaReadItens()">${fornOpts}</select></div><div class="field"><label>Nº da reserva neste fornecedor</label><input class="vd-item-numres" placeholder="Localizador / código" value="${escapeHtml(it.numReserva||'')}" onchange="_vendaReadItens()"></div></div><div class="field-row"><div class="field" style="max-width:200px"><label>Comissão a receber (R$)</label><input class="vd-item-comfn" type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(it.comissaoFornecedor)}" oninput="voaMoneyMask(this);vendaUpdateComissaoTotal()"></div><div class="field" style="max-width:180px"><label>Data prev. recebimento</label><input class="vd-item-dtreceb" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(it.dataRecebFornecedor)}"></div></div></div>`;
+    return `<div class="vd-item-row" style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-size:12px;font-weight:700;color:var(--text-soft);text-transform:uppercase;letter-spacing:.04em">Item ${i+1}</span>${rem}</div><div class="field-row"><div class="field"><label>Categoria</label><select class="vd-item-cat" onchange="_vendaReadItens()">${opts}</select></div><div class="field" style="max-width:180px"><label>Valor (R$)</label><input class="vd-item-valor" type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(it.valor)}" oninput="voaMoneyMask(this);vendaItensTotalUpdate()"></div></div><div class="field-row"><div class="field"><label>Fornecedor deste item</label><select class="vd-item-forn" onchange="_vendaReadItens();renderVendaSplitPanel()">${fornOpts}</select></div><div class="field"><label>Nº da reserva neste fornecedor</label><input class="vd-item-numres" placeholder="Localizador / código" value="${escapeHtml(it.numReserva||'')}" onchange="_vendaReadItens()"></div></div><div class="field-row"><div class="field" style="max-width:200px"><label>Comissão a receber (R$)</label><input class="vd-item-comfn" type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(it.comissaoFornecedor)}" oninput="voaMoneyMask(this);vendaUpdateComissaoTotal()"></div><div class="field" style="max-width:180px"><label>Data prev. recebimento</label><input class="vd-item-dtreceb" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" oninput="vendaDateMask(this)" value="${_isoToBR(it.dataRecebFornecedor)}"></div></div></div>`;
   }).join('');
-  vendaItensTotalUpdate(); vendaUpdateComissaoTotal();
+  vendaItensTotalUpdate(); vendaUpdateComissaoTotal(); renderVendaSplitPanel();
 }
-function _vendaReadItens(){ const rows=[...document.querySelectorAll('#vd_itensWrap .vd-item-row')]; if(rows.length){ currentVenda.itens=rows.map(r=>({ categoria:r.querySelector('.vd-item-cat').value, valor:moneyBRToNum(r.querySelector('.vd-item-valor').value)||'', fornecedor:(r.querySelector('.vd-item-forn').value||'').trim(), numReserva:(r.querySelector('.vd-item-numres').value||'').trim(), comissaoFornecedor:moneyBRToNum(r.querySelector('.vd-item-comfn').value)||'', dataRecebFornecedor:_brToISO(r.querySelector('.vd-item-dtreceb').value) })); } if(!currentVenda.itens||!currentVenda.itens.length) currentVenda.itens=[_blankVendaItem()]; }
+function _vendaReadItens(){ const rows=[...document.querySelectorAll('#vd_itensWrap .vd-item-row')]; const _prev=currentVenda.itens||[]; if(rows.length){ currentVenda.itens=rows.map((r,idx)=>({ categoria:r.querySelector('.vd-item-cat').value, valor:moneyBRToNum(r.querySelector('.vd-item-valor').value)||'', fornecedor:(r.querySelector('.vd-item-forn').value||'').trim(), numReserva:(r.querySelector('.vd-item-numres').value||'').trim(), comissaoFornecedor:moneyBRToNum(r.querySelector('.vd-item-comfn').value)||'', dataRecebFornecedor:_brToISO(r.querySelector('.vd-item-dtreceb').value), comissaoAvista:(_prev[idx]&&_prev[idx].comissaoAvista)||'', repasse:(_prev[idx]&&_prev[idx].repasse)||'' })); } if(!currentVenda.itens||!currentVenda.itens.length) currentVenda.itens=[_blankVendaItem()]; }
 function vendaItensTotalUpdate(){ const rows=[...document.querySelectorAll('#vd_itensWrap .vd-item-row')]; const tot=rows.reduce((s,r)=>s+(moneyBRToNum(r.querySelector('.vd-item-valor').value)||0),0); const el=document.getElementById('vd_itensTotal'); if(el) el.textContent='Total da venda: '+fmtBRL(tot); }
 function vendaAddItem(){ _vendaReadItens(); currentVenda.itens.push(_blankVendaItem()); renderVendaItens(); }
 function vendaRemoveItem(i){ _vendaReadItens(); currentVenda.itens.splice(i,1); if(!currentVenda.itens.length) currentVenda.itens=[_blankVendaItem()]; renderVendaItens(); }
@@ -2995,6 +2997,49 @@ async function openVendaComprovAvista(i){ const d=(currentVenda.comprovantesAvis
 async function vendaRemoveComprovAvista(i){ const d=(currentVenda.comprovantesAvista||[])[i]; if(!d) return; if(d.path) cloudDeleteVendaDoc(d.path); currentVenda.comprovantesAvista.splice(i,1); renderVendaComprovAvista(); }
 function vendaUpdateComissaoTotal(){ const a=moneyBRToNum((document.getElementById('vd_comAgencia')||{}).value)||0; const b=[...document.querySelectorAll('#vd_itensWrap .vd-item-comfn')].reduce((s,el)=>s+(moneyBRToNum(el.value)||0),0); const t=document.getElementById('vd_comTotal'); if(t) t.value=moneyToBR(a+b); }
 function vendaUpdateRepasse(){ const av=moneyBRToNum((document.getElementById('vd_valorAvista')||{}).value)||0; const cm=moneyBRToNum((document.getElementById('vd_comAgencia')||{}).value)||0; const rep=Math.max(0,av-cm); const el=document.getElementById('vd_repasseInfo'); if(!el) return; el.textContent = rep>0 ? ('→ Repasse ao fornecedor: '+fmtBRL(rep)) : ((av>0&&av<cm) ? '⚠ O valor à vista está menor que a comissão — confira.' : ''); }
+// ---- Divisão por fornecedor (aparece só quando a venda tem 2+ fornecedores) ----
+// Discrimina, por fornecedor: a comissão recebida à vista e o repasse a pagar. Com isso o
+// Financeiro gera uma conta a pagar SEPARADA por fornecedor e o gráfico de comissões fica exato.
+function _vendaFornItens(){ return (currentVenda.itens||[]).map((it,i)=>({it,i})).filter(x=>(x.it.fornecedor||'').trim()); }
+function renderVendaSplitPanel(){
+  const wrap=document.getElementById('vd_splitWrap'); if(!wrap) return;
+  const its=currentVenda.itens||[];
+  const distintos=[...new Set(its.map(it=>(it.fornecedor||'').trim()).filter(Boolean))];
+  const comAgEl=document.getElementById('vd_comAgencia');
+  const avEl=document.getElementById('vd_valorAvista');
+  if(distintos.length<2){ wrap.innerHTML=''; if(comAgEl){ comAgEl.readOnly=false; comAgEl.style.background=''; } if(avEl){ avEl.readOnly=false; avEl.style.background=''; } return; }
+  const linhas=_vendaFornItens();
+  const temSplit=linhas.some(x=>Number(x.it.comissaoAvista)>0||Number(x.it.repasse)>0);
+  if(!temSplit){
+    const comAg=moneyBRToNum((comAgEl||{}).value)||Number(currentVenda.comissaoAgencia)||0;
+    const av=moneyBRToNum((avEl||{}).value)||Number(currentVenda.valorAvista)||0;
+    const repTot=Math.max(0,av-comAg);
+    const somaComfn=linhas.reduce((s,x)=>s+(Number(x.it.comissaoFornecedor)||0),0);
+    const somaValor=linhas.reduce((s,x)=>s+(Number(x.it.valor)||0),0);
+    const n=linhas.length;
+    linhas.forEach(x=>{ const wc=somaComfn>0?((Number(x.it.comissaoFornecedor)||0)/somaComfn):(1/n); const wv=somaValor>0?((Number(x.it.valor)||0)/somaValor):(1/n); x.it.comissaoAvista=comAg>0?Math.round(comAg*wc*100)/100:''; x.it.repasse=repTot>0?Math.round(repTot*wv*100)/100:''; });
+    if(comAg>0){ const s=linhas.reduce((a,x)=>a+(Number(x.it.comissaoAvista)||0),0); const d=Math.round((comAg-s)*100)/100; const L=linhas[linhas.length-1]; if(d&&L) L.it.comissaoAvista=Math.round(((Number(L.it.comissaoAvista)||0)+d)*100)/100; }
+    if(repTot>0){ const s=linhas.reduce((a,x)=>a+(Number(x.it.repasse)||0),0); const d=Math.round((repTot-s)*100)/100; const L=linhas[linhas.length-1]; if(d&&L) L.it.repasse=Math.round(((Number(L.it.repasse)||0)+d)*100)/100; }
+  }
+  const rows=linhas.map(x=>`<div style="display:grid;grid-template-columns:1fr 140px 140px;gap:10px;align-items:end;margin-bottom:8px"><div style="font-size:13px;color:var(--text);font-weight:600;padding-bottom:9px">${escapeHtml((x.it.fornecedor||'').trim())}</div><div class="field" style="margin:0"><label style="font-size:11px">Comissão à vista (R$)</label><input type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(x.it.comissaoAvista)}" oninput="voaMoneyMask(this);vendaSplitSet(${x.i},'comissaoAvista',this)"></div><div class="field" style="margin:0"><label style="font-size:11px">Repasse a pagar (R$)</label><input type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(x.it.repasse)}" oninput="voaMoneyMask(this);vendaSplitSet(${x.i},'repasse',this)"></div></div>`).join('');
+  wrap.innerHTML=`<div style="border:1.5px dashed var(--brand-blue);border-radius:10px;padding:12px;margin-top:10px;background:var(--surface-alt)"><div style="font-size:12px;font-weight:700;color:var(--brand-blue);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Divisão por fornecedor</div><p style="font-size:11px;color:var(--text-mute);margin:0 0 10px">A venda tem mais de um fornecedor. Informe quanto da <strong>comissão recebida à vista</strong> e quanto do <strong>repasse a pagar</strong> pertence a cada um — o Financeiro gera uma conta a pagar separada por fornecedor. (Os campos "Comissão recebida na agência" e "Total à vista" acima passam a ser a soma disto.)</p>${rows}<div id="vd_splitCheck" style="font-size:12px;margin-top:4px"></div></div>`;
+  if(comAgEl){ comAgEl.readOnly=true; comAgEl.style.background='var(--surface-alt)'; }
+  if(avEl){ avEl.readOnly=true; avEl.style.background='var(--surface-alt)'; }
+  vendaSplitRecalc();
+}
+function vendaSplitSet(i,campo,el){ if(!currentVenda.itens||!currentVenda.itens[i]) return; currentVenda.itens[i][campo]=moneyBRToNum(el.value)||''; vendaSplitRecalc(); }
+function vendaSplitRecalc(){
+  const its=currentVenda.itens||[];
+  const distintos=[...new Set(its.map(it=>(it.fornecedor||'').trim()).filter(Boolean))];
+  if(distintos.length<2) return;
+  const comAg=its.reduce((s,it)=>s+(Number(it.comissaoAvista)||0),0);
+  const rep=its.reduce((s,it)=>s+(Number(it.repasse)||0),0);
+  const av=comAg+rep;
+  const comAgEl=document.getElementById('vd_comAgencia'); if(comAgEl) comAgEl.value=moneyToBR(comAg);
+  const avEl=document.getElementById('vd_valorAvista'); if(avEl) avEl.value=moneyToBR(av);
+  vendaUpdateComissaoTotal(); vendaUpdateRepasse();
+  const chk=document.getElementById('vd_splitCheck'); if(chk) chk.innerHTML=`<span style="color:var(--text-soft)">Comissão à vista total: <strong>${fmtBRL(comAg)}</strong> · Repasse total: <strong>${fmtBRL(rep)}</strong> · Entrou à vista na conta: <strong>${fmtBRL(av)}</strong></span>`;
+}
 
 function _vendaReadForm(){
   const g=id=>{ const e=document.getElementById(id); return e?e.value:''; };
@@ -3016,9 +3061,10 @@ function _vendaReadForm(){
   currentVenda.destino=g('vd_destino').trim();
   currentVenda.voosDetalhes=g('vd_voosDetalhes').trim();
   currentVenda.titularContato=g('vd_titularContato').trim();
-  currentVenda.comissaoAgencia=moneyBRToNum(g('vd_comAgencia'))||'';
   currentVenda.formaPagamento=g('vd_formaPagamento')||'';
-  currentVenda.valorAvista=moneyBRToNum(g('vd_valorAvista'))||'';
+  { const _its=currentVenda.itens||[]; const _dist=[...new Set(_its.map(it=>(it.fornecedor||'').trim()).filter(Boolean))];
+    if(_dist.length>=2){ currentVenda.comissaoAgencia=_its.reduce((s,it)=>s+(Number(it.comissaoAvista)||0),0)||''; currentVenda.valorAvista=_its.reduce((s,it)=>s+(Number(it.comissaoAvista)||0)+(Number(it.repasse)||0),0)||''; }
+    else { currentVenda.comissaoAgencia=moneyBRToNum(g('vd_comAgencia'))||''; currentVenda.valorAvista=moneyBRToNum(g('vd_valorAvista'))||''; _its.forEach(it=>{ it.comissaoAvista=''; it.repasse=''; }); } }
   currentVenda.comissaoTotal=((Number(currentVenda.comissaoAgencia)||0)+(Number(currentVenda.comissaoFornecedor)||0))||'';
   currentVenda.observacoes=g('vd_observacoes');
 }
@@ -3170,6 +3216,16 @@ function _finComPorFornecedor(v){
   const its=vendaItens(v);
   const total=Number(v.comissaoTotal)||((Number(v.comissaoAgencia)||0)+its.reduce((s,it)=>s+(Number(it.comissaoFornecedor)||0),0));
   if(!(total>0)) return [];
+  // EXATO: quando a comissão recebida à vista foi discriminada por fornecedor (venda 2+ fornec.),
+  // o valor de cada um = comissão à vista dele + comissão que ele vai repassar depois.
+  const somaAvista=its.reduce((s,it)=>s+(Number(it.comissaoAvista)||0),0);
+  if(somaAvista>0){
+    const por={};
+    its.forEach(it=>{ const f=(it.fornecedor||'').trim()||'Sem fornecedor'; const c=(Number(it.comissaoFornecedor)||0)+(Number(it.comissaoAvista)||0); if(c>0) por[f]=(por[f]||0)+c; });
+    const forns=Object.keys(por);
+    if(forns.length){ const atribuido=forns.reduce((s,f)=>s+por[f],0); const resto=total-atribuido; if(resto>0.005){ const base=atribuido>0?atribuido:1; forns.forEach(f=>{ por[f]+=resto*(por[f]/base); }); } return forns.map(f=>({fornecedor:f, valor:por[f]})); }
+  }
+  // fallback (venda de 1 fornecedor ou sem discriminação): distribui proporcional às comissões de item
   const pesos={}; let soma=0;
   its.forEach(it=>{ const f=(it.fornecedor||'').trim()||'Sem fornecedor'; const c=Number(it.comissaoFornecedor)||0; pesos[f]=(pesos[f]||0)+c; soma+=c; });
   const forns=Object.keys(pesos);
@@ -3393,21 +3449,39 @@ async function reconciliarVendasFinanceiro(){
     L.fnKeys=Object.keys(desired); delete L.fn;
 
     // ---- REPASSE (valor de terceiros recebido à vista) ----
-    // Entra na conta (soma no saldo via L.rep) e gera uma CONTA A PAGAR do repasse que
-    // VENCE NO MESMO DIA (o fornecedor pede o repasse na hora). Ambos ficam FORA dos
-    // gráficos (repasse:true), mas DENTRO do saldo/caixa. Repasse = à vista − comissão.
-    const repasse = Math.max(0, (Number(v.valorAvista)||0) - comAg);
+    // Entra na conta (soma no saldo via L.rep) e gera CONTA(S) A PAGAR do repasse que VENCEM
+    // NO MESMO DIA. Ficam FORA dos gráficos (repasse:true), mas DENTRO do saldo/caixa. Se a
+    // venda tem repasse discriminado por item (2+ fornecedores), gera UMA conta a pagar por
+    // fornecedor (repout-<id>-<i>); senão, uma única (repout-<id>). Total = à vista − comissão.
+    const _repItens=vendaItens(v);
+    const somaRepItens=_repItens.reduce((s,it)=>s+(Number(it.repasse)||0),0);
+    const usaSplitRep=somaRepItens>0;
+    const repasse = usaSplitRep ? somaRepItens : Math.max(0, (Number(v.valorAvista)||0) - comAg);
     if((L.rep||0)!==repasse){ saldoDelta+=(repasse-(L.rep||0)); L.rep=repasse; ledgerMudou=true; }
-    const repInE=find('repin-'+v.id), repOutE=find('repout-'+v.id);
+    const repInE=find('repin-'+v.id);
+    const repFornDefault=v.fornecedor||(_repItens.map(it=>it.fornecedor).filter(Boolean)[0])||'';
     if(repasse>0){
-      const repForn=v.fornecedor||(vendaItens(v).map(it=>it.fornecedor).filter(Boolean)[0])||'';
-      if(!repInE){ const it=Object.assign(blankFin('receber'),{ id:'repin-'+v.id, auto:true, repasse:true, vendaId:v.id, contaId:finContaPadraoId(), forma:(v.formaPagamento||''), descricao:'Valor recebido à vista p/ repasse — '+tit+ref, categoria:'Repasse recebido do cliente', origem:repForn, valor:repasse, pago:true, dataPago:dataV, vencimento:dataV }); state.financeiro.unshift(it); salvar.push(it); }
+      // Entrada única (dinheiro de terceiros que entrou à vista)
+      if(!repInE){ const it=Object.assign(blankFin('receber'),{ id:'repin-'+v.id, auto:true, repasse:true, vendaId:v.id, contaId:finContaPadraoId(), forma:(v.formaPagamento||''), descricao:'Valor recebido à vista p/ repasse — '+tit+ref, categoria:'Repasse recebido do cliente', origem:repFornDefault, valor:repasse, pago:true, dataPago:dataV, vencimento:dataV }); state.financeiro.unshift(it); salvar.push(it); }
       else if(Number(repInE.valor)!==repasse || (repInE.forma||'')!==(v.formaPagamento||'')){ repInE.valor=repasse; repInE.forma=(v.formaPagamento||''); salvar.push(repInE); }
-      if(!repOutE){ const it=Object.assign(blankFin('pagar'),{ id:'repout-'+v.id, auto:true, repasse:true, vendaId:v.id, contaId:finContaPadraoId(), descricao:'Repasse ao fornecedor — '+tit+ref, categoria:'Repasse ao fornecedor', origem:repForn, valor:repasse, pago:false, vencimento:dataV }); state.financeiro.unshift(it); salvar.push(it); }
-      else if(!repOutE.pago && Number(repOutE.valor)!==repasse){ repOutE.valor=repasse; salvar.push(repOutE); }
+      // Saída(s) a pagar — uma por fornecedor no modo split, senão uma só
+      const repDesired={};
+      if(usaSplitRep){ _repItens.forEach((it,i)=>{ const r=Number(it.repasse)||0; if(r>0){ const f=(it.fornecedor||'').trim()||repFornDefault||'Fornecedor'; const catNome=it.categoria?(vendaCat(it.categoria).nome+' — '):''; const iref=(it.numReserva&&String(it.numReserva).trim())?(' · reserva '+String(it.numReserva).trim()):ref; repDesired['repout-'+v.id+'-'+i]={ valor:r, origem:f, desc:'Repasse ao fornecedor — '+f+' · '+catNome+tit+iref }; } }); }
+      else { repDesired['repout-'+v.id]={ valor:repasse, origem:repFornDefault, desc:'Repasse ao fornecedor — '+tit+ref }; }
+      for(const key of Object.keys(repDesired)){ const d=repDesired[key]; const e=find(key);
+        if(!e){ const it=Object.assign(blankFin('pagar'),{ id:key, auto:true, repasse:true, vendaId:v.id, contaId:finContaPadraoId(), descricao:d.desc, categoria:'Repasse ao fornecedor', origem:d.origem, valor:d.valor, pago:false, vencimento:dataV }); state.financeiro.unshift(it); salvar.push(it); }
+        else if(!e.pago && (Number(e.valor)!==d.valor || (e.origem||'')!==d.origem || (e.descricao||'')!==d.desc)){ e.valor=d.valor; e.origem=d.origem; e.descricao=d.desc; salvar.push(e); }
+      }
+      const prevRepKeys=(L.repKeys&&L.repKeys.length)?L.repKeys:['repout-'+v.id];
+      for(const key of prevRepKeys){ if(!repDesired[key]){ const e=find(key); if(e&&!e.pago){ state.financeiro=state.financeiro.filter(x=>x.id!==e.id); apagar.push(e.id); } } }
+      if(JSON.stringify(L.repKeys||[])!==JSON.stringify(Object.keys(repDesired))) ledgerMudou=true;
+      L.repKeys=Object.keys(repDesired);
     } else {
       if(repInE){ state.financeiro=state.financeiro.filter(x=>x.id!==repInE.id); apagar.push(repInE.id); }
-      if(repOutE && !repOutE.pago){ state.financeiro=state.financeiro.filter(x=>x.id!==repOutE.id); apagar.push(repOutE.id); }
+      const prevRepKeys=(L.repKeys&&L.repKeys.length)?L.repKeys:['repout-'+v.id];
+      prevRepKeys.forEach(key=>{ const e=find(key); if(e&&!e.pago){ state.financeiro=state.financeiro.filter(x=>x.id!==e.id); apagar.push(e.id); } });
+      if(L.repKeys&&L.repKeys.length) ledgerMudou=true;
+      L.repKeys=[];
     }
 
     // ---- COMPROVANTE À VISTA: espelha o anexo da venda nos recebidos gerados (comissão
@@ -3424,7 +3498,8 @@ async function reconciliarVendasFinanceiro(){
     const L=ledger[vid]||{}; if(Number(L.ag)) saldoDelta-=Number(L.ag)||0; if(Number(L.rep)) saldoDelta-=Number(L.rep)||0;
     const a=find('comag-'+vid); if(a){ state.financeiro=state.financeiro.filter(x=>x.id!==a.id); apagar.push(a.id); }
     const ri=find('repin-'+vid); if(ri){ state.financeiro=state.financeiro.filter(x=>x.id!==ri.id); apagar.push(ri.id); }
-    const ro=find('repout-'+vid); if(ro&&!ro.pago){ state.financeiro=state.financeiro.filter(x=>x.id!==ro.id); apagar.push(ro.id); }
+    const rokeys=(L.repKeys&&L.repKeys.length)?L.repKeys:['repout-'+vid];
+    rokeys.forEach(k=>{ const ro=find(k); if(ro&&!ro.pago){ state.financeiro=state.financeiro.filter(x=>x.id!==ro.id); apagar.push(ro.id); } });
     const fkeys=(L.fnKeys&&L.fnKeys.length)?L.fnKeys:['comfn-'+vid];
     fkeys.forEach(k=>{ const f=find(k); if(f&&!f.pago){ state.financeiro=state.financeiro.filter(x=>x.id!==f.id); apagar.push(f.id); } });
     delete ledger[vid]; ledgerMudou=true;
