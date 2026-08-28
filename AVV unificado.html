@@ -3416,6 +3416,21 @@ async function cloudLoadFinanceiro(){
 // À prova de duplicidade: um "ledger" guarda quanto de cada venda já entrou no saldo,
 // então nunca conta duas vezes e ajusta se a venda for editada ou excluída.
 // ============================================================================
+// Total automático (comissão da agência recebida + valor à vista recebido p/ repasse) das
+// vendas vivas — a mesma soma usada no saldo idempotente. Serve para ANCORAR quando a gestão
+// usa "Ajustar saldo": aí o valor digitado passa a incluir exatamente este total automático.
+function _vendaAutoAlvo(){
+  const baseSet=new Set((state._vendaBaseline&&state._vendaBaseline.ids)||[]);
+  let tot=0;
+  (state.vendas||[]).forEach(v=>{ if(!v||!v.id||v.preLancada||baseSet.has(v.id)) return;
+    const comAg=Number(v.comissaoAgencia)||0;
+    const its=vendaItens(v);
+    const somaRep=its.reduce((s,it)=>s+(Number(it.repasse)||0),0);
+    const repasse=somaRep>0?somaRep:Math.max(0,(Number(v.valorAvista)||0)-comAg);
+    tot+=comAg+repasse;
+  });
+  return tot;
+}
 async function reconciliarVendasFinanceiro(){
   if(currentRole()!=='admin'||!sb||!state.user) return;
   state.financeiro=state.financeiro||[];
@@ -3795,7 +3810,7 @@ async function finSalvarForm(id){
 }
 function setFinConta(v){ finContaSel=v||''; renderFinanceiroMain(); }
 function finEditarSaldoConta(contaId){ const c=finConta(contaId)||finContaPadrao(); if(!c) return; openModal(`<div class="modal-head"><h3>Saldo · ${escapeHtml(c.nome)}</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body"><p style="font-size:13px;color:var(--text-soft);margin:0 0 12px">Informe o saldo atual disponível nesta conta.</p><div class="field"><label>Saldo (R$)</label><input id="fin_saldoInput" type="text" inputmode="numeric" placeholder="0,00" value="${moneyToBR(c.saldo)}" oninput="voaMoneyMask(this)"></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="finSalvarSaldoConta('${c.id}')">Salvar</button></div>`); setTimeout(()=>{ const e=document.getElementById('fin_saldoInput'); if(e){ e.focus(); } },50); }
-async function finSalvarSaldoConta(contaId){ const c=finConta(contaId); if(!c) return; const v=moneyBRToNum((document.getElementById('fin_saldoInput')||{}).value)||0; c.saldo=v; finRecalcSaldo(); closeModal(); renderFinanceiroMain(); await cloudSaveConta(c); await _finPersistSaldoCache(); toast('Saldo atualizado','success'); }
+async function finSalvarSaldoConta(contaId){ const c=finConta(contaId); if(!c) return; const v=moneyBRToNum((document.getElementById('fin_saldoInput')||{}).value)||0; c.saldo=v; finRecalcSaldo(); if(c.padrao){ const _lg=state._vendaLedger||{}; _lg.__saldoAuto=_vendaAutoAlvo(); state._vendaLedger=_lg; try{ if(sb&&state.user) await sb.from('financeiro').upsert({ id:'_venda_ledger', user_id:state.user.id, tipo:'ledger', data:_lg }); }catch(e){ console.error('ancora saldo',e); } } closeModal(); renderFinanceiroMain(); await cloudSaveConta(c); await _finPersistSaldoCache(); toast('Saldo atualizado','success'); }
 function finGerenciarContas(){ openModal(`<div class="modal-head"><h3>🏦 Contas bancárias</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body" id="finContasBody"></div><div class="modal-foot"><button class="btn btn-ghost" onclick="finContaAdd()">+ Adicionar conta</button><button class="btn btn-primary" onclick="closeModal()">Concluir</button></div>`); renderFinContasBody(); }
 function renderFinContasBody(){ const body=document.getElementById('finContasBody'); if(!body) return; const cs=finContas(); body.innerHTML=`<p style="font-size:12px;color:var(--text-mute);margin:0 0 12px">A conta <strong>padrão</strong> recebe automaticamente a comissão das vendas. Total em todas: <strong>${fmtBRL(state.finSaldo)}</strong></p>`+cs.map(c=>`<div class="rec-item" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div class="rec-body"><div class="rec-texto"><strong>${escapeHtml(c.nome)}</strong>${c.padrao?' <span class="badge success">(Padrão)</span>':''}</div><div class="rec-meta">Saldo: <strong>${fmtBRL(Number(c.saldo)||0)}</strong></div></div><div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">${c.padrao?'':`<button class="btn btn-ghost btn-sm" onclick="finContaDefinirPadrao('${c.id}')">Tornar padrão</button>`}<button class="btn btn-ghost btn-sm" onclick="finContaRenomear('${c.id}')">Renomear</button><button class="btn btn-ghost btn-sm" onclick="finEditarSaldoConta('${c.id}')">Ajustar saldo</button>${cs.length>1?`<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="finContaRemover('${c.id}')">Remover</button>`:''}</div></div>`).join(''); }
 function finContaAdd(){ const nome=(prompt('Nome da nova conta (ex.: Nubank PJ):','')||'').trim(); if(!nome) return; const c={ id:'conta-'+uid(), nome, saldo:0, padrao:!(state.contas||[]).length, ordem:(state.contas||[]).length, criadoEm:localNowISO() }; state.contas=state.contas||[]; state.contas.push(c); finRecalcSaldo(); renderFinContasBody(); renderFinanceiroMain(); cloudSaveConta(c); }
