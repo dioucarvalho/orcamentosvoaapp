@@ -2030,7 +2030,10 @@ async function renderAdmin(c){
   }
   embarques.sort((a,b)=>a.data.localeCompare(b.data));
   const vistos=new Set();
-  embarques=embarques.filter(e=>{ if(vistos.has(e.dedupeKey)) return false; vistos.add(e.dedupeKey); return true; });
+  // De-dup por PASSAGEIRO + DATA do embarque: junta a MESMA viagem vinda de fontes diferentes
+  // (orçamento + venda + pós-venda), mas mantém viagens distintas do mesmo nome e clientes
+  // homônimos com datas diferentes — antes o de-dup por nome sozinho escondia embarques reais.
+  embarques=embarques.filter(e=>{ const k=e.dedupeKey+'|'+(e.data||''); if(vistos.has(k)) return false; vistos.add(k); return true; });
 
   // vendas fechadas no mês (para acompanhamento / pós-venda)
   // respeita o filtro por colaborador, igual ao restante do painel
@@ -2112,7 +2115,7 @@ async function renderAdmin(c){
       <div class="card-header"><h3 class="card-title">Próximos embarques (30 dias)</h3><span class="badge neutral">${embarques.length}</span></div>
       ${embarques.length===0?`<div class="empty">Sem embarques marcados nas próximas semanas.</div>`:
       `<table class="tbl"><thead><tr><th>Embarque</th><th>Passageiro</th><th>Destino</th><th>Colaborador</th></tr></thead>
-       <tbody>${embarques.slice(0,20).map(e=>`<tr><td>${fmtDateBR(e.data)}</td><td><strong>${escapeHtml(e.nome)}</strong></td><td>${escapeHtml(e.destino)}</td><td>${escapeHtml(e.owner)}</td></tr>`).join('')}</tbody></table>`}
+       <tbody>${embarques.slice(0,200).map(e=>`<tr><td>${fmtDateBR(e.data)}</td><td><strong>${escapeHtml(e.nome)}</strong></td><td>${escapeHtml(e.destino)}</td><td>${escapeHtml(e.owner)}</td></tr>`).join('')}</tbody></table>`}
     </div>`;
 
   const posvendaHTML = '';  // removidas as caixas "Pós-Venda (gerência)" e "Ferramentas" (redundantes)
