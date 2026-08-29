@@ -3125,7 +3125,39 @@ async function _doSaveVenda(v){
 }
 function closeVendaForm(){ const fw=document.getElementById('vendaFormWrap'); if(fw) fw.innerHTML=''; currentVenda=null; renderVendasMain(); }
 function editVenda(id){ const v=(state.vendas||[]).find(x=>x.id===id); if(v && !v.preLancada){ const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'esta venda'; pedirPermissao({ acaoKey:'editar_venda', grant:true, payload:{id:id,nome:tit}, descricao:'Ver/editar a venda já lançada de "'+tit+'"', runDireto:()=>openVendaForm(id) }); } else { openVendaForm(id); } }
-function deleteVenda(id){ const v=(state.vendas||[]).find(x=>x.id===id); if(!v) return; const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'esta venda'; pedirPermissao({ acaoKey:'excluir_venda', descricao:'Excluir a venda de "'+tit+'"', payload:{id:id,nome:tit}, runDireto:()=>{ state.vendas=(state.vendas||[]).filter(x=>x.id!==id); renderVendasMain(); cloudDeleteVenda(id).then(ok=>{ toast(ok?'Venda excluída':'Removida deste navegador, mas a nuvem não confirmou.',ok?'success':'warning'); }); } }); }
+function deleteVenda(id){ const v=(state.vendas||[]).find(x=>x.id===id); if(!v) return; const tit=(v.passageiros&&v.passageiros[0]&&v.passageiros[0].nome)||'esta venda'; const orcId=v.orcamentoId||''; pedirPermissao({ acaoKey:'excluir_venda', descricao:'Excluir a venda de "'+tit+'" (remove também a reserva no Pós-Venda'+(orcId?'; o orçamento de origem vira "Perdido"':'')+')', payload:{id:id,nome:tit}, runDireto:async ()=>{
+  state.vendas=(state.vendas||[]).filter(x=>x.id!==id);
+  renderVendasMain();
+  cloudDeleteVenda(id).then(ok=>{ toast(ok?'Venda excluída':'Removida deste navegador, mas a nuvem não confirmou.',ok?'success':'warning'); });
+  try{ await _excluirReservaPosvendaDaVenda(id); }catch(e){ console.error('cascata posvenda',e); }
+  if(orcId){ try{ await _marcarOrcamentoPerdidoPorVendaExcluida(orcId); }catch(e){ console.error('cascata orçamento',e); } }
+} }); }
+// Cascata da exclusão de venda: remove a reserva vinculada no Pós-Venda (origemVendaId).
+async function _excluirReservaPosvendaDaVenda(vendaId){
+  if(!sb||!state.user) return;
+  try{
+    const { data:fresh } = await sb.from('posvenda_dados').select('dados').eq('id',1).maybeSingle();
+    const base = Array.isArray(fresh&&fresh.dados)?fresh.dados:[];
+    const filtrado = base.filter(r=> String((r&&r.origemVendaId)||'')!==String(vendaId));
+    if(filtrado.length!==base.length){
+      await sb.from('posvenda_dados').update({ dados:filtrado, atualizado_em:new Date().toISOString() }).eq('id',1);
+      if(typeof toast==='function') toast('Reserva vinculada removida do Pós-Venda.','info');
+    }
+  }catch(e){ console.error('excluir reserva posvenda', e); }
+}
+// Cascata da exclusão de venda: o orçamento de origem (se estava "fechado/vendido") vira "Perdido",
+// saindo de "Vendas fechadas no mês". Reversível: é só remarcar o status no orçamento.
+async function _marcarOrcamentoPerdidoPorVendaExcluida(orcId){
+  const base=(state.orcamentos||[]).find(x=>x.id===orcId); if(!base) return;
+  if(base.status!=='fechado') return; // só reverte quando estava marcado como vendido
+  let o=base;
+  if(typeof ensureFullOrcamento==='function'){ const full=await ensureFullOrcamento(orcId); if(full) o=full; }
+  if(o._lite){ if(typeof toast==='function') toast('Venda excluída, mas não consegui atualizar o orçamento de origem agora. Marque-o como "Perdido" manualmente.','warning'); return; } // evita sobrescrever o orçamento completo com um resumo
+  o.status='perdido'; o.comissao=0; o.closedAt=localNowISO(); o.motivoPerda='Venda excluída na aba Vendas';
+  persistAll();
+  if(document.querySelector('.nav-item.active')?.dataset.view==='orcamentos') renderQuoteList();
+  try{ await cloudSaveOrcamento(o); }catch(e){ console.error('salvar orçamento perdido',e); }
+}
 
 // Monta um objeto de venda (pré-lançada) a partir de um orçamento fechado.
 // Mantém o DONO do orçamento como dono da venda (preserva a separação de acesso).
