@@ -3625,7 +3625,10 @@ function renderFinanceiroMain(c){
   const h15=dPlus(15), h30=dPlus(30);
   const pagarPend=inst.filter(x=>x.item.tipo==='pagar'&&!x.feito).sort((a,b)=>(a.data||'').localeCompare(b.data||''));
   const receberPend=inst.filter(x=>x.item.tipo==='receber'&&!x.feito).sort((a,b)=>(a.data||'').localeCompare(b.data||''));
-  const feitos=inst.filter(x=>x.feito).sort((a,b)=>(b.dataFeito||'').localeCompare(a.dataFeito||''));
+  // Histórico do MAIS RECENTE ao mais antigo: 1º pela data da baixa, e no mesmo dia pelo
+  // horário exato da baixa (fallback p/ createdAt em lançamentos antigos sem horário).
+  const _feitoKey=x=>{ const it=x.item; let ts=''; if(it.recorrente && x.mesRef){ const b=(it.baixas||{})[x.mesRef]||{}; ts=b.ts||''; } else { ts=it.dataPagoTs||''; } return (x.dataFeito||'0000-00-00')+'|'+(ts||it.createdAt||''); };
+  const feitos=inst.filter(x=>x.feito).sort((a,b)=>_feitoKey(b).localeCompare(_feitoKey(a)));
   const somaAte=(arr,lim)=>arr.filter(x=>x.data&&x.data<=lim).reduce((s,x)=>s+x.valor,0);
   const entr15=somaAte(receberPend,h15), entr30=somaAte(receberPend,h30);
   const said15=somaAte(pagarPend,h15), said30=somaAte(pagarPend,h30);
@@ -3726,8 +3729,9 @@ async function finBaixar(id, mesRef, contaId, forma){
   const valor=Number(item.valor)||0;
   if(forma!==undefined) item.forma=forma; // registra/atualiza a forma de pagamento na baixa
   const cid = contaId || item.contaId || finContaPadraoId();
-  if(item.recorrente && mesRef){ item.baixas=item.baixas||{}; item.baixas[mesRef]={ data:d, valor:valor, contaId:cid }; }
-  else { item.pago=true; item.dataPago=d; item.contaPagaId=cid; }
+  const _ts=localNowISO(); // horário exato da baixa, p/ ordenar o histórico do mais recente ao mais antigo
+  if(item.recorrente && mesRef){ item.baixas=item.baixas||{}; item.baixas[mesRef]={ data:d, valor:valor, contaId:cid, ts:_ts }; }
+  else { item.pago=true; item.dataPago=d; item.contaPagaId=cid; item.dataPagoTs=_ts; }
   const c=finConta(cid)||finContaPadrao();
   if(c){ c.saldo=(Number(c.saldo)||0)+(item.tipo==='pagar'?-valor:valor); finRecalcSaldo(); }
   renderFinanceiroMain();
