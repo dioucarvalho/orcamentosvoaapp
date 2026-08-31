@@ -3541,14 +3541,15 @@ async function reconciliarVendasFinanceiro(){
         if(!e){ const it=Object.assign(blankFin('pagar'),{ id:key, auto:true, repasse:true, vendaId:v.id, contaId:finContaPadraoId(), descricao:d.desc, categoria:'Repasse ao fornecedor', origem:d.origem, valor:d.valor, pago:false, vencimento:dataV }); state.financeiro.unshift(it); salvar.push(it); }
         else if(!e.pago && (Number(e.valor)!==d.valor || (e.origem||'')!==d.origem || (e.descricao||'')!==d.desc)){ e.valor=d.valor; e.origem=d.origem; e.descricao=d.desc; salvar.push(e); }
       }
-      const prevRepKeys=(L.repKeys&&L.repKeys.length)?L.repKeys:['repout-'+v.id];
-      for(const key of prevRepKeys){ if(!repDesired[key]){ const e=find(key); if(e&&!e.pago){ state.financeiro=state.financeiro.filter(x=>x.id!==e.id); apagar.push(e.id); } } }
+      // Limpeza ROBUSTA: varre TODOS os repasses a pagar desta venda e remove os que não estão
+      // na divisão atual — inclui a linha única antiga ('repout-<id>') e índices órfãos que o
+      // L.repKeys não rastreava (a causa das linhas fantasma). Nunca apaga os já PAGOS.
+      state.financeiro.filter(x=> x && String(x.vendaId)===String(v.id) && x.repasse===true && x.tipo==='pagar' && !repDesired[x.id] && !x.pago).forEach(e=>{ state.financeiro=state.financeiro.filter(x=>x.id!==e.id); apagar.push(e.id); ledgerMudou=true; });
       if(JSON.stringify(L.repKeys||[])!==JSON.stringify(Object.keys(repDesired))) ledgerMudou=true;
       L.repKeys=Object.keys(repDesired);
     } else {
       if(repInE){ state.financeiro=state.financeiro.filter(x=>x.id!==repInE.id); apagar.push(repInE.id); }
-      const prevRepKeys=(L.repKeys&&L.repKeys.length)?L.repKeys:['repout-'+v.id];
-      prevRepKeys.forEach(key=>{ const e=find(key); if(e&&!e.pago){ state.financeiro=state.financeiro.filter(x=>x.id!==e.id); apagar.push(e.id); } });
+      state.financeiro.filter(x=> x && String(x.vendaId)===String(v.id) && x.repasse===true && x.tipo==='pagar' && !x.pago).forEach(e=>{ state.financeiro=state.financeiro.filter(x=>x.id!==e.id); apagar.push(e.id); ledgerMudou=true; });
       if(L.repKeys&&L.repKeys.length) ledgerMudou=true;
       L.repKeys=[];
     }
@@ -3568,8 +3569,7 @@ async function reconciliarVendasFinanceiro(){
     const L=ledger[vid]||{}; // saldo NÃO é estornado aqui: o recálculo por autoAlvo já exclui a venda sumida
     const a=find('comag-'+vid); if(a){ state.financeiro=state.financeiro.filter(x=>x.id!==a.id); apagar.push(a.id); }
     const ri=find('repin-'+vid); if(ri){ state.financeiro=state.financeiro.filter(x=>x.id!==ri.id); apagar.push(ri.id); }
-    const rokeys=(L.repKeys&&L.repKeys.length)?L.repKeys:['repout-'+vid];
-    rokeys.forEach(k=>{ const ro=find(k); if(ro&&!ro.pago){ state.financeiro=state.financeiro.filter(x=>x.id!==ro.id); apagar.push(ro.id); } });
+    state.financeiro.filter(x=> x && String(x.vendaId)===String(vid) && x.repasse===true && x.tipo==='pagar' && !x.pago).forEach(ro=>{ state.financeiro=state.financeiro.filter(x=>x.id!==ro.id); apagar.push(ro.id); });
     const fkeys=(L.fnKeys&&L.fnKeys.length)?L.fnKeys:['comfn-'+vid];
     fkeys.forEach(k=>{ const f=find(k); if(f&&!f.pago){ state.financeiro=state.financeiro.filter(x=>x.id!==f.id); apagar.push(f.id); } });
     delete ledger[vid]; ledgerMudou=true;
