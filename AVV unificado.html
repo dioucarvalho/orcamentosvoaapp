@@ -3753,10 +3753,12 @@ async function finDesfazer(id, mesRef){
   if(c) await cloudSaveConta(c);
   await _finPersistSaldoCache();
 }
-function finExcluir(id){ const it=(state.financeiro||[]).find(x=>x.id===id); if(!it) return; if(!confirm('Excluir o lançamento "'+(it.descricao||'')+'"? Se for recorrente, todas as ocorrências somem.')) return;
+async function finExcluir(id){ const it=(state.financeiro||[]).find(x=>x.id===id); if(!it) return; if(!confirm('Excluir o lançamento "'+(it.descricao||'')+'"? Se for recorrente, todas as ocorrências somem.')) return;
   // Comissão a receber é gerada automaticamente da venda. Se a gestão exclui à mão, marca como
   // "dispensada" pra a reconciliação NÃO recriar (sem tocar na comissão registrada na venda).
-  if(String(id).indexOf('comfn-')===0){ const lg=state._vendaLedger||(state._vendaLedger={}); lg.__dismissed=Array.isArray(lg.__dismissed)?lg.__dismissed:[]; if(lg.__dismissed.indexOf(id)<0) lg.__dismissed.push(id); try{ if(sb&&state.user) sb.from('financeiro').upsert({ id:'_venda_ledger', user_id:state.user.id, tipo:'ledger', data:lg }); }catch(e){ console.error('dispensar comfn',e); } }
+  // IMPORTANTE: precisa AGUARDAR o upsert (o cliente do Supabase só envia a requisição no await),
+  // senão a marca não chega na nuvem e a linha volta ao atualizar a página.
+  if(String(id).indexOf('comfn-')===0){ const lg=state._vendaLedger||(state._vendaLedger={}); lg.__dismissed=Array.isArray(lg.__dismissed)?lg.__dismissed:[]; if(lg.__dismissed.indexOf(id)<0) lg.__dismissed.push(id); state._vendaLedger=lg; try{ if(sb&&state.user) await sb.from('financeiro').upsert({ id:'_venda_ledger', user_id:state.user.id, tipo:'ledger', data:lg }); }catch(e){ console.error('dispensar comfn',e); } }
   state.financeiro=(state.financeiro||[]).filter(x=>x.id!==id); renderFinanceiroMain(); cloudDeleteFinanceiro(id).then(ok=>toast(ok?'Lançamento excluído':'Removido localmente, mas a nuvem não confirmou.',ok?'success':'warning')); }
 // Quadro só-leitura de um lançamento do Financeiro (com o boleto/comprovante anexado).
 function visualizarFin(id){
