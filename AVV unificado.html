@@ -3104,6 +3104,16 @@ async function saveVendaForm(){
   v.valorTotal=itens.reduce((s,it)=>s+(Number(it.valor)||0),0);
   v.categoria=itens[0].categoria;
   if(!v.ambito){ toast('Selecione o ÂMBITO da venda (Nacional ou Internacional).','warning'); return; }
+  // Trava: início da viagem no passado faz a reserva NÃO aparecer no Pós-Venda p/ conferência.
+  // Consultora é bloqueada; gestão pode salvar assim mesmo, confirmando. "Hoje" vem do servidor.
+  const _inicioViagem=(v.dataInicio||'').slice(0,10);
+  if(_inicioViagem){
+    const _hojeSrv=await dataAtualServidor();
+    if(_inicioViagem<_hojeSrv){
+      if(currentRole()!=='admin'&&currentRole()!=='gerente'){ toast('A data de INÍCIO da viagem não pode ser anterior a hoje ('+_isoToBR(_hojeSrv)+'). Confira a data da viagem.','warning'); return; }
+      if(!confirm('A data de início da viagem ('+_isoToBR(_inicioViagem)+') é anterior a hoje. Assim a reserva NÃO vai aparecer no Pós-Venda (que lista viagens futuras). Salvar mesmo assim?')) return;
+    }
+  }
   const mesVenda=(v.dataVenda||'').slice(0,7);
   if(mesVenda && !v.preLancada){
     const mesServidor=await mesAtualServidor();
