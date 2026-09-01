@@ -3250,6 +3250,7 @@ const FIN_CAT_RECEBER=['Comissão de fornecedor','Pagamento de cliente'];
 const FORMAS_PAGAMENTO=['PIX','Dinheiro','Transferência','Cartão de crédito','Cartão de débito','Débito em conta','Depósito','Cheque','Carta de crédito','Boleto','Outra'];
 function _formaOpts(sel){ return `<option value="">Selecione…</option>`+FORMAS_PAGAMENTO.map(f=>`<option value="${f}" ${sel===f?'selected':''}>${escapeHtml(f)}</option>`).join(''); }
 let finTab='pagar';
+let finReceberForn=''; // filtro por fornecedor na aba "A receber" ('' = todos)
 let finContaSel=''; // '' = todas as contas; senão o id da conta selecionada
 let finChartTipo='pagar'; // 'pagar' (despesas) | 'receber' (receitas)
 let finChartMes='', finChartFrom='', finChartTo=''; // período do gráfico
@@ -3662,14 +3663,20 @@ function renderFinanceiroMain(c){
   const _tbl=rows=>`<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Descrição</th><th>Categoria</th><th>Tipo</th><th>${_thData}</th><th class="num">Valor</th><th class="num">Ações</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   let body='';
   if(finTab==='pagar' || finTab==='receber'){
-    const pend=(finTab==='pagar')?pagarPend:receberPend;
+    const _pendBase=(finTab==='pagar')?pagarPend:receberPend;
+    // Filtro por FORNECEDOR (só na aba "A receber") — o fornecedor fica no campo "origem".
+    const _fornList=(finTab==='receber')?[...new Set(_pendBase.map(x=>((x.item.origem||'').trim())).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR')):[];
+    if(finReceberForn && _fornList.indexOf(finReceberForn)<0) finReceberForn=''; // fornecedor não existe mais → volta p/ todos
+    const pend=(finTab==='receber'&&finReceberForn)?_pendBase.filter(x=>((x.item.origem||'').trim())===finReceberForn):_pendBase;
+    const _totMesForn=(finTab==='receber'&&finReceberForn)?pend.filter(x=>x.data&&monthOf(x.data)===selMonth).reduce((s,x)=>s+(Number(x.valor)||0),0):0;
+    const _fornFiltro=(finTab==='receber'&&_fornList.length)?`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px"><span style="font-size:12px;font-weight:600;color:var(--text-soft)">Filtrar por fornecedor:</span><select onchange="setFinReceberForn(this.value)" style="padding:8px 12px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;outline:none;cursor:pointer;max-width:280px"><option value="">Todos os fornecedores</option>${_fornList.map(f=>`<option value="${escapeHtml(f)}" ${finReceberForn===f?'selected':''}>${escapeHtml(f)}</option>`).join('')}</select>${finReceberForn?`<span class="badge success" style="padding:8px 12px;font-size:12px">A receber de ${escapeHtml(finReceberForn)} em ${monthLabelBR(selMonth)}: <strong>${fmtBRL(_totMesForn)}</strong></span>`:''}</div>`:'';
     const atrasadas=pend.filter(x=>x.data && x.data<hoje);
     const doMes=pend.filter(x=>x.data && monthOf(x.data)===selMonth && x.data>=hoje);
     const proj=(finTab==='receber')?`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"><span class="badge success" style="padding:8px 12px;font-size:12px">Entradas previstas · próximos 15 dias: ${fmtBRL(entr15)}</span><span class="badge success" style="padding:8px 12px;font-size:12px">Próximos 30 dias: ${fmtBRL(entr30)}</span></div>`:'';
     const atrHTML=atrasadas.length?`<div style="font-size:12px;font-weight:700;color:var(--danger);text-transform:uppercase;letter-spacing:.04em;margin:0 0 6px">⚠ Atrasadas — ${atrasadas.length}</div>${_tbl(atrasadas.map(linhaPend).join(''))}<div style="height:20px"></div>`:'';
     const mesTit=`<div style="font-size:12px;font-weight:700;color:var(--text-soft);text-transform:uppercase;letter-spacing:.04em;margin:0 0 6px">${monthLabelBR(selMonth)}</div>`;
     const mesHTML=doMes.length?(mesTit+_tbl(doMes.map(linhaPend).join(''))):(mesTit+`<div class="empty">Nenhuma conta ${finTab==='pagar'?'a pagar':'a receber'} em ${monthLabelBR(selMonth)}.</div>`);
-    body = proj + _nav + atrHTML + mesHTML;
+    body = proj + _fornFiltro + _nav + atrHTML + mesHTML;
   } else {
     body = feitos.length ? `<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Descrição</th><th>Status</th><th>Baixa em</th><th class="num">Valor</th><th class="num">Ações</th></tr></thead><tbody>${feitos.map(linhaFeita).join('')}</tbody></table></div>` : `<div class="empty">Nada no histórico ainda.</div>`;
   }
@@ -3726,7 +3733,8 @@ function renderFinanceiroMain(c){
   if(_chartCats.length && window.Chart){ const _cx=document.getElementById('finChart'); if(_cx){ if(window._finChart&&typeof window._finChart.destroy==='function') window._finChart.destroy(); window._finChart=new Chart(_cx,{type:'doughnut',data:{labels:_chartCats,datasets:[{data:_chartCats.map(k=>_porCat[k]),backgroundColor:_chartCats.map((k,i)=>_finPalette[i%_finPalette.length]),borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',onClick:(ev,els)=>{ if(els&&els.length){ const cat=_chartCats[els[0].index]; if(cat) finChartDetalhe(cat); } },onHover:(ev,els)=>{ if(ev&&ev.native&&ev.native.target) ev.native.target.style.cursor=(els&&els.length)?'pointer':'default'; },plugins:{legend:{display:false},tooltip:{callbacks:{label:(cc)=>' '+cc.label+': '+fmtBRL(cc.parsed)}}}}}); } }
   if(_comForns.length && window.Chart){ const _ccx=document.getElementById('finComChart'); if(_ccx){ if(window._finComChart&&typeof window._finComChart.destroy==='function') window._finComChart.destroy(); window._finComChart=new Chart(_ccx,{type:'doughnut',data:{labels:_comForns,datasets:[{data:_comForns.map(k=>_porForn[k]),backgroundColor:_comForns.map((k,i)=>_finPalette[i%_finPalette.length]),borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',onClick:(ev,els)=>{ if(els&&els.length){ const f=_comForns[els[0].index]; if(f) finComDetalhe(f); } },onHover:(ev,els)=>{ if(ev&&ev.native&&ev.native.target) ev.native.target.style.cursor=(els&&els.length)?'pointer':'default'; },plugins:{legend:{display:false},tooltip:{callbacks:{label:(cc)=>' '+cc.label+': '+fmtBRL(cc.parsed)}}}}}); } }
 }
-function setFinTab(t){ finTab=t; renderFinanceiroMain(); }
+function setFinTab(t){ finTab=t; if(t!=='receber') finReceberForn=''; renderFinanceiroMain(); }
+function setFinReceberForn(v){ finReceberForn=v||''; renderFinanceiroMain(); }
 // Pergunta a conta na baixa quando há 2+ contas; com 1 conta, vai direto.
 function finBaixarPrompt(id, mesRef){
   const item=(state.financeiro||[]).find(x=>x.id===id); if(!item) return;
