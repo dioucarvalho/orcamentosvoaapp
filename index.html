@@ -3478,6 +3478,7 @@ async function reconciliarVendasFinanceiro(){
   }
   const baseSet=new Set(state._vendaBaseline.ids||[]);
   const ledger=state._vendaLedger||{};
+  const _finDismissedSet=new Set(Array.isArray(ledger.__dismissed)?ledger.__dismissed:[]); // comissões a receber que a gestão excluiu à mão — não recriar
   const find=id=>state.financeiro.find(x=>x.id===id);
   const vivos=new Set(vendas.map(v=>v.id));
   let saldoDelta=0, ledgerMudou=false, autoAlvo=0; const salvar=[], apagar=[];
@@ -3506,7 +3507,7 @@ async function reconciliarVendasFinanceiro(){
     let linhasFn = vendaItens(v).filter(it=>Number(it.comissaoFornecedor)>0);
     if(!linhasFn.length && comFn>0){ linhasFn=[{ categoria:v.categoria, fornecedor:v.fornecedor, comissaoFornecedor:v.comissaoFornecedor, dataRecebFornecedor:v.dataRecebFornecedor }]; } // compat: modelo antigo (comissão no nível da venda)
     const desired={};
-    linhasFn.forEach((it,i)=>{ const key='comfn-'+v.id+(i===0?'':'-'+i); const venc=it.dataRecebFornecedor?String(it.dataRecebFornecedor).slice(0,10):dataV; const catNome=it.categoria?(vendaCat(it.categoria).nome+' — '):''; const iref=(it.numReserva&&String(it.numReserva).trim())?(' · reserva '+String(it.numReserva).trim()):ref; desired[key]={ valor:Number(it.comissaoFornecedor)||0, origem:it.fornecedor||v.owner||'', venc, desc:'Comissão do fornecedor — '+catNome+tit+iref }; });
+    linhasFn.forEach((it,i)=>{ const key='comfn-'+v.id+(i===0?'':'-'+i); if(_finDismissedSet.has(key)) return; const venc=it.dataRecebFornecedor?String(it.dataRecebFornecedor).slice(0,10):dataV; const catNome=it.categoria?(vendaCat(it.categoria).nome+' — '):''; const iref=(it.numReserva&&String(it.numReserva).trim())?(' · reserva '+String(it.numReserva).trim()):ref; desired[key]={ valor:Number(it.comissaoFornecedor)||0, origem:it.fornecedor||v.owner||'', venc, desc:'Comissão do fornecedor — '+catNome+tit+iref }; });
     for(const key of Object.keys(desired)){ const d=desired[key]; const e=find(key);
       if(!e){ const it=Object.assign(blankFin('receber'),{ id:key, auto:true, vendaId:v.id, descricao:d.desc, categoria:'Comissão a receber', origem:d.origem, valor:d.valor, pago:false, vencimento:d.venc }); state.financeiro.unshift(it); salvar.push(it); ledgerMudou=true; }
       else if(!e.pago && (Number(e.valor)!==d.valor || (e.origem||'')!==d.origem || (e.vencimento||'')!==d.venc || (e.descricao||'')!==d.desc)){ e.valor=d.valor; e.origem=d.origem; e.vencimento=d.venc; e.descricao=d.desc; salvar.push(e); ledgerMudou=true; }
@@ -3752,7 +3753,11 @@ async function finDesfazer(id, mesRef){
   if(c) await cloudSaveConta(c);
   await _finPersistSaldoCache();
 }
-function finExcluir(id){ const it=(state.financeiro||[]).find(x=>x.id===id); if(!it) return; if(!confirm('Excluir o lançamento "'+(it.descricao||'')+'"? Se for recorrente, todas as ocorrências somem.')) return; state.financeiro=(state.financeiro||[]).filter(x=>x.id!==id); renderFinanceiroMain(); cloudDeleteFinanceiro(id).then(ok=>toast(ok?'Lançamento excluído':'Removido localmente, mas a nuvem não confirmou.',ok?'success':'warning')); }
+function finExcluir(id){ const it=(state.financeiro||[]).find(x=>x.id===id); if(!it) return; if(!confirm('Excluir o lançamento "'+(it.descricao||'')+'"? Se for recorrente, todas as ocorrências somem.')) return;
+  // Comissão a receber é gerada automaticamente da venda. Se a gestão exclui à mão, marca como
+  // "dispensada" pra a reconciliação NÃO recriar (sem tocar na comissão registrada na venda).
+  if(String(id).indexOf('comfn-')===0){ const lg=state._vendaLedger||(state._vendaLedger={}); lg.__dismissed=Array.isArray(lg.__dismissed)?lg.__dismissed:[]; if(lg.__dismissed.indexOf(id)<0) lg.__dismissed.push(id); try{ if(sb&&state.user) sb.from('financeiro').upsert({ id:'_venda_ledger', user_id:state.user.id, tipo:'ledger', data:lg }); }catch(e){ console.error('dispensar comfn',e); } }
+  state.financeiro=(state.financeiro||[]).filter(x=>x.id!==id); renderFinanceiroMain(); cloudDeleteFinanceiro(id).then(ok=>toast(ok?'Lançamento excluído':'Removido localmente, mas a nuvem não confirmou.',ok?'success':'warning')); }
 // Quadro só-leitura de um lançamento do Financeiro (com o boleto/comprovante anexado).
 function visualizarFin(id){
   const it=(state.financeiro||[]).find(x=>x.id===id); if(!it) return;
