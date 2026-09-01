@@ -3440,6 +3440,10 @@ async function cloudLoadFinanceiro(){
     // Controle da automação Vendas -> Financeiro (linha de base e ledger de saldo).
     state._vendaBaseline = (rows.find(r=>r.id==='_venda_baseline')||{}).data || null;
     state._vendaLedger   = (rows.find(r=>r.id==='_venda_ledger')||{}).data || null;
+    // Comissões a receber que a gestão dispensou (excluiu à mão). Linha PRÓPRIA, que a
+    // reconciliação só LÊ e nunca regrava — assim a dispensa não é sobrescrita (fim do 'fantasma').
+    const _dis=(rows.find(r=>r.id==='_comfn_dismissed')||{}).data;
+    state._comfnDismissed = Array.isArray(_dis&&_dis.ids)?_dis.ids:[];
   }catch(e){ console.error('cloudLoadFinanceiro',e); }
 }
 // ============================================================================
@@ -3478,7 +3482,7 @@ async function reconciliarVendasFinanceiro(){
   }
   const baseSet=new Set(state._vendaBaseline.ids||[]);
   const ledger=state._vendaLedger||{};
-  const _finDismissedSet=new Set(Array.isArray(ledger.__dismissed)?ledger.__dismissed:[]); // comissões a receber que a gestão excluiu à mão — não recriar
+  const _finDismissedSet=new Set([...(Array.isArray(state._comfnDismissed)?state._comfnDismissed:[]), ...(Array.isArray(ledger.__dismissed)?ledger.__dismissed:[])]); // comissões a receber que a gestão excluiu à mão — não recriar (linha dedicada + compat legado)
   const find=id=>state.financeiro.find(x=>x.id===id);
   const vivos=new Set(vendas.map(v=>v.id));
   let saldoDelta=0, ledgerMudou=false, autoAlvo=0; const salvar=[], apagar=[];
@@ -3758,7 +3762,7 @@ async function finExcluir(id){ const it=(state.financeiro||[]).find(x=>x.id===id
   // "dispensada" pra a reconciliação NÃO recriar (sem tocar na comissão registrada na venda).
   // IMPORTANTE: precisa AGUARDAR o upsert (o cliente do Supabase só envia a requisição no await),
   // senão a marca não chega na nuvem e a linha volta ao atualizar a página.
-  if(String(id).indexOf('comfn-')===0){ const lg=state._vendaLedger||(state._vendaLedger={}); lg.__dismissed=Array.isArray(lg.__dismissed)?lg.__dismissed:[]; if(lg.__dismissed.indexOf(id)<0) lg.__dismissed.push(id); state._vendaLedger=lg; try{ if(sb&&state.user) await sb.from('financeiro').upsert({ id:'_venda_ledger', user_id:state.user.id, tipo:'ledger', data:lg }); }catch(e){ console.error('dispensar comfn',e); } }
+  if(String(id).indexOf('comfn-')===0){ const arr=Array.isArray(state._comfnDismissed)?state._comfnDismissed:(state._comfnDismissed=[]); if(arr.indexOf(id)<0) arr.push(id); try{ if(sb&&state.user) await sb.from('financeiro').upsert({ id:'_comfn_dismissed', user_id:state.user.id, tipo:'dismissed', data:{ ids:arr } }); }catch(e){ console.error('dispensar comfn',e); } }
   state.financeiro=(state.financeiro||[]).filter(x=>x.id!==id); renderFinanceiroMain(); cloudDeleteFinanceiro(id).then(ok=>toast(ok?'Lançamento excluído':'Removido localmente, mas a nuvem não confirmou.',ok?'success':'warning')); }
 // Quadro só-leitura de um lançamento do Financeiro (com o boleto/comprovante anexado).
 function visualizarFin(id){
