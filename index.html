@@ -3551,12 +3551,14 @@ async function reconciliarVendasFinanceiro(){
       else if(Number(repInE.valor)!==repasse || (repInE.forma||'')!==(v.formaPagamento||'')){ repInE.valor=repasse; repInE.forma=(v.formaPagamento||''); salvar.push(repInE); }
       // Saída(s) a pagar — uma por fornecedor no modo split, senão uma só
       const repDesired={};
-      // Não recria a conta de repasse de um fornecedor que JÁ FOI PAGO nesta venda (casa por
-      // fornecedor). Assim, ao mudar a venda de 1 p/ 2 fornecedores (ou mexer na estrutura), o que
-      // já foi pago não volta como pendente — evita pagar 2x. O que estava pago fica no Histórico.
-      const _repPago=f=>state.financeiro.some(x=>x&&String(x.vendaId)===String(v.id)&&x.repasse===true&&x.tipo==='pagar'&&x.pago&&((x.origem||'').trim()===String(f||'').trim()));
-      if(usaSplitRep){ _repItens.forEach((it,i)=>{ const r=Number(it.repasse)||0; if(r>0){ const f=(it.fornecedor||'').trim()||repFornDefault||'Fornecedor'; if(_repPago(f)) return; const catNome=it.categoria?(vendaCat(it.categoria).nome+' — '):''; const iref=(it.numReserva&&String(it.numReserva).trim())?(' · reserva '+String(it.numReserva).trim()):ref; repDesired['repout-'+v.id+'-'+i]={ valor:r, origem:f, desc:'Repasse ao fornecedor — '+f+' · '+catNome+tit+iref }; } }); }
-      else if(!_repPago(repFornDefault)){ repDesired['repout-'+v.id]={ valor:repasse, origem:repFornDefault, desc:'Repasse ao fornecedor — '+tit+ref }; }
+      // Casa cada repasse DESEJADO com um repasse JÁ PAGO da MESMA venda (id único → nunca mistura
+      // vendas distintas, mesmo idênticas no mesmo dia), casando por FORNECEDOR + VALOR e
+      // UM-PARA-UM (cada conta paga casa com no máximo uma desejada). Se houver par pago, não
+      // recria (evita pagar 2x); senão, gera a conta pendente. O que já foi pago fica no Histórico.
+      const _pagos=state.financeiro.filter(x=>x&&String(x.vendaId)===String(v.id)&&x.repasse===true&&x.tipo==='pagar'&&x.pago).map(x=>({o:(x.origem||'').trim(),val:Number(x.valor)||0,used:false}));
+      const _jaPago=(f,r)=>{ const alvo=String(f||'').trim(), rv=Number(r)||0; const h=_pagos.find(p=>!p.used&&p.o===alvo&&Math.abs(p.val-rv)<0.005); if(h){ h.used=true; return true; } return false; };
+      if(usaSplitRep){ _repItens.forEach((it,i)=>{ const r=Number(it.repasse)||0; if(r>0){ const f=(it.fornecedor||'').trim()||repFornDefault||'Fornecedor'; if(_jaPago(f,r)) return; const catNome=it.categoria?(vendaCat(it.categoria).nome+' — '):''; const iref=(it.numReserva&&String(it.numReserva).trim())?(' · reserva '+String(it.numReserva).trim()):ref; repDesired['repout-'+v.id+'-'+i]={ valor:r, origem:f, desc:'Repasse ao fornecedor — '+f+' · '+catNome+tit+iref }; } }); }
+      else if(!_jaPago(repFornDefault,repasse)){ repDesired['repout-'+v.id]={ valor:repasse, origem:repFornDefault, desc:'Repasse ao fornecedor — '+tit+ref }; }
       for(const key of Object.keys(repDesired)){ const d=repDesired[key]; const e=find(key);
         if(!e){ const it=Object.assign(blankFin('pagar'),{ id:key, auto:true, repasse:true, vendaId:v.id, contaId:finContaPadraoId(), descricao:d.desc, categoria:'Repasse ao fornecedor', origem:d.origem, valor:d.valor, pago:false, vencimento:dataV }); state.financeiro.unshift(it); salvar.push(it); }
         else if(!e.pago && (Number(e.valor)!==d.valor || (e.origem||'')!==d.origem || (e.descricao||'')!==d.desc)){ e.valor=d.valor; e.origem=d.origem; e.descricao=d.desc; salvar.push(e); }
