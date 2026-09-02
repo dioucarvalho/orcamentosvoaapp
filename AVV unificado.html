@@ -3551,8 +3551,12 @@ async function reconciliarVendasFinanceiro(){
       else if(Number(repInE.valor)!==repasse || (repInE.forma||'')!==(v.formaPagamento||'')){ repInE.valor=repasse; repInE.forma=(v.formaPagamento||''); salvar.push(repInE); }
       // Saída(s) a pagar — uma por fornecedor no modo split, senão uma só
       const repDesired={};
-      if(usaSplitRep){ _repItens.forEach((it,i)=>{ const r=Number(it.repasse)||0; if(r>0){ const f=(it.fornecedor||'').trim()||repFornDefault||'Fornecedor'; const catNome=it.categoria?(vendaCat(it.categoria).nome+' — '):''; const iref=(it.numReserva&&String(it.numReserva).trim())?(' · reserva '+String(it.numReserva).trim()):ref; repDesired['repout-'+v.id+'-'+i]={ valor:r, origem:f, desc:'Repasse ao fornecedor — '+f+' · '+catNome+tit+iref }; } }); }
-      else { repDesired['repout-'+v.id]={ valor:repasse, origem:repFornDefault, desc:'Repasse ao fornecedor — '+tit+ref }; }
+      // Não recria a conta de repasse de um fornecedor que JÁ FOI PAGO nesta venda (casa por
+      // fornecedor). Assim, ao mudar a venda de 1 p/ 2 fornecedores (ou mexer na estrutura), o que
+      // já foi pago não volta como pendente — evita pagar 2x. O que estava pago fica no Histórico.
+      const _repPago=f=>state.financeiro.some(x=>x&&String(x.vendaId)===String(v.id)&&x.repasse===true&&x.tipo==='pagar'&&x.pago&&((x.origem||'').trim()===String(f||'').trim()));
+      if(usaSplitRep){ _repItens.forEach((it,i)=>{ const r=Number(it.repasse)||0; if(r>0){ const f=(it.fornecedor||'').trim()||repFornDefault||'Fornecedor'; if(_repPago(f)) return; const catNome=it.categoria?(vendaCat(it.categoria).nome+' — '):''; const iref=(it.numReserva&&String(it.numReserva).trim())?(' · reserva '+String(it.numReserva).trim()):ref; repDesired['repout-'+v.id+'-'+i]={ valor:r, origem:f, desc:'Repasse ao fornecedor — '+f+' · '+catNome+tit+iref }; } }); }
+      else if(!_repPago(repFornDefault)){ repDesired['repout-'+v.id]={ valor:repasse, origem:repFornDefault, desc:'Repasse ao fornecedor — '+tit+ref }; }
       for(const key of Object.keys(repDesired)){ const d=repDesired[key]; const e=find(key);
         if(!e){ const it=Object.assign(blankFin('pagar'),{ id:key, auto:true, repasse:true, vendaId:v.id, contaId:finContaPadraoId(), descricao:d.desc, categoria:'Repasse ao fornecedor', origem:d.origem, valor:d.valor, pago:false, vencimento:dataV }); state.financeiro.unshift(it); salvar.push(it); }
         else if(!e.pago && (Number(e.valor)!==d.valor || (e.origem||'')!==d.origem || (e.descricao||'')!==d.desc)){ e.valor=d.valor; e.origem=d.origem; e.descricao=d.desc; salvar.push(e); }
