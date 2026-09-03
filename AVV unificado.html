@@ -1944,70 +1944,6 @@ function saleMonthOfOrc(o){
   return monthOf((lv&&lv.dataVenda)||o.closedAt||o.createdAt);
 }
 
-// ===================== TEMPORÁRIO: Importar próximos embarques do PaxPro (CSV) =====================
-// Lê o CSV, consolida por (responsável + data de embarque), mapeia p/ reserva do Pós-Venda,
-// pula quem já está no sistema (passageiro + data de ida) e cria SÓ no Pós-Venda (sem venda).
-let _paxNovos=null;
-const _paxNorm=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
-function _paxToISO(d){ const m=String(d||'').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/); if(!m) return ''; let[_,dd,mm,yy]=m; if(yy.length===2) yy='20'+yy; return yy+'-'+String(mm).padStart(2,'0')+'-'+String(dd).padStart(2,'0'); }
-function _paxParseCSV(text){ const rows=[]; let row=[],f='',q=false; text=String(text||'').replace(/\r\n/g,'\n').replace(/\r/g,'\n'); for(let i=0;i<text.length;i++){ const c=text[i]; if(q){ if(c==='"'){ if(text[i+1]==='"'){ f+='"'; i++; } else q=false; } else f+=c; } else { if(c==='"') q=true; else if(c===','){ row.push(f); f=''; } else if(c==='\n'){ row.push(f); rows.push(row); row=[]; f=''; } else f+=c; } } if(f.length||row.length){ row.push(f); rows.push(row); } return rows; }
-function _paxSplitPax(s){ return String(s||'').split(/\s*\/\s*/).map(x=>x.trim()).filter(Boolean); }
-function _paxBuildTrips(objs){
-  const grupos={};
-  objs.forEach(o=>{ const resp=(o['Resp Pela Compra']||'').trim(); const di=_paxToISO(o['Dt. Embarque']); if(!di) return; const key=_paxNorm(resp)+'|'+di; (grupos[key]=grupos[key]||[]).push(o); });
-  const trips=[];
-  Object.keys(grupos).forEach(key=>{ const g=grupos[key]; const resp=(g[0]['Resp Pela Compra']||'').trim();
-    const dataIda=_paxToISO(g[0]['Dt. Embarque']); const dataVolta=_paxToISO((g.find(r=>_paxToISO(r['Dt. Retorno']))||g[0])['Dt. Retorno']);
-    // destino/fornecedor: prefere a linha de "Pacote" com Nome Pacote descritivo
-    const okNome=v=>{ v=(v||'').trim(); return v && v!=='-' && !/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(v); };
-    const main=g.find(r=>/pacote/i.test(r['Produto']||'')&&okNome(r['Nome Pacote'])) || g.find(r=>okNome(r['Nome Pacote'])) || g[0];
-    const destino=okNome(main['Nome Pacote'])?main['Nome Pacote'].trim():((main['Produto']||'').trim());
-    const fornecedor=((main['Fornecedor']||'').trim()&&main['Fornecedor'].trim()!=='-')?main['Fornecedor'].trim():((g.map(r=>(r['Fornecedor']||'').trim()).find(x=>x&&x!=='-'))||'');
-    const voos=g.map(r=>(r['Itinerário']||'').trim()).filter(x=>x&&x!=='-').join('\n\n');
-    // passageiros: união de todos (dedupe por nome normalizado), responsável primeiro
-    const seen={}; const nomes=[];
-    _paxSplitPax(resp).concat(...g.map(r=>_paxSplitPax(r['Passageiros']))).forEach(n=>{ const k=_paxNorm(n); if(k&&!seen[k]){ seen[k]=1; nomes.push(n); } });
-    const emailResp=(g.map(r=>(r['Email']||'').trim()).find(Boolean))||''; const telResp=(g.map(r=>(r['Telefone']||'').trim()).find(Boolean))||'';
-    const passageiros=nomes.map((n,i)=>({ id:uid(), nome:n, nascimento:'', email:i===0?emailResp:'', telefone:i===0?telResp:'', docs:[] }));
-    const _prods=[...new Set(g.map(r=>((r['Produto']||'').trim()+(okNome(r['Nr Reserva'])||((r['Nr Reserva']||'').trim()&&(r['Nr Reserva']||'').trim()!=='-')?(' '+(r['Nr Reserva']||'').trim()):'')).trim()).filter(Boolean))];
-    const consultor=(g.map(r=>(r['Consultor']||'').trim()).find(Boolean))||'';
-    const nota='Importado do PaxPro'+(consultor?(' · Consultor(a): '+consultor):'')+(_prods.length?(' · Produtos/reservas: '+_prods.join(', ')):'');
-    trips.push({ principal:resp||(nomes[0]||''), dataIda, dataVolta, destino, fornecedor, voos, passageiros, nota });
-  });
-  return trips;
-}
-async function paxImportFile(input){
-  const f=input&&input.files&&input.files[0]; if(!f){ return; }
-  const r=new FileReader();
-  r.onload=async ()=>{
-    try{
-      const rows=_paxParseCSV(r.result); if(rows.length<2){ toast('CSV vazio ou inválido.','warning'); return; }
-      const head=rows[0].map(h=>String(h||'').trim());
-      const objs=rows.slice(1).filter(rr=>rr.some(c=>String(c||'').trim())).map(rr=>{ const o={}; head.forEach((h,i)=>o[h]=rr[i]!==undefined?rr[i]:''); return o; });
-      const trips=_paxBuildTrips(objs);
-      // Dedupe vs. o que já existe no Pós-Venda (passageiro + data de ida)
-      let dados=[]; try{ dados=(await cloudLoadPosvenda())||[]; }catch(e){ console.error('pax load posvenda',e); }
-      const existSet=new Set(); (dados||[]).forEach(rv=>{ const di=(rv&&rv.dataIda||''); (rv&&rv.passageiros||[]).forEach(p=>{ if(p&&p.nome) existSet.add(_paxNorm(p.nome)+'|'+di); }); });
-      const novos=[], pulados=[];
-      trips.forEach(t=>{ const jaTem=t.passageiros.some(p=>existSet.has(_paxNorm(p.nome)+'|'+t.dataIda)); if(jaTem){ pulados.push(t); } else { novos.push(t); } });
-      _paxNovos=novos.map(t=>({ id:'pax-'+uid(), _importadoPaxpro:true, fornecedor:t.fornecedor, destino:t.destino, dataIda:t.dataIda, horaIda:'', dataVolta:t.dataVolta, horaVolta:'', voos:t.voos, preEmbarqueData:'', preEmbarqueHora:'', preEmbarqueRealizadaData:'', servicos:[], vouchersVenda:[], passageiros:t.passageiros, tripStatus:'Confirmada', checks:{}, observacoes:[{id:uid(),autor:'Importação PaxPro',ts:new Date().toISOString(),texto:t.nota}], tarefas:[] }));
-      const _fmt=d=>d?_isoToBR(d):'—';
-      const listaNovos=novos.length?novos.slice().sort((a,b)=>(a.dataIda||'').localeCompare(b.dataIda||'')).map(t=>`<tr><td>${_fmt(t.dataIda)}</td><td><strong>${escapeHtml(t.passageiros[0]?t.passageiros[0].nome:'—')}</strong>${t.passageiros.length>1?` <span style="color:var(--text-mute)">+${t.passageiros.length-1}</span>`:''}</td><td>${escapeHtml(t.destino||'—')}</td><td>${escapeHtml(t.fornecedor||'—')}</td></tr>`).join(''):'<tr><td colspan="4" style="color:var(--text-mute)">Nenhuma reserva nova.</td></tr>';
-      openModal(`<div class="modal-head"><h3>Importar do PaxPro — prévia</h3><button class="btn-icon" onclick="closeModal()">×</button></div><div class="modal-body" style="max-height:70vh;overflow-y:auto"><p style="font-size:13px;color:var(--text-soft);margin:0 0 12px"><strong>${novos.length}</strong> reserva(s) nova(s) para importar · <strong>${pulados.length}</strong> já existente(s) no sistema (serão puladas). Confira antes de confirmar.</p><div style="overflow-x:auto"><table class="tbl" style="font-size:13px"><thead><tr><th>Embarque</th><th>Passageiro(s)</th><th>Destino</th><th>Fornecedor</th></tr></thead><tbody>${listaNovos}</tbody></table></div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>${novos.length?`<button class="btn btn-primary" onclick="paxConfirmarImport()">Importar ${novos.length} reserva(s) no Pós-Venda</button>`:''}</div>`);
-    }catch(e){ console.error('paxImport',e); toast('Não consegui ler esse CSV. Confira o arquivo.','warning'); }
-    finally{ if(input) input.value=''; }
-  };
-  r.readAsText(f,'UTF-8');
-}
-async function paxConfirmarImport(){
-  if(!_paxNovos||!_paxNovos.length){ toast('Nada para importar.','info'); return; }
-  try{
-    const { data:fresh } = await sb.from('posvenda_dados').select('dados').eq('id',1).maybeSingle();
-    const base=Array.isArray(fresh&&fresh.dados)?fresh.dados:[];
-    await sb.from('posvenda_dados').update({ dados: base.concat(_paxNovos), atualizado_em:new Date().toISOString() }).eq('id',1);
-    const n=_paxNovos.length; _paxNovos=null; closeModal(); toast(n+' reserva(s) importada(s) no Pós-Venda.','success');
-  }catch(e){ console.error('paxConfirmarImport',e); toast('Falha ao salvar no Pós-Venda. Tente de novo.','warning'); }
-}
 async function renderAdmin(c){
   const verR$ = adminPodeVerValores();
   // Privacidade do administrador: só quem é ADMIN vê os dados de um administrador
@@ -2196,11 +2132,6 @@ async function renderAdmin(c){
       </div>
       ${Backend.mode==='local'?`<p style="font-size:12px;color:var(--warning);margin-top:10px">⚠️ Modo local: este painel mostra os dados deste navegador. Ao ligar o Supabase, ele passa a mostrar <strong>todos os colaboradores</strong> automaticamente.</p>`:''}
     </div>
-    ${(currentRole()==='admin'||currentRole()==='gerente')?`<div class="card" style="margin-bottom:18px;border:1.5px dashed var(--brand-blue)">
-      <div class="card-header"><h3 class="card-title">Importar próximos embarques do PaxPro (CSV)</h3><span class="badge neutral">temporário</span></div>
-      <p style="font-size:13px;color:var(--text-soft);margin:0 0 12px">Selecione o CSV exportado do PaxPro. Ele mostra uma <strong>prévia</strong> antes de importar; cria as reservas <strong>só no Pós-Venda</strong> (não vira venda), consolida os produtos do mesmo comprador na mesma data e <strong>pula quem já está no sistema</strong> (mesmo passageiro + data de embarque).</p>
-      <input type="file" accept=".csv,text/csv" onchange="paxImportFile(this)" style="font-size:13px">
-    </div>`:''}
     ${cardsHTML}
     ${rankHTML}
     ${metasHTML}
