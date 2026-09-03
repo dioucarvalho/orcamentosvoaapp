@@ -3685,7 +3685,11 @@ function renderFinanceiroMain(c){
     const mesHTML=doMes.length?(mesTit+_tbl(doMes.map(linhaPend).join(''))):(mesTit+`<div class="empty">Nenhuma conta ${finTab==='pagar'?'a pagar':'a receber'} em ${monthLabelBR(selMonth)}.</div>`);
     body = proj + _fornFiltro + _nav + atrHTML + mesHTML;
   } else {
-    body = feitos.length ? `<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Descrição</th><th>Status</th><th>Baixa em</th><th class="num">Valor</th><th class="num">Ações</th></tr></thead><tbody>${feitos.map(linhaFeita).join('')}</tbody></table></div>` : `<div class="empty">Nada no histórico ainda.</div>`;
+    // Histórico do MÊS selecionado (igual às abas a pagar/receber), com navegação de mês.
+    const feitosMes=feitos.filter(x=> (x.dataFeito||'') && monthOf(x.dataFeito)===selMonth);
+    const _histTit=`<div style="font-size:12px;font-weight:700;color:var(--text-soft);text-transform:uppercase;letter-spacing:.04em;margin:0 0 6px">${monthLabelBR(selMonth)}</div>`;
+    const _histTbl=feitosMes.length ? `<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Descrição</th><th>Status</th><th>Baixa em</th><th class="num">Valor</th><th class="num">Ações</th></tr></thead><tbody>${feitosMes.map(linhaFeita).join('')}</tbody></table></div>` : `<div class="empty">Nada no histórico em ${monthLabelBR(selMonth)}.</div>`;
+    body = _nav + _histTit + _histTbl;
   }
   const _buscaBox=`<div style="margin-bottom:12px"><input id="finBuscaInput" value="${escapeHtml(finBusca||'')}" oninput="finBusca=this.value; finAplicarBusca();" placeholder="🔎 Pesquisar por descrição, fornecedor ou categoria…" style="width:100%;max-width:440px;padding:9px 12px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;outline:none"></div>`;
   body = _buscaBox + body;
